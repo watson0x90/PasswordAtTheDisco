@@ -42,6 +42,19 @@ BHE_TOKEN_ID = "YOUR_TOKEN_ID_HERE"
 BHE_TOKEN_KEY = "YOUR_TOKEN_KEY_HERE"
 ```
 
+6. Update the `lists\password_policy.json` with your policy.
+
+```json
+{
+    "min_length": 8,
+    "require_uppercase": true,
+    "require_lowercase": true,
+    "require_digits": true,
+    "require_special": true,
+    "max_password_age_days": 90
+}
+```
+
 ## Expected Data
 As of right now, it is assumed that you have already worked on cracking passwords using Hashcat. Your `username_and_hash_file.txt` MUST be in the following format:
 
