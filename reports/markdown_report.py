@@ -392,7 +392,7 @@ def generate_explained_actionable_report(domain, data, seed, logger=None):
     os.makedirs(markdown_reports_folder, exist_ok=True)
     markdown = f"# Explained Actionable Password Security Report - {domain}\n\n"
     markdown += f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-    markdown += "This report explains the sections of the actionable Excel report (`{domain}_actionable_report.xlsx`) and provides guidance on remediation. Each section identifies critical password security issues, why they matter, and what actions are expected to mitigate risks.\n\n"
+    markdown += f"This report explains the sections of the actionable Excel report (`{domain}_actionable_report.xlsx`) and provides guidance on remediation. Each section identifies critical password security issues, why they matter, and what actions are expected to mitigate risks.\n\n"
 
     # Define cracked_rows and risk_order
     cracked_rows = [row for row in data['output_rows'] if row['Password Length'] != 'N/A']
