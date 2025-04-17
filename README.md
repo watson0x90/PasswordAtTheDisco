@@ -1,4 +1,4 @@
-# PasswordAtTheDisco
+# Password!AtTheDisco - *I crack passwords, and explain the chaos*.
 **Version: 0.1**
 
 **PasswordAtTheDisco** is a powerful password auditing tool designed to evaluate and enhance password security across multiple domains. It processes both cracked and uncracked password files, integrates with BloodHound for privilege escalation analysis, and generates detailed reports to assist security teams in identifying risks and prioritizing remediation efforts. The primary goal is to improve an organization's security posture by uncovering weak passwords, shared credentials, and accounts with excessive privileges, while providing clear, actionable steps to address these issues.
