@@ -1,4 +1,12 @@
+# serve.py
+#!/usr/bin/env python3
+"""
+Server module for hosting HTML password audit reports.
+Provides a local HTTP server to view the generated reports.
+"""
+
 import os
+import sys
 import http.server
 import socketserver
 from contextlib import redirect_stdout, redirect_stderr
@@ -7,10 +15,11 @@ from core.config import html_reports_folder
 PORT = 8000
 
 def serve_html_reports(logger):
-    
+    """Start a local HTTP server to serve the HTML reports."""
     if not os.path.exists(html_reports_folder):
-        logger.error(f"Directory {html_reports_folder} does not exist. Please run the audit first.")
-        exit(1)
+        logger.error(f"Directory {html_reports_folder} does not exist. "
+                     f"Please run the audit first with -d to generate reports.")
+        sys.exit(1)
     
     os.chdir(html_reports_folder)
     handler = http.server.SimpleHTTPRequestHandler
@@ -25,7 +34,4 @@ def serve_html_reports(logger):
                     httpd.serve_forever()
             except KeyboardInterrupt:
                 logger.info("Server stopped.")
-                exit(0)
-
-if __name__ == "__main__":
-    serve_html_reports()
+                sys.exit(0)
