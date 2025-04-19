@@ -165,6 +165,10 @@ def process_domains(domain_entries, logger):
                     # Submit all tasks
                     futures = [executor.submit(process_domain_wrapper, arg) for arg in task_args]
                     
+                    # Initial state - first domain
+                    animation.set_domain_progress(0, 100)  # Start with a default value
+                    animation.update()
+                    
                     # Process results as they complete
                     for i, future in enumerate(concurrent.futures.as_completed(futures)):
                         try:
@@ -189,15 +193,14 @@ def process_domains(domain_entries, logger):
                             # Update animation with real data
                             cracked, uncracked, domain_data = result
                             
-                            # Update domain progress
-                            animation.complete_current_domain()
-                            
                             # Skip updating stats if no valid data
                             if not domain_data:
                                 animation.add_finding(
                                     f"Failed to process domain {domain}",
                                     "Critical"
                                 )
+                                # Still mark this domain as complete to move to the next one
+                                animation.complete_current_domain()
                                 animation.update()
                                 continue
                             
@@ -215,9 +218,10 @@ def process_domains(domain_entries, logger):
                             
                             # Update risk counts
                             risk_counter = domain_data.get('risk_counter', {})
-                            for level, count in risk_counter.items():
-                                if level in animation.risk_counts:
-                                    animation.risk_counts[level] += count
+                            animation.risk_counts["Critical"] += risk_counter.get('Critical', 0)
+                            animation.risk_counts["High"] += risk_counter.get('High', 0)
+                            animation.risk_counts["Medium"] += risk_counter.get('Medium', 0)
+                            animation.risk_counts["Low"] += risk_counter.get('Low', 0)
                             
                             # Add findings based on real data
                             da_path_accounts = sum(1 for row in domain_data.get('output_rows', [])
@@ -234,6 +238,17 @@ def process_domains(domain_entries, logger):
                             non_expiring = sum(1 for row in domain_data.get('output_rows', [])
                                              if row.get('Password Set to Expire', 'Yes') == 'No')
                             animation.stats["non_expiring_accounts"] += non_expiring
+                            
+                            # Mark current domain as complete and prepare for the next one
+                            animation.complete_current_domain()
+                            
+                            # If there are more domains to process, set up the next one
+                            if i + 1 < len(domain_entries):
+                                next_domain_index = animation.current_domain_index
+                                # Get an estimate of total accounts in next domain if possible
+                                # For now we use a default of 100 which will be updated as we process
+                                next_domain_accounts = 100
+                                animation.set_domain_progress(next_domain_index, next_domain_accounts)
                             
                             # Add summary finding
                             animation.add_finding(
