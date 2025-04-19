@@ -1,70 +1,169 @@
 # utils/misc.py
 """
 Miscellaneous utility functions for the password audit tool.
+Enhanced with robust terminal animations and progress tracking.
 """
 
 import sys
 import time
+import shutil
 import threading
+import datetime
+import psutil
 from core.config import ENABLE_ANIMATION
 from contextlib import contextmanager
 
 # Try to import Rich, use fallback if not available
 try:
     from rich.console import Console
-    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
+    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn, TimeRemainingColumn
+    from rich.live import Live
     from rich.panel import Panel
     from rich.text import Text
+    from rich.table import Table
     HAS_RICH = True
 except ImportError:
     HAS_RICH = False
 
-# Create Rich console if available
-if HAS_RICH:
-    console = Console()
-else:
-    console = None
+# Create Rich console if available with proper feature detection
+def setup_console():
+    """Set up Rich console with appropriate feature detection."""
+    if HAS_RICH:
+        try:
+            # Test if we can use all Rich features
+            console = Console()
+            console.size
+            console.color_system
+            
+            # If all features work, return the console
+            return console
+        except Exception:
+            # Fall back to a more compatible console
+            return Console(color_system="standard", highlight=False, record=False)
+    return None
+
+# Initialize console
+console = setup_console()
+
+class ThrottledProgress:
+    """Wrapper for Rich progress with update rate limiting."""
+    
+    def __init__(self, progress, task_id, min_update_interval=0.1):
+        """
+        Initialize rate-limited progress tracker.
+        
+        Args:
+            progress: Rich Progress object
+            task_id: Task ID to update
+            min_update_interval (float): Minimum seconds between updates
+        """
+        self.progress = progress
+        self.task_id = task_id
+        self.min_update_interval = min_update_interval
+        self.last_update = 0
+        self.pending_advance = 0
+        
+    def update(self, advance=1, **kwargs):
+        """
+        Update progress with rate limiting.
+        
+        Args:
+            advance (int): Progress amount to advance
+            kwargs: Additional progress parameters
+        """
+        self.pending_advance += advance
+        
+        current_time = time.time()
+        if current_time - self.last_update >= self.min_update_interval:
+            self.progress.update(self.task_id, advance=self.pending_advance, **kwargs)
+            self.pending_advance = 0
+            self.last_update = current_time
+            
+    def force_update(self, **kwargs):
+        """
+        Force an immediate update regardless of timing.
+        
+        Args:
+            kwargs: Progress parameters
+        """
+        if self.pending_advance > 0:
+            self.progress.update(self.task_id, advance=self.pending_advance, **kwargs)
+            self.pending_advance = 0
+            self.last_update = time.time()
 
 def show_processing_animation(stop_event: threading.Event) -> None:
     """
     Display a spinning animation in the terminal until stopped.
-    Uses Rich library if available, otherwise falls back to simple spinner.
+    Enhanced with better error handling and cleanup.
     
     Args:
         stop_event (threading.Event): Event to signal when to stop animation
     """
-    if not ENABLE_ANIMATION:
-        return
-        
-    if HAS_RICH:
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[bold blue]Processing domains..."),
-            BarColumn(bar_width=None),
-            TimeElapsedColumn(),
-            console=console,
-            transient=True,
-        ) as progress:
-            task = progress.add_task("", total=None)  # Indeterminate progress
+    animation_thread = None
+    
+    try:
+        if not ENABLE_ANIMATION:
+            return
+            
+        if HAS_RICH:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[bold blue]Processing domains..."),
+                BarColumn(bar_width=None),
+                TimeElapsedColumn(),
+                console=console,
+                transient=True,
+            ) as progress:
+                task = progress.add_task("", total=None)  # Indeterminate progress
+                while not stop_event.is_set():
+                    progress.update(task)
+                    time.sleep(0.1)
+            
+            # Show completion message if not interrupted
+            if not stop_event.is_set():
+                console.print("[bold green]Processing domains... Done![/bold green]")
+        else:
+            # Create spinner in a separate thread for better cleanup
+            def spinner_thread():
+                spinner = ['|', '/', '-', '\\']
+                i = 0
+                while not stop_event.is_set():
+                    char = spinner[i % len(spinner)]
+                    sys.stdout.write(f'\rProcessing domains... {char}')
+                    sys.stdout.flush()
+                    time.sleep(0.1)
+                    i += 1
+            
+            # Start animation thread
+            animation_thread = threading.Thread(target=spinner_thread)
+            animation_thread.daemon = True
+            animation_thread.start()
+            
+            # Wait for the stop event (this is non-blocking for the main thread)
             while not stop_event.is_set():
-                progress.update(task)
-                time.sleep(0.1)
-        console.print("[bold green]Processing domains... Done![/bold green]")
-    else:
-        # Fallback to simple spinner if Rich is not available
-        spinner = ['|', '/', '-', '\\']
-        while not stop_event.is_set():
-            for char in spinner:
-                sys.stdout.write(f'\rProcessing domains... {char}')
-                sys.stdout.flush()
-                time.sleep(0.1)
-        sys.stdout.write('\rProcessing domains... Done!    \n')
-        sys.stdout.flush()
-
+                time.sleep(0.2)
+                
+            # Cleanup when done (thread should terminate due to stop_event)
+            if animation_thread.is_alive():
+                animation_thread.join(timeout=1.0)
+                
+            sys.stdout.write('\rProcessing domains... Done!    \n')
+            sys.stdout.flush()
+    except Exception as e:
+        # Ensure we clean up even during exceptions
+        stop_event.set()
+        if animation_thread and animation_thread.is_alive():
+            animation_thread.join(timeout=0.5)
+        
+        if HAS_RICH and console:
+            console.print(f"[bold red]Animation error: {str(e)}[/bold red]")
+        else:
+            print(f"\nAnimation error: {str(e)}")
 
 def show_task_progress(task_name: str, total: int, update_callback=None):
     """
     Create and return a Rich progress context manager for task progress.
+    Enhanced with adaptive width and better metrics.
     
     Args:
         task_name (str): Name of the task
@@ -76,14 +175,21 @@ def show_task_progress(task_name: str, total: int, update_callback=None):
     """
     if not ENABLE_ANIMATION or not HAS_RICH:
         return DummyProgress()
+    
+    # Get terminal width
+    terminal_width = shutil.get_terminal_size().columns if hasattr(shutil, 'get_terminal_size') else 80
+    
+    # Adjust bar width based on terminal width
+    bar_width = max(10, min(40, terminal_width - 80))
         
     progress = Progress(
         SpinnerColumn(),
         TextColumn(f"[bold blue]{task_name}"),
-        BarColumn(),
+        BarColumn(bar_width=bar_width),  # Adaptive width
         TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
         TextColumn("[cyan]{task.completed}/{task.total}"),
         TimeElapsedColumn(),
+        TimeRemainingColumn(),  # Add remaining time estimate
         console=Console(stderr=True),  # Redirect to stderr to avoid mixing with regular output
         transient=False,
     )
@@ -95,6 +201,82 @@ def show_task_progress(task_name: str, total: int, update_callback=None):
         update_callback(progress, task_id)
         
     return progress
+
+def create_metrics_live_display():
+    """
+    Create a live metrics panel for domain processing.
+    
+    Returns:
+        tuple: (Live object, metrics dict) if Rich is available, else (None, {})
+    """
+    if HAS_RICH and console:
+        metrics = {
+            "Domains Processed": 0,
+            "Accounts Analyzed": 0,
+            "Cracked Passwords": 0,
+            "Processing Rate": "0 domains/sec",
+            "Elapsed Time": "00:00:00",
+            "Memory Usage": "0 MB"
+        }
+        
+        start_time = time.time()
+        
+        def get_panel():
+            # Update timing metrics
+            elapsed = time.time() - start_time
+            metrics["Elapsed Time"] = str(datetime.timedelta(seconds=int(elapsed)))
+            
+            # Calculate processing rate
+            if metrics["Domains Processed"] > 0 and elapsed > 0:
+                rate = metrics["Domains Processed"] / elapsed
+                metrics["Processing Rate"] = f"{rate:.2f} domains/sec"
+                
+            # Get memory usage from psutil
+            try:
+                process = psutil.Process(os.getpid())
+                memory = process.memory_info().rss / (1024 * 1024)
+                metrics["Memory Usage"] = f"{memory:.1f} MB"
+            except (ImportError, AttributeError):
+                metrics["Memory Usage"] = "Unknown"
+            
+            # Create a table for better formatting
+            table = Table(show_header=False, box=None)
+            table.add_column("Metric")
+            table.add_column("Value")
+            
+            for key, value in metrics.items():
+                table.add_row(key, str(value))
+                
+            return Panel(table, title="Processing Metrics", border_style="blue")
+        
+        # Create live display with 1 second refresh rate
+        live = Live(get_panel(), refresh_per_second=1, console=console)
+        return live, metrics
+    
+    return None, {}
+
+def process_with_group(title, function, *args, **kwargs):
+    """
+    Run a function with a visual group in the console.
+    
+    Args:
+        title (str): Group title
+        function (callable): Function to run
+        args, kwargs: Arguments to pass to function
+        
+    Returns:
+        Any: Return value from function
+    """
+    if HAS_RICH and console:
+        with console.group(f"[bold blue]{title}[/bold blue]"):
+            result = function(*args, **kwargs)
+            console.print(f"[green]✓[/green] {title} completed")
+            return result
+    else:
+        print(f"\n--- {title} ---")
+        result = function(*args, **kwargs)
+        print(f"--- {title} completed ---\n")
+        return result
 
 @contextmanager
 def error_suppression(log_function=None):
@@ -185,37 +367,57 @@ class DummyProgress:
     
     def __init__(self):
         self.task_id = 0
+        self.total = 0
+        self.completed = 0
+        self.start_time = time.time()
     
     def __enter__(self):
+        print(f"Starting progress tracking... (animation disabled)")
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
-        pass
+        elapsed = time.time() - self.start_time
+        print(f"Progress complete. Processed {self.completed}/{self.total} in {elapsed:.1f}s")
+        
+        # Print exception if one occurred
+        if exc_type:
+            print(f"Error during progress: {exc_val}")
     
     def add_task(self, description, total=None):
         self.task_id += 1
+        self.total = total or 0
+        print(f"Task: {description}, Total: {total}")
         return self.task_id
     
-    def update(self, task_id, advance=1, completed=None):
-        pass
+    def update(self, task_id, advance=1, completed=None, description=None):
+        if completed is not None:
+            self.completed = completed
+        else:
+            self.completed += advance
+        
+        # Print progress update at reasonable intervals
+        if self.total and self.completed % max(1, self.total // 10) == 0:
+            percentage = (self.completed / self.total * 100) if self.total else 0
+            print(f"Progress: {self.completed}/{self.total} ({percentage:.1f}%)" + 
+                  (f" - {description}" if description else ""))
 
 def print_info(message):
     """Print an info message with Rich formatting if available."""
-    if HAS_RICH:
+    if HAS_RICH and console:
         console.print(f"[blue]INFO:[/blue] {message}")
     else:
         print(f"INFO: {message}")
 
 def print_success(message):
     """Print a success message with Rich formatting if available."""
-    if HAS_RICH:
+    if HAS_RICH and console:
         console.print(f"[green]SUCCESS:[/green] {message}")
     else:
         print(f"SUCCESS: {message}")
 
 def print_warning(message):
     """Print a warning message with Rich formatting if available."""
-    if HAS_RICH:
+    if HAS_RICH and console:
         console.print(f"[yellow]WARNING:[/yellow] {message}")
     else:
         print(f"WARNING: {message}")
@@ -227,7 +429,7 @@ def print_error(message, file=None, log_function=None):
     """
     if log_function:
         log_function(message)
-    elif HAS_RICH and not file:
+    elif HAS_RICH and console and not file:
         console.print(f"[bold red]ERROR:[/bold red] {message}")
     else:
         if file:
@@ -237,12 +439,13 @@ def print_error(message, file=None, log_function=None):
 
 def display_banner(title):
     """Display a fancy banner with Rich if available."""
-    if HAS_RICH:
+    if HAS_RICH and console:
         text = Text()
         text.append("Password Security Audit Tool\n", style="bold cyan")
         text.append(title, style="bold")
         console.print(Panel(text, border_style="cyan"))
     else:
-        print("=" * 60)
-        print(f"Password Security Audit Tool - {title}".center(60))
-        print("=" * 60)
+        width = shutil.get_terminal_size().columns if hasattr(shutil, 'get_terminal_size') else 80
+        print("=" * width)
+        print(f"Password Security Audit Tool - {title}".center(width))
+        print("=" * width)

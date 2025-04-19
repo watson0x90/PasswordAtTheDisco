@@ -40,15 +40,15 @@ def generate_search_html(json_file, logger=None):
         # Add risk vector explanation
         html += RISK_VECTOR_EXPLANATION
         
-        # Add results table
+        # Add results table - update column names to match the actual data fields
         html += """
         <div class="table-container">
             <table id="resultsTable">
                 <thead>
                     <tr>
-                        <th data-column="username">Username</th>
+                        <th data-column="Username">Username</th>
                         <th data-column="Domain">Domain</th>
-                        <th data-column="password">Password</th>
+                        <th data-column="Password">Password</th>
                         <th data-column="Type">Type</th>
                         <th data-column="Risk Level">Risk Level</th>
                         <th data-column="Enabled">Enabled</th>
@@ -125,13 +125,13 @@ def generate_search_redacted_html(json_file_with_placeholders, logger=None):
         # Add risk vector explanation
         html += RISK_VECTOR_EXPLANATION
         
-        # Add results table
+        # Add results table - update column names to match the actual data fields
         html += """
         <div class="table-container">
             <table id="resultsTable">
                 <thead>
                     <tr>
-                        <th data-column="username">Username</th>
+                        <th data-column="Username">Username</th>
                         <th data-column="Domain">Domain</th>
                         <th data-column="Password Placeholder">Password Placeholder</th>
                         <th data-column="Type">Type</th>

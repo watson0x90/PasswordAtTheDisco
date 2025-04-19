@@ -444,7 +444,10 @@ def analyze_domain(domain, cracked_accounts, uncracked_accounts, password_to_use
                 # Continue processing other rows
 
         # Calculate domain-wide risk metrics
-        domain_risk = calculate_domain_risk({"output_rows": output_rows})
+        domain_risk = calculate_domain_risk({
+            "output_rows": output_rows,
+            "risk_counter": risk_counter
+        })
 
         return {
             'output_rows': output_rows,
@@ -510,12 +513,21 @@ def calculate_domain_risk(data):
     """
     output_rows = data.get('output_rows', [])
     
+    # Get the risk counter from data, or calculate from output rows if not provided
+    if 'risk_counter' in data and data['risk_counter']:
+        risk_counter = data['risk_counter']
+    else:
+        # Calculate risk counter from output rows
+        risk_counter = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
+        for row in output_rows:
+            if row.get('Password Length', 'N/A') != 'N/A':  # Only count cracked passwords
+                risk_level = row.get('Risk Level', 'Unknown')
+                if risk_level in risk_counter:
+                    risk_counter[risk_level] += 1
+    
     # Extract scores for cracked passwords only
     cracked_rows = [row for row in output_rows if row.get('Password Length', 'N/A') != 'N/A']
     scores = [row.get('Score', 0) for row in cracked_rows]
-    
-    # Use the existing risk counter
-    risk_counter = data.get('risk_counter', {"Critical": 0, "High": 0, "Medium": 0, "Low": 0})
     
     # Calculate average and maximum scores
     avg_score = sum(scores) / len(scores) if scores else 0

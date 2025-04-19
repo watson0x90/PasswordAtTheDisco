@@ -43,7 +43,7 @@ def generate_combined_actionable_report(domain, data, seed, visuals, logger=None
         # Create HTML head
         html = html_head(f"Actionable Password Security Report - {domain}")
         
-        html += """
+        html += f"""
         <body>
             <div id="reportContent">
                 <h1>Actionable Password Security Report for {domain}</h1>

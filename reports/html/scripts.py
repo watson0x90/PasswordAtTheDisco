@@ -129,28 +129,32 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function initializeFilters() {
-        const headers = ['username', 'Domain', 'password', 'Type', 'Risk Level', 'Enabled', 'Last Logon Timestamp', 'Password Set to Expire', 'Controlled Object Count', 'DA Domains', 'Shared With', 'Last Password Set', 'Days Out of Compliance', 'Risk Vector'];
+        const headers = ['Username', 'Domain', 'Password', 'Type', 'Risk Level', 'Enabled', 'Last Logon Timestamp', 'Password Set to Expire', 'Controlled Object Count', 'DA Domains', 'Shared With', 'Last Password Set', 'Days Out of Compliance', 'Risk Vector'];
         headers.forEach(header => {
             const selectId = `filter-${header.replace(/[^a-zA-Z0-9]/g, '')}`;
             const th = document.querySelector(`th[data-column="${header}"]`);
-            th.innerHTML += `<select multiple id="${selectId}" class="filter-select"></select>`;
-            
-            const uniqueValues = [...new Set(allAccounts.map(acc => acc[header] || (header === 'DA Domains' ? (acc[header] ? 'Yes' : 'No') : 'N/A')))].sort();
-            const choicesOptions = uniqueValues.map(value => ({ value: value, label: value }));
-            
-            const select = document.getElementById(selectId);
-            new Choices(select, {
-                removeItemButton: true,
-                choices: choicesOptions,
-                placeholderValue: 'Filter ' + header,
-                maxItemCount: -1
-            });
-            
-            select.addEventListener('change', () => {
-                filters[header] = Array.from(select.selectedOptions).map(opt => opt.value);
-                currentPage = 1;
-                updateTable();
-            });
+            if (th) {
+                th.innerHTML += `<select multiple id="${selectId}" class="filter-select"></select>`;
+                
+                const uniqueValues = [...new Set(allAccounts.map(acc => acc[header] || 'N/A'))].sort();
+                const choicesOptions = uniqueValues.map(value => ({ value: value, label: value }));
+                
+                const select = document.getElementById(selectId);
+                if (select) {
+                    new Choices(select, {
+                        removeItemButton: true,
+                        choices: choicesOptions,
+                        placeholderValue: 'Filter ' + header,
+                        maxItemCount: -1
+                    });
+                    
+                    select.addEventListener('change', () => {
+                        filters[header] = Array.from(select.selectedOptions).map(opt => opt.value);
+                        currentPage = 1;
+                        updateTable();
+                    });
+                }
+            }
         });
     }
 
@@ -159,10 +163,11 @@ document.addEventListener('DOMContentLoaded', () => {
         tbody.innerHTML = '';
         
         const filtered = allAccounts.filter(acc => {
-            const matchesSearch = (acc.username || '').toLowerCase().includes(searchTerm);
+            const usernameField = acc.Username || acc.username || '';
+            const matchesSearch = usernameField.toLowerCase().includes(searchTerm);
             const matchesFilters = Object.keys(filters).every(header => {
                 if (!filters[header] || filters[header].length === 0) return true;
-                const value = header === 'DA Domains' ? (acc[header] ? 'Yes' : 'No') : (acc[header] || 'N/A');
+                const value = acc[header] || 'N/A';
                 return filters[header].includes(value);
             });
             return matchesSearch && matchesFilters;
@@ -181,16 +186,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 row.classList.add('risk-' + riskLevel.toLowerCase());
             }
             row.innerHTML = `
-                <td>${acc.username || 'N/A'}</td>
-                <td>${acc.Domain || acc.domain || 'N/A'}</td>
-                <td>${acc.password || 'N/A'}</td>
+                <td>${acc.Username || 'N/A'}</td>
+                <td>${acc.Domain || 'N/A'}</td>
+                <td>${acc.Password || 'N/A'}</td>
                 <td>${acc.Type || 'N/A'}</td>
                 <td>${acc['Risk Level'] || 'N/A'}</td>
                 <td>${acc['Enabled'] || 'Unknown'}</td>
                 <td>${acc['Last Logon Timestamp'] || 'Unknown'}</td>
                 <td>${acc['Password Set to Expire'] || 'Unknown'}</td>
                 <td>${acc['Controlled Object Count'] || 'N/A'}</td>
-                <td>${acc['DA Domains'] ? 'Yes' : 'No'}</td>
+                <td>${acc['DA Domains'] ? (acc['DA Domains'] === 'None' ? 'No' : 'Yes') : 'No'}</td>
                 <td>${acc['Shared With'] || '0'}</td>
                 <td>${acc['Last Password Set'] || 'Unknown'}</td>
                 <td>${acc['Days Out of Compliance'] || 'N/A'}</td>
@@ -340,28 +345,32 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function initializeFilters() {
-        const headers = ['username', 'Domain', 'Password Placeholder', 'Type', 'Risk Level', 'Enabled', 'Last Logon Timestamp', 'Password Set to Expire', 'Controlled Object Count', 'DA Domains', 'Shared With', 'Last Password Set', 'Days Out of Compliance', 'Risk Vector'];
+        const headers = ['Username', 'Domain', 'Password Placeholder', 'Type', 'Risk Level', 'Enabled', 'Last Logon Timestamp', 'Password Set to Expire', 'Controlled Object Count', 'DA Domains', 'Shared With', 'Last Password Set', 'Days Out of Compliance', 'Risk Vector'];
         headers.forEach(header => {
             const selectId = `filter-${header.replace(/[^a-zA-Z0-9]/g, '')}`;
             const th = document.querySelector(`th[data-column="${header}"]`);
-            th.innerHTML += `<select multiple id="${selectId}" class="filter-select"></select>`;
-            
-            const uniqueValues = [...new Set(allAccounts.map(acc => acc[header] || (header === 'DA Domains' ? (acc[header] ? 'Yes' : 'No') : 'N/A')))].sort();
-            const choicesOptions = uniqueValues.map(value => ({ value: value, label: value }));
-            
-            const select = document.getElementById(selectId);
-            new Choices(select, {
-                removeItemButton: true,
-                choices: choicesOptions,
-                placeholderValue: 'Filter ' + header,
-                maxItemCount: -1
-            });
-            
-            select.addEventListener('change', () => {
-                filters[header] = Array.from(select.selectedOptions).map(opt => opt.value);
-                currentPage = 1;
-                updateTable();
-            });
+            if (th) {
+                th.innerHTML += `<select multiple id="${selectId}" class="filter-select"></select>`;
+                
+                const uniqueValues = [...new Set(allAccounts.map(acc => acc[header] || 'N/A'))].sort();
+                const choicesOptions = uniqueValues.map(value => ({ value: value, label: value }));
+                
+                const select = document.getElementById(selectId);
+                if (select) {
+                    new Choices(select, {
+                        removeItemButton: true,
+                        choices: choicesOptions,
+                        placeholderValue: 'Filter ' + header,
+                        maxItemCount: -1
+                    });
+                    
+                    select.addEventListener('change', () => {
+                        filters[header] = Array.from(select.selectedOptions).map(opt => opt.value);
+                        currentPage = 1;
+                        updateTable();
+                    });
+                }
+            }
         });
     }
 
@@ -370,10 +379,11 @@ document.addEventListener('DOMContentLoaded', () => {
         tbody.innerHTML = '';
         
         const filtered = allAccounts.filter(acc => {
-            const matchesSearch = (acc.username || '').toLowerCase().includes(searchTerm);
+            const usernameField = acc.Username || acc.username || '';
+            const matchesSearch = usernameField.toLowerCase().includes(searchTerm);
             const matchesFilters = Object.keys(filters).every(header => {
                 if (!filters[header] || filters[header].length === 0) return true;
-                const value = header === 'DA Domains' ? (acc[header] ? 'Yes' : 'No') : (acc[header] || 'N/A');
+                const value = acc[header] || 'N/A';
                 return filters[header].includes(value);
             });
             return matchesSearch && matchesFilters;
@@ -392,8 +402,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 row.classList.add('risk-' + riskLevel.toLowerCase());
             }
             row.innerHTML = `
-                <td>${acc.username || 'N/A'}</td>
-                <td>${acc.Domain || acc.domain || 'N/A'}</td>
+                <td>${acc.Username || 'N/A'}</td>
+                <td>${acc.Domain || 'N/A'}</td>
                 <td>${acc['Password Placeholder'] || 'N/A'}</td>
                 <td>${acc.Type || 'N/A'}</td>
                 <td>${acc['Risk Level'] || 'N/A'}</td>
@@ -401,7 +411,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td>${acc['Last Logon Timestamp'] || 'Unknown'}</td>
                 <td>${acc['Password Set to Expire'] || 'Unknown'}</td>
                 <td>${acc['Controlled Object Count'] || 'N/A'}</td>
-                <td>${acc['DA Domains'] ? 'Yes' : 'No'}</td>
+                <td>${acc['DA Domains'] ? (acc['DA Domains'] === 'None' ? 'No' : 'Yes') : 'No'}</td>
                 <td>${acc['Shared With'] || '0'}</td>
                 <td>${acc['Last Password Set'] || 'Unknown'}</td>
                 <td>${acc['Days Out of Compliance'] || 'N/A'}</td>

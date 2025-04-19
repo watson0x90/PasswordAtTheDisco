@@ -14,6 +14,7 @@ import hashlib
 import threading
 from concurrent.futures import ProcessPoolExecutor
 import concurrent.futures
+from copy import deepcopy
 
 from core.config import reports_folder, html_reports_folder, markdown_folder, pdf_folder, ENABLE_ANIMATION
 from core.data import process_domain
@@ -30,7 +31,7 @@ from visualizations.core import generate_visualizations, generate_combined_visua
 
 from utils.file_utils import load_list, generate_pdfs_from_markdown
 from utils.misc import (show_task_progress, display_banner, print_success, 
-                    print_info, print_warning, print_error, error_suppression)
+                    print_info, print_warning, print_error, error_suppression, console)
 from collections import defaultdict
 
 
@@ -143,6 +144,9 @@ def process_domains(domain_entries, logger):
                 # Add a single task for tracking
                 task_id = progress.add_task("Processing", total=len(domain_entries))
                 
+                # Add live status display
+                status_panel = console.create_status_panel()
+                
                 # Process domains in parallel
                 with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
                     task_args = [(domain_entry, forbidden_words, keyboard_patterns, common_passwords, 
@@ -152,18 +156,22 @@ def process_domains(domain_entries, logger):
                     futures = [executor.submit(process_domain_wrapper, arg) for arg in task_args]
                     
                     # Process results as they complete
-                    for future in concurrent.futures.as_completed(futures):
+                    for i, future in enumerate(concurrent.futures.as_completed(futures)):
+                        domain = domain_entries[i].split(':')[0] if i < len(domain_entries) else f"domain_{i}"
+                        
                         if shutdown_event.is_set():
+                            status_panel.update("[bold red]Shutdown requested. Cancelling remaining tasks...[/bold red]")
                             executor.shutdown(wait=False, cancel_futures=True)
-                            print_warning("Shutdown requested, exiting before completion.")
                             break
                         
                         try:
                             results.append(future.result())
-                            progress.update(task_id, advance=1)
+                            # Update status with domain-specific information
+                            status_panel.update(f"[green]✓[/green] Completed {domain} ({i+1}/{len(domain_entries)})")
+                            progress.update(task_id, advance=1, description=f"Processing {len(domain_entries)-i-1} remaining domains")
                         except Exception as e:
-                            with error_suppression(logger.error):
-                                logger.error(f"Error during domain processing: {str(e)}", exc_info=True)
+                            status_panel.update(f"[red]✗[/red] Error processing {domain}: {str(e)}")
+                            logger.error(f"Error during domain processing: {str(e)}", exc_info=True)
                             progress.update(task_id, advance=1)
         else:
             # Non-animation path
@@ -181,9 +189,14 @@ def process_domains(domain_entries, logger):
             print_success("Domain processing complete")
     
         # Collect results
-        for cracked, uncracked, result in results:
+        for i, (cracked, uncracked, result) in enumerate(results):
             if result:
-                domain = result['output_rows'][0]['Domain'] if result['output_rows'] else None
+                domain = None
+                if result['output_rows']:
+                    domain = result['output_rows'][0]['Domain']
+                else:
+                    domain = domain_list[i] if i < len(domain_list) else f"domain_{i}"
+                
                 if domain:
                     all_data['domains'][domain] = {
                         'output_rows': result['output_rows'],
@@ -227,37 +240,133 @@ def process_domains(domain_entries, logger):
             
             write_csv_report('combined', combined_rows, is_combined=True)
             
-            # Save raw data to JSON
+            # Prepare enriched data for JSON files
+            # Process raw cracked data to add enriched fields with standardized names
+            enriched_cracked = []
+            for acc in all_cracked:
+                # Find the corresponding enriched data from domain results
+                domain = acc.get('domain', 'Unknown')
+                username = acc.get('username', '')
+                password = acc.get('password', '')
+                
+                # Find matching enriched data from domain output rows
+                enriched_data = None
+                if domain in all_data['domains']:
+                    for row in all_data['domains'][domain]['output_rows']:
+                        if row.get('Username') == username and row.get('Password') == password:
+                            enriched_data = row
+                            break
+                
+                # Create new enriched record with standardized field names
+                enriched_acc = {
+                    'Username': username,
+                    'Domain': domain,
+                    'Password': password,
+                    'Type': 'Cracked'
+                }
+                
+                # Add all enriched fields if found
+                if enriched_data:
+                    for key, value in enriched_data.items():
+                        if key not in enriched_acc:  # Don't overwrite existing fields
+                            enriched_acc[key] = value
+                else:
+                    # Provide default values for essential fields
+                    enriched_acc['Password Length'] = len(password) if password else 'N/A'
+                    enriched_acc['Shared With'] = len(global_password_to_users.get(password, [])) - 1 if password else 0
+                
+                # Ensure essential fields exist with defaults
+                enriched_acc['Risk Level'] = enriched_acc.get('Risk Level', 'Unknown')
+                enriched_acc['Enabled'] = enriched_acc.get('Enabled', 'Unknown')
+                enriched_acc['Last Logon Timestamp'] = enriched_acc.get('Last Logon Timestamp', 'Unknown')
+                enriched_acc['Password Set to Expire'] = enriched_acc.get('Password Set to Expire', 'Unknown')
+                enriched_acc['Controlled Object Count'] = enriched_acc.get('Controlled Object Count', 'Unknown')
+                enriched_acc['DA Domains'] = enriched_acc.get('DA Domains', 'None')
+                enriched_acc['Shared With'] = enriched_acc.get('Shared With', 0)
+                enriched_acc['Last Password Set'] = enriched_acc.get('Last Password Set', 'Unknown')
+                enriched_acc['Days Out of Compliance'] = enriched_acc.get('Days Out of Compliance', 'N/A')
+                enriched_acc['Risk Vector'] = enriched_acc.get('Risk Vector', 'N/A')
+                
+                enriched_cracked.append(enriched_acc)
+            
+            # Process uncracked accounts similarly
+            enriched_uncracked = []
+            for acc in all_uncracked:
+                domain = acc.get('domain', 'Unknown')
+                username = acc.get('username', '')
+                hash_value = acc.get('hash', '')
+                
+                # Find matching enriched data from domain output rows
+                enriched_data = None
+                if domain in all_data['domains']:
+                    for row in all_data['domains'][domain]['output_rows']:
+                        if row.get('Username') == username and row.get('Password Length', 'x') == 'N/A':
+                            enriched_data = row
+                            break
+                
+                # Create new enriched record
+                enriched_acc = {
+                    'Username': username,
+                    'Domain': domain,
+                    'Password': hash_value,
+                    'Password Length': 'N/A',
+                    'Type': 'Uncracked'
+                }
+                
+                # Add enriched fields if found
+                if enriched_data:
+                    for key, value in enriched_data.items():
+                        if key not in enriched_acc:
+                            enriched_acc[key] = value
+                else:
+                    # Provide default values
+                    enriched_acc['Shared With'] = len(global_hash_to_users.get(hash_value, [])) - 1 if hash_value else 0
+                
+                # Ensure essential fields with defaults
+                enriched_acc['Risk Level'] = enriched_acc.get('Risk Level', 'Unknown')
+                enriched_acc['Enabled'] = enriched_acc.get('Enabled', 'Unknown')
+                enriched_acc['Last Logon Timestamp'] = enriched_acc.get('Last Logon Timestamp', 'Unknown')
+                enriched_acc['Password Set to Expire'] = enriched_acc.get('Password Set to Expire', 'Unknown')
+                enriched_acc['Controlled Object Count'] = enriched_acc.get('Controlled Object Count', 'Unknown')
+                enriched_acc['DA Domains'] = enriched_acc.get('DA Domains', 'None')
+                enriched_acc['Shared With'] = enriched_acc.get('Shared With', 0)
+                enriched_acc['Last Password Set'] = enriched_acc.get('Last Password Set', 'Unknown')
+                enriched_acc['Days Out of Compliance'] = enriched_acc.get('Days Out of Compliance', 'N/A')
+                enriched_acc['Risk Vector'] = enriched_acc.get('Risk Vector', 'N/A')
+                
+                enriched_uncracked.append(enriched_acc)
+            
+            # Update the JSON data with enriched accounts
             all_data['combined'] = {
                 'combined_rows': combined_rows,
                 'global_password_to_users': {k: list(v) for k, v in global_password_to_users.items()},
                 'global_hash_to_users': {k: list(v) for k, v in global_hash_to_users.items()},
-                'all_cracked': all_cracked,
-                'all_uncracked': all_uncracked
+                'all_cracked': enriched_cracked,
+                'all_uncracked': enriched_uncracked
             }
             
+            # Save enriched data to JSON
             json_file = html_reports_folder / 'password_data.json'
             with open(json_file, 'w', encoding='utf-8') as f:
                 json.dump(all_data, f, indent=2)
-            logger.info(f"Saved raw data to JSON: {json_file}")
+            logger.info(f"Saved enriched data to JSON: {json_file}")
             
-            # Save data with password placeholders
-            all_data_with_placeholders = {
-                'combined': {
-                    'combined_rows': [
-                        {**row, 'Password Placeholder': hashlib.md5((global_seed + row['Password']).encode()).hexdigest()} 
-                        if 'Password' in row else row
-                        for row in combined_rows
-                    ],
-                    'global_password_to_users': {k: list(v) for k, v in global_password_to_users.items()},
-                    'global_hash_to_users': {k: list(v) for k, v in global_hash_to_users.items()},
-                    'all_cracked': [
-                        {**acc, 'Password Placeholder': hashlib.md5((global_seed + acc['password']).encode()).hexdigest()}
-                        for acc in all_cracked
-                    ],
-                    'all_uncracked': all_uncracked
-                }
-            }
+            # Create redacted version with password placeholders
+            all_data_with_placeholders = deepcopy(all_data)
+            
+            # Replace passwords with placeholders in all_cracked
+            for acc in all_data_with_placeholders['combined']['all_cracked']:
+                if 'Password' in acc:
+                    password = acc['Password']
+                    acc['Password Placeholder'] = hashlib.md5((global_seed + password).encode()).hexdigest()
+                    # Keep the password for reference but mark it as placeholder
+                
+            # Also add placeholders to combined rows
+            for row in all_data_with_placeholders['combined']['combined_rows']:
+                if 'Password' in row and 'Password' in row:
+                    password = row['Password']
+                    if password not in global_hash_to_users:  # Only for cracked passwords
+                        row['Password Placeholder'] = hashlib.md5((global_seed + password).encode()).hexdigest()
             
             json_file_with_placeholders = html_reports_folder / 'password_data_with_placeholders.json'
             with open(json_file_with_placeholders, 'w', encoding='utf-8') as f:

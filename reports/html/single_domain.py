@@ -27,7 +27,8 @@ def generate_html_report(domain, data, visuals, logger=None):
         # Create HTML head
         html = html_head(f"Password Security Report - {domain}")
         
-        html += """
+        # Notice the f-string prefix added here
+        html += f"""
         <body>
             <div id="reportContent">
                 <h1>Password Security Report for {domain}</h1>
@@ -72,7 +73,7 @@ def generate_html_report(domain, data, visuals, logger=None):
             percent_compliance = 0
             percent_nonexpiring = 0
 
-        # Overview section
+        # Overview section - using f-string
         html += f"""
         <h2>Overview</h2>
         <ul>
@@ -143,6 +144,7 @@ def generate_html_report(domain, data, visuals, logger=None):
             # Calculate total for percentages
             total_risk_accounts = sum(risk_distribution.values())
             
+            # Using f-string
             html += f"""
             <h2>Risk Distribution</h2>
             <p>Risk levels of the {cracked} cracked passwords in {domain}, assessed by length, complexity, and privilege.</p>
