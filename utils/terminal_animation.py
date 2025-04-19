@@ -1,32 +1,22 @@
 # utils/terminal_animation.py
 """
-Terminal animation module for password security audit tool.
-Provides rich visualization during the analysis process.
+Simplified terminal animation module for password security audit tool.
 """
 
-import random
 import time
 from datetime import datetime
-from collections import deque
 from rich.console import Console
-from rich.layout import Layout
+from rich.live import Live
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
-from rich.table import Table
+from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn
 from rich.text import Text
 from rich import box
-from rich.align import Align
-
-# Try to create a console, fail gracefully if Rich is not available
-try:
-    console = Console()
-except ImportError:
-    console = None
+from rich.table import Table
+from rich.layout import Layout
 
 class PasswordAuditAnimation:
     """
-    Main class for the password audit animation.
-    Provides a rich visual interface during password analysis.
+    Simplified animation class for the password audit.
     """
     
     def __init__(self, domains):
@@ -41,539 +31,197 @@ class PasswordAuditAnimation:
         self.current_domain_index = 0
         self.completed_domains = 0
         self.start_time = time.time()
-        self.stats = {
-            "total_accounts": 0,
-            "analyzed_accounts": 0,
-            "cracked_accounts": 0,
-            "uncracked_accounts": 0,
-            "da_pathway_accounts": 0,
-            "compliance_issues": 0,
-            "non_expiring_accounts": 0,
-        }
-        self.risk_counts = {
-            "Critical": 0,
-            "High": 0,
-            "Medium": 0,
-            "Low": 0
-        }
-        self.risk_history = {
-            "Critical": deque([0] * 20, maxlen=20),
-            "High": deque([0] * 20, maxlen=20),
-            "Medium": deque([0] * 20, maxlen=20),
-            "Low": deque([0] * 20, maxlen=20)
-        }
-        self.recent_findings = []
+        self.total_accounts = 0
+        self.processed_accounts = 0
         self.frame_counter = 0
-        self.current_domain_accounts = 100  # Default to 100 for initial display
+        self.current_domain = domains[0] if domains else "Unknown"
+        self.current_domain_total = 100  # Default
         self.current_domain_completed = 0
         
-        # Initialize layout
-        self.setup_layout()
-        
-        # Progress tracking
-        self.setup_progress()
-    
-    def setup_layout(self):
-        """Set up the rich layout for the animation."""
-        self.layout = Layout(name="root")
-        
-        # Split into header, body, and footer
-        self.layout.split(
-            Layout(name="header", size=3),
-            Layout(name="body", ratio=1),
-            Layout(name="footer", size=3)
-        )
-        
-        # Split body into left and right columns
-        self.layout["body"].split_row(
-            Layout(name="left", ratio=2),
-            Layout(name="right", ratio=1)
-        )
-        
-        # Split left into sections
-        self.layout["left"].split(
-            Layout(name="progress", size=12),
-            Layout(name="stats", size=12),
-            Layout(name="findings", ratio=1)
-        )
-        
-        # Split right into sections
-        self.layout["right"].split(
-            Layout(name="domain_list", ratio=1),
-            Layout(name="risk_meter", size=14)
-        )
-
-    def setup_progress(self):
-        """Set up progress bars."""
-        # Overall progress (domains)
-        self.overall_progress = Progress(
-            TimeElapsedColumn(),
-            BarColumn(bar_width=40),
-            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-            TextColumn("•"),
-            TimeRemainingColumn(),
-            expand=True
-        )
-        self.overall_task = self.overall_progress.add_task(
-            "[bold blue]Overall Progress", 
-            total=self.total_domains
-        )
-        
-        # Domain progress (accounts)
+        # Create progress bars
         self.domain_progress = Progress(
-            SpinnerColumn("dots"),
+            TextColumn("[bold cyan]Domain:"),
             TextColumn("[bold green]{task.description}"),
-            BarColumn(bar_width=30),
+            BarColumn(bar_width=40),
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("({task.completed}/{task.total})"),
             expand=True
         )
         
-        # Initialize with the first domain or a placeholder if no domains
-        initial_domain = self.domains[0] if self.domains else "domain"
         self.domain_task = self.domain_progress.add_task(
-            f"[cyan]Processing domain: {initial_domain}", 
-            total=self.current_domain_accounts
-        )
-        
-        # Analysis progress (detailed steps)
-        self.analysis_progress = Progress(
-            SpinnerColumn("dots2"),
-            TextColumn("[bold magenta]{task.description}"),
-            BarColumn(bar_width=20),
-            TextColumn("{task.completed:.0f}/{task.total}"),
-            expand=True
-        )
-        
-        # Add analysis tasks
-        self.analysis_tasks = {}
-        self.analysis_tasks["cracking"] = self.analysis_progress.add_task(
-            "[magenta]Password analysis", total=100
-        )
-        self.analysis_tasks["risk_scoring"] = self.analysis_progress.add_task(
-            "[yellow]Risk scoring", total=100
-        )
-        self.analysis_tasks["bloodhound"] = self.analysis_progress.add_task(
-            "[red]BloodHound integration", total=100
+            self.current_domain, 
+            total=self.current_domain_total
         )
     
-    def update_header(self):
-        """Update the header content."""
-        header_text = Text()
-        header_text.append("Password Security Audit - ", style="bold")
-        header_text.append("CVSS-Style Risk Analysis", style="bold green")
-        
-        # Running time
+    def get_header(self):
+        """Create the header panel."""
+        # Calculate elapsed time
         elapsed = time.time() - self.start_time
         hours, remainder = divmod(int(elapsed), 3600)
         minutes, seconds = divmod(remainder, 60)
         time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-        header_text.append(f" - Running time: {time_str}", style="dim")
         
-        self.layout["header"].update(Panel(
-            Align.center(header_text),
-            style="white on blue",
-            box=box.HEAVY
-        ))
-    
-    def update_footer(self):
-        """Update the footer content."""
-        footer_text = Text()
+        header_text = Text()
+        header_text.append("Password! At The Disco - ", style="bold white")
+        header_text.append("Vector Based Risk Analysis", style="bold green")
+        header_text.append(f" - Running time: {time_str}", style="bold cyan")
         
-        # Add a pulsing indicator for authenticity
-        if self.frame_counter % 8 < 4:
-            indicator = "⚡ ACTIVE ⚡"
-            style = "bold green"
-        else:
-            indicator = "⚡ ACTIVE ⚡"
-            style = "green"
-        
-        footer_text.append(indicator, style=style)
-        footer_text.append(" | ")
-        footer_text.append(f"Domains: {self.completed_domains}/{self.total_domains}", style="cyan")
-        footer_text.append(" | ")
-        footer_text.append(f"Accounts: {self.stats['analyzed_accounts']}", style="yellow")
-        footer_text.append(" | ")
-        footer_text.append("Press Ctrl+C to abort", style="dim")
-        
-        self.layout["footer"].update(Panel(
-            Align.center(footer_text),
-            style="white on dark_blue",
-            box=box.HEAVY
-        ))
-    
-    def update_progress_section(self):
-        """Update the progress section."""
-        # Update overall progress
-        self.overall_progress.update(self.overall_task, completed=self.completed_domains)
-        
-        # Update domain progress
-        self.domain_progress.update(
-            self.domain_task, 
-            completed=self.current_domain_completed,
-            total=self.current_domain_accounts
-        )
-        
-        # Main progress panel with nested progress bars
-        progress_panel = Panel(
-            Layout(
-                Layout(self.overall_progress, size=3),
-                Layout(self.domain_progress, size=3),
-                Layout(self.analysis_progress, size=5)
-            ),
-            title="[b]Analysis Progress",
+        return Panel(
+            header_text,
+            box=box.HEAVY,
             border_style="blue",
-            box=box.ROUNDED,
-            padding=(0, 1)
-        )
-        
-        # Update the layout with the panel
-        self.layout["progress"].update(progress_panel)
-        
-        # Update analysis tasks with some simulated progress
-        for task_id in self.analysis_tasks:
-            current = self.analysis_progress.tasks[self.analysis_tasks[task_id]].completed
-            if current >= 100:
-                # Reset task when it completes
-                self.analysis_progress.update(self.analysis_tasks[task_id], completed=0)
-            else:
-                # Increment based on domain progress
-                if self.current_domain_accounts > 0:
-                    # Scale progress to match domain progress
-                    progress_ratio = self.current_domain_completed / self.current_domain_accounts
-                    new_value = min(100, 100 * progress_ratio)
-                    self.analysis_progress.update(self.analysis_tasks[task_id], completed=new_value)
-                else:
-                    # Increment based on frame count if no domain data
-                    increment = 0.5 + (self.frame_counter % 3) * 0.5  # Vary the increment slightly
-                    new_value = min(100, current + increment)
-                    self.analysis_progress.update(self.analysis_tasks[task_id], completed=new_value)
-    
-    def update_stats_section(self):
-        """Update the statistics section."""
-        stats_table = Table(box=box.SIMPLE, expand=True)
-        stats_table.add_column("Metric", style="cyan")
-        stats_table.add_column("Value", justify="right", style="green")
-        stats_table.add_column("Details", style="yellow")
-        
-        # Add rows for each stat with detailed breakdowns
-        cracked_percent = 0
-        if self.stats["analyzed_accounts"] > 0:
-            cracked_percent = (self.stats["cracked_accounts"] / self.stats["analyzed_accounts"]) * 100
-        
-        stats_table.add_row(
-            "Total Accounts", 
-            str(self.stats["analyzed_accounts"]), 
-            f"Processing"
-        )
-        stats_table.add_row(
-            "Cracked", 
-            str(self.stats["cracked_accounts"]), 
-            f"[yellow]{cracked_percent:.1f}%[/yellow]"
-        )
-        stats_table.add_row(
-            "Uncracked", 
-            str(self.stats["uncracked_accounts"]), 
-            f"[green]{100-cracked_percent:.1f}%[/green]"
-        )
-        stats_table.add_row(
-            "DA Pathway", 
-            str(self.stats["da_pathway_accounts"]), 
-            "[red]High Risk[/red]"
-        )
-        stats_table.add_row(
-            "Non-Expiring", 
-            str(self.stats["non_expiring_accounts"]), 
-            "[yellow]Policy Violation[/yellow]"
-        )
-        stats_table.add_row(
-            "Compliance Issues", 
-            str(self.stats["compliance_issues"]), 
-            "[yellow]Out of Policy[/yellow]"
-        )
-        
-        self.layout["stats"].update(
-            Panel(
-                stats_table,
-                title="[b]Analysis Summary",
-                border_style="green",
-                box=box.ROUNDED
-            )
+            title="Security Audit",
+            title_align="center"
         )
     
-    def update_findings_section(self):
-        """Update the findings section with recently discovered issues."""
-        findings_text = Text()
+    def get_domains_list(self):
+        """Create a table with domain status."""
+        domains_table = Table(show_header=False, box=None, expand=True)
+        domains_table.add_column("Domain", style="cyan")
+        domains_table.add_column("Status", style="green", justify="right")
         
-        if not self.recent_findings:
-            findings_text.append("No significant findings yet...", style="dim")
-        else:
-            for i, finding in enumerate(self.recent_findings[:12]):  # Show top 12 findings
-                severity_style = {
-                    "Critical": "bold red",
-                    "High": "red",
-                    "Medium": "yellow",
-                    "Low": "green"
-                }.get(finding["severity"], "white")
-                
-                findings_text.append(f"{finding['timestamp']} ", style="dim")
-                findings_text.append(f"[{finding['severity']}] ", style=severity_style)
-                findings_text.append(f"{finding['message']}\n")
-        
-        self.layout["findings"].update(
-            Panel(
-                findings_text,
-                title="[b]Recent Findings",
-                border_style="yellow",
-                box=box.ROUNDED
-            )
-        )
-    
-    def update_domain_list(self):
-        """Update the domain list with processing status."""
-        domain_table = Table(box=None, expand=True)
-        domain_table.add_column("Domain", style="cyan")
-        domain_table.add_column("Status", justify="right")
-        
-        # Show at most 10 domains to prevent overflowing
-        visible_domains = []
-        
-        # Always include current domain and some before/after
+        # Determine which domains to show (focus on current + a few before/after)
         current_idx = self.current_domain_index
-        start_idx = max(0, current_idx - 4)
-        end_idx = min(len(self.domains), current_idx + 6)
+        visible_count = min(10, len(self.domains))
         
-        # Add ellipses if more at beginning
-        if start_idx > 0:
-            visible_domains.append(("...", -1))
-        
-        # Add visible domains
-        for i in range(start_idx, end_idx):
-            visible_domains.append((self.domains[i], i))
+        # Calculate start index to center around current domain
+        if current_idx < visible_count // 2:
+            start_idx = 0
+        elif current_idx > len(self.domains) - visible_count // 2:
+            start_idx = max(0, len(self.domains) - visible_count)
+        else:
+            start_idx = max(0, current_idx - visible_count // 2)
             
-        # Add ellipses if more at end
-        if end_idx < len(self.domains):
-            visible_domains.append(("...", -2))
+        end_idx = min(len(self.domains), start_idx + visible_count)
         
-        for domain, i in visible_domains:
-            if i < current_idx and i >= 0:
+        # Show domains with appropriate status indicators
+        for i in range(start_idx, end_idx):
+            domain = self.domains[i]
+            if i < current_idx:
                 # Completed domain
-                status = "[bold green]COMPLETE[/bold green]"
+                domains_table.add_row(domain, "✓ COMPLETE")
             elif i == current_idx:
-                # Current domain - with animated indicator
-                if self.frame_counter % 4 == 0:
-                    status = "[bold blue]PROCESSING [white]⚡[/white][/bold blue]"
-                elif self.frame_counter % 4 == 1:
-                    status = "[bold blue]PROCESSING [white]⚡⚡[/white][/bold blue]"
-                elif self.frame_counter % 4 == 2:
-                    status = "[bold blue]PROCESSING [white]⚡⚡⚡[/white][/bold blue]"
-                else:
-                    status = "[bold blue]PROCESSING [white]⚡⚡[/white][/bold blue]"
-            elif i == -1:
-                # Ellipses at beginning
-                status = "[dim]...[/dim]"
-            elif i == -2:
-                # Ellipses at end
-                status = "[dim]...[/dim]"
+                # Current domain with animated indicator
+                bolt = "⚡" * (1 + (self.frame_counter % 3))
+                domains_table.add_row(domain, f"{bolt} PROCESSING")
             else:
                 # Pending domain
-                status = "[dim]PENDING[/dim]"
-            
-            domain_table.add_row(domain, status)
+                domains_table.add_row(domain, "PENDING")
         
-        self.layout["domain_list"].update(
-            Panel(
-                domain_table,
-                title="[b]Domain Queue",
-                border_style="cyan",
-                box=box.ROUNDED
-            )
-        )
-    
-    def update_risk_meter(self):
-        """Update the risk assessment meter."""
-        # Update risk history
-        for level in self.risk_counts:
-            # Append current count to history
-            self.risk_history[level].append(self.risk_counts[level])
-        
-        risk_table = Table(box=box.SIMPLE, expand=True)
-        risk_table.add_column("Risk Level", style="white")
-        risk_table.add_column("Count", justify="right")
-        risk_table.add_column("Bar")
-        
-        total_risks = sum(self.risk_counts.values())
-        max_value = max(self.risk_counts.values()) if total_risks > 0 else 1
-        
-        # Calculate percentage of total for each risk level
-        for level in ["Critical", "High", "Medium", "Low"]:
-            count = self.risk_counts[level]
-            
-            # Calculate bar width based on percentage and fixed max width
-            width = int(20 * (count / max_value)) if max_value > 0 else 0
-            
-            # Create bar with appropriate color
-            bar_color = {
-                "Critical": "red",
-                "High": "yellow",
-                "Medium": "blue",
-                "Low": "green"
-            }[level]
-            
-            # Create animated "filling" bar for visual effect
-            bar = ""
-            if width > 0:
-                # Display fuller bar when frame count is higher
-                fill_chars = ['▏', '▎', '▍', '▌', '▋', '▊', '▉', '█']
-                
-                # Main filled part
-                bar += f"[{bar_color}]{'█' * (width-1)}[/{bar_color}]" if width > 1 else ""
-                
-                # Animated end character
-                end_char = fill_chars[self.frame_counter % len(fill_chars)]
-                bar += f"[{bar_color}]{end_char}[/{bar_color}]"
-            else:
-                # Empty bar with animation for zero counts
-                if self.frame_counter % 4 == 0:
-                    bar = f"[{bar_color}]▏[/{bar_color}]"
-                else:
-                    bar = ""
-            
-            risk_table.add_row(level, str(count), bar)
-            
-        # Create a trending indicator based on history
-        trend_table = Table.grid()
-        trend_table.add_column("Level", style="dim")
-        trend_table.add_column("Trend", style="bold")
-        
-        for level in ["Critical", "High", "Medium", "Low"]:
-            # Check if we have enough history for trend
-            if len(self.risk_history[level]) >= 3:
-                # Get last few points
-                recent = list(self.risk_history[level])[-3:]
-                if recent[2] > recent[0]:
-                    trend = "[bold red]↑ INCREASING[/bold red]"
-                elif recent[2] < recent[0]:
-                    trend = "[bold green]↓ DECREASING[/bold green]"
-                else:
-                    trend = "[yellow]→ STABLE[/yellow]"
-            else:
-                trend = "[dim]... MONITORING[/dim]"
-            
-            trend_table.add_row(level, trend)
-        
-        # Combine tables into risk panel
-        risk_panel = Panel(
-            Layout(
-                Layout(risk_table),
-                Layout(trend_table, size=6)
-            ),
-            title="[b]Risk Distribution",
-            border_style="red",
+        return Panel(
+            domains_table,
+            title="Domain Queue",
+            border_style="green",
             box=box.ROUNDED
         )
-        
-        self.layout["risk_meter"].update(risk_panel)
     
-    def add_finding(self, message, severity):
-        """
-        Add a new finding to the recent findings list.
+    def get_footer(self):
+        """Create the footer panel."""
+        # Choose lightning bolt animation frame
+        bolt_patterns = ["⚡", "⚡⚡", "⚡⚡⚡", "⚡⚡"]
+        bolt = bolt_patterns[self.frame_counter % len(bolt_patterns)]
         
-        Args:
-            message (str): Finding message
-            severity (str): Severity level (Critical, High, Medium, Low)
-        """
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        self.recent_findings.insert(0, {
-            "timestamp": timestamp,
-            "severity": severity,
-            "message": message
-        })
+        footer_text = Text()
+        footer_text.append(f"{bolt} ", style="bold yellow")
+        footer_text.append(f"Domains: {self.completed_domains}/{self.total_domains} | ", style="bold cyan")
+        footer_text.append(f"Accounts: {self.processed_accounts} | ", style="bold green")
+        footer_text.append("Press Ctrl+C to abort", style="dim")
         
-        # Keep only the most recent findings
-        self.recent_findings = self.recent_findings[:20]
-    
-    def set_domain_progress(self, domain_index, accounts=None):
-        """
-        Update the current domain and its progress.
-        
-        Args:
-            domain_index (int): Index of the current domain
-            accounts (int, optional): Number of accounts in this domain
-        """
-        if domain_index >= 0 and domain_index < len(self.domains):
-            self.current_domain_index = domain_index
-            
-            if accounts is not None:
-                self.current_domain_accounts = max(1, accounts)  # Ensure at least 1
-                self.current_domain_completed = 0
-                
-                # Update domain progress bar
-                domain_name = self.domains[domain_index]
-                self.domain_progress.update(
-                    self.domain_task,
-                    description=f"[cyan]Processing domain: {domain_name}",
-                    total=self.current_domain_accounts,
-                    completed=0
-                )
-    
-    def increment_domain_progress(self, amount=1):
-        """
-        Increment progress for the current domain.
-        
-        Args:
-            amount (int): Amount to increment by
-        """
-        self.current_domain_completed = min(self.current_domain_completed + amount, self.current_domain_accounts)
-        
-        if self.current_domain_accounts > 0:
-            self.domain_progress.update(
-                self.domain_task,
-                completed=self.current_domain_completed
-            )
-    
-    def complete_current_domain(self):
-        """Mark the current domain as completed and advance to the next one."""
-        self.completed_domains += 1
-        self.overall_progress.update(self.overall_task, advance=1)
-        
-        # Update domain progress to 100%
-        self.current_domain_completed = self.current_domain_accounts
-        self.domain_progress.update(
-            self.domain_task,
-            completed=self.current_domain_accounts
+        return Panel(
+            footer_text, 
+            box=box.HEAVY, 
+            border_style="blue"
         )
-        
-        # Move to next domain
-        if self.current_domain_index < len(self.domains) - 1:
-            self.current_domain_index += 1
-            
-            # Reset domain progress for next domain
-            next_domain = self.domains[self.current_domain_index]
-            self.current_domain_accounts = 100  # Default until we know the account count
-            self.current_domain_completed = 0
-            
-            self.domain_progress.update(
-                self.domain_task,
-                description=f"[cyan]Processing domain: {next_domain}",
-                completed=0,
-                total=self.current_domain_accounts
-            )
-    
-    def update(self):
-        """Update the animation frame."""
-        # Update frame counter
-        self.frame_counter += 1
-        
-        # Update all sections
-        self.update_header()
-        self.update_footer()
-        self.update_progress_section()
-        self.update_stats_section()
-        self.update_findings_section()
-        self.update_domain_list()
-        self.update_risk_meter()
     
     def render(self):
-        """Render the current frame."""
-        return self.layout
+        """Render the full UI."""
+        # Create main layout
+        layout = Layout()
+        
+        # Split into header, body, footer
+        layout.split(
+            Layout(name="header", size=3),
+            Layout(name="body"),
+            Layout(name="footer", size=3)
+        )
+        
+        # Update header and footer
+        layout["header"].update(self.get_header())
+        layout["footer"].update(self.get_footer())
+        
+        # Create body with progress and domains
+        body = Layout()
+        body.split_row(
+            Layout(name="progress"),
+            Layout(name="domains")
+        )
+        
+        # Update the body sections
+        body["progress"].update(self.domain_progress)
+        body["domains"].update(self.get_domains_list())
+        
+        # Update the main body
+        layout["body"].update(body)
+        
+        # Increment frame counter for animations
+        self.frame_counter += 1
+        
+        return layout
+    
+    def set_domain(self, domain_index, total_accounts=None):
+        """
+        Set the active domain and update progress.
+        
+        Args:
+            domain_index (int): Index of domain in the domains list
+            total_accounts (int, optional): Total accounts in the domain
+        """
+        if 0 <= domain_index < len(self.domains):
+            self.current_domain_index = domain_index
+            self.current_domain = self.domains[domain_index]
+            
+            if total_accounts is not None:
+                self.current_domain_total = max(1, total_accounts)
+                self.current_domain_completed = 0
+            
+            # Update the progress bar
+            self.domain_progress.update(
+                self.domain_task,
+                description=self.current_domain,
+                completed=0,
+                total=self.current_domain_total
+            )
+    
+    def update_progress(self, completed=None, increment=None):
+        """
+        Update current domain progress.
+        
+        Args:
+            completed (int, optional): Directly set completed count
+            increment (int, optional): Increment current completed count
+        """
+        if completed is not None:
+            self.current_domain_completed = min(completed, self.current_domain_total)
+        elif increment is not None:
+            self.current_domain_completed = min(
+                self.current_domain_completed + increment, 
+                self.current_domain_total
+            )
+            
+        self.domain_progress.update(
+            self.domain_task,
+            completed=self.current_domain_completed
+        )
+    
+    def complete_domain(self):
+        """Mark current domain as complete and move to next."""
+        # Update counters
+        self.completed_domains += 1
+        self.processed_accounts += self.current_domain_completed
+        
+        # Set progress to 100%
+        self.update_progress(completed=self.current_domain_total)
+        
+        # Move to next domain if available
+        if self.current_domain_index < len(self.domains) - 1:
+            self.set_domain(self.current_domain_index + 1)
