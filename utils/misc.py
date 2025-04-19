@@ -1,224 +1,16 @@
 # utils/misc.py
 """
 Miscellaneous utility functions for the password audit tool.
-Enhanced with robust error handling and progress tracking.
+Enhanced with robust error handling.
 """
 
 import sys
 import time
 import shutil
-import threading
 import datetime
 import os
 from contextlib import contextmanager
 from core.config import ENABLE_ANIMATION
-
-# Try to import Rich, use fallback if not available
-try:
-    from rich.console import Console
-    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn, TimeRemainingColumn
-    from rich.live import Live
-    from rich.panel import Panel
-    from rich.text import Text
-    from rich.table import Table
-    from rich.status import Status
-    HAS_RICH = True
-except ImportError:
-    HAS_RICH = False
-
-# Try to import psutil, use fallback if not available
-try:
-    import psutil
-    HAS_PSUTIL = True
-except ImportError:
-    HAS_PSUTIL = False
-
-# Create Rich console if available with proper feature detection
-def setup_console():
-    """Set up Rich console with appropriate feature detection."""
-    if HAS_RICH:
-        try:
-            # Test if we can use all Rich features
-            console = Console()
-            console.size
-            console.color_system
-            
-            # If all features work, return the console
-            return console
-        except Exception:
-            # Fall back to a more compatible console
-            return Console(color_system="standard", highlight=False, record=False)
-    return None
-
-# Initialize console
-console = setup_console()
-
-class ThrottledProgress:
-    """Wrapper for Rich progress with update rate limiting."""
-    
-    def __init__(self, progress, task_id, min_update_interval=0.1):
-        """
-        Initialize rate-limited progress tracker.
-        
-        Args:
-            progress: Rich Progress object
-            task_id: Task ID to update
-            min_update_interval (float): Minimum seconds between updates
-        """
-        self.progress = progress
-        self.task_id = task_id
-        self.min_update_interval = min_update_interval
-        self.last_update = 0
-        self.pending_advance = 0
-        
-    def update(self, advance=1, **kwargs):
-        """
-        Update progress with rate limiting.
-        
-        Args:
-            advance (int): Progress amount to advance
-            kwargs: Additional progress parameters
-        """
-        self.pending_advance += advance
-        
-        current_time = time.time()
-        if current_time - self.last_update >= self.min_update_interval:
-            self.progress.update(self.task_id, advance=self.pending_advance, **kwargs)
-            self.pending_advance = 0
-            self.last_update = current_time
-            
-    def force_update(self, **kwargs):
-        """
-        Force an immediate update regardless of timing.
-        
-        Args:
-            kwargs: Progress parameters
-        """
-        if self.pending_advance > 0:
-            self.progress.update(self.task_id, advance=self.pending_advance, **kwargs)
-            self.pending_advance = 0
-            self.last_update = time.time()
-
-def show_task_progress(task_name: str, total: int, update_callback=None):
-    """
-    Create and return a Rich progress context manager for task progress.
-    Enhanced with adaptive width and better metrics.
-    
-    Args:
-        task_name (str): Name of the task
-        total (int): Total number of steps
-        update_callback (callable, optional): Callback for updating progress
-        
-    Returns:
-        Progress context manager if Rich is available, else None
-    """
-    if not ENABLE_ANIMATION or not HAS_RICH:
-        return DummyProgress()
-    
-    # Get terminal width
-    terminal_width = shutil.get_terminal_size().columns if hasattr(shutil, 'get_terminal_size') else 80
-    
-    # Adjust bar width based on terminal width
-    bar_width = max(10, min(40, terminal_width - 80))
-        
-    # Use a single console instance and set transient=True to avoid duplicated lines
-    progress = Progress(
-        SpinnerColumn(),
-        TextColumn(f"[bold blue]{task_name}"),
-        BarColumn(bar_width=bar_width),  # Adaptive width
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TextColumn("[cyan]{task.completed}/{task.total}"),
-        TimeElapsedColumn(),
-        TimeRemainingColumn(),  # Add remaining time estimate
-        console=console,  # Use the global console to prevent duplicate outputs
-        transient=True,   # This helps prevent duplicate lines by refreshing in place
-        refresh_per_second=5  # Lower refresh rate to reduce flicker
-    )
-    
-    # Create a single task with the provided total
-    task_id = progress.add_task(task_name, total=total)
-    
-    if update_callback:
-        update_callback(progress, task_id)
-        
-    return progress
-
-def create_metrics_live_display():
-    """
-    Create a live metrics panel for domain processing.
-    
-    Returns:
-        tuple: (Live object, metrics dict) if Rich is available, else (None, {})
-    """
-    if HAS_RICH and console:
-        metrics = {
-            "Domains Processed": 0,
-            "Accounts Analyzed": 0,
-            "Cracked Passwords": 0,
-            "Processing Rate": "0 domains/sec",
-            "Elapsed Time": "00:00:00",
-            "Memory Usage": "0 MB"
-        }
-        
-        start_time = time.time()
-        
-        def get_panel():
-            # Update timing metrics
-            elapsed = time.time() - start_time
-            metrics["Elapsed Time"] = str(datetime.timedelta(seconds=int(elapsed)))
-            
-            # Calculate processing rate
-            if metrics["Domains Processed"] > 0 and elapsed > 0:
-                rate = metrics["Domains Processed"] / elapsed
-                metrics["Processing Rate"] = f"{rate:.2f} domains/sec"
-                
-            # Get memory usage from psutil
-            try:
-                if HAS_PSUTIL:
-                    process = psutil.Process(os.getpid())
-                    memory = process.memory_info().rss / (1024 * 1024)
-                    metrics["Memory Usage"] = f"{memory:.1f} MB"
-            except (ImportError, AttributeError):
-                metrics["Memory Usage"] = "Unknown"
-            
-            # Create a table for better formatting
-            table = Table(show_header=False, box=None)
-            table.add_column("Metric")
-            table.add_column("Value")
-            
-            for key, value in metrics.items():
-                table.add_row(key, str(value))
-                
-            return Panel(table, title="Processing Metrics", border_style="blue")
-        
-        # Create live display with 1 second refresh rate
-        live = Live(get_panel(), refresh_per_second=1, console=console)
-        return live, metrics
-    
-    return None, {}
-
-def process_with_group(title, function, *args, **kwargs):
-    """
-    Run a function with a visual group in the console.
-    
-    Args:
-        title (str): Group title
-        function (callable): Function to run
-        args, kwargs: Arguments to pass to function
-        
-    Returns:
-        Any: Return value from function
-    """
-    if HAS_RICH and console:
-        with console.group(f"[bold blue]{title}[/bold blue]"):
-            result = function(*args, **kwargs)
-            console.print(f"[green]✓[/green] {title} completed")
-            return result
-    else:
-        print(f"\n--- {title} ---")
-        result = function(*args, **kwargs)
-        print(f"--- {title} completed ---\n")
-        return result
 
 @contextmanager
 def error_suppression(log_function=None):
@@ -304,142 +96,42 @@ def pluralize(count: int, singular: str, plural: str = None) -> str:
         plural = singular + "s"
     return singular if count == 1 else plural
 
-class DummyProgress:
-    """Dummy progress context manager for when Rich is not available."""
-    
-    def __init__(self):
-        self.task_id = 0
-        self.total = 0
-        self.completed = 0
-        self.start_time = time.time()
-    
-    def __enter__(self):
-        print(f"Starting progress tracking... (animation disabled)")
-        return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        elapsed = time.time() - self.start_time
-        print(f"Progress complete. Processed {self.completed}/{self.total} in {elapsed:.1f}s")
-        
-        # Print exception if one occurred
-        if exc_type:
-            print(f"Error during progress: {exc_val}")
-    
-    def add_task(self, description, total=None):
-        self.task_id += 1
-        self.total = total or 0
-        print(f"Task: {description}, Total: {total}")
-        return self.task_id
-    
-    def update(self, task_id, advance=1, completed=None, description=None):
-        if completed is not None:
-            self.completed = completed
-        else:
-            self.completed += advance
-        
-        # Print progress update at reasonable intervals
-        if self.total and self.completed % max(1, self.total // 10) == 0:
-            percentage = (self.completed / self.total * 100) if self.total else 0
-            print(f"Progress: {self.completed}/{self.total} ({percentage:.1f}%)" + 
-                  (f" - {description}" if description else ""))
-
 def print_info(message):
-    """Print an info message with Rich formatting if available."""
-    if HAS_RICH and console:
-        console.print(f"[blue]INFO:[/blue] {message}")
-    else:
-        print(f"INFO: {message}")
+    """Print an info message."""
+    print(f"INFO: {message}")
 
 def print_success(message):
-    """Print a success message with Rich formatting if available."""
-    if HAS_RICH and console:
-        console.print(f"[green]SUCCESS:[/green] {message}")
-    else:
-        print(f"SUCCESS: {message}")
+    """Print a success message."""
+    print(f"SUCCESS: {message}")
 
 def print_warning(message):
-    """Print a warning message with Rich formatting if available."""
-    if HAS_RICH and console:
-        console.print(f"[yellow]WARNING:[/yellow] {message}")
-    else:
-        print(f"WARNING: {message}")
+    """Print a warning message."""
+    print(f"WARNING: {message}")
 
 def print_error(message, file=None, log_function=None):
     """
-    Print an error message with Rich formatting if available,
-    and optionally log it instead of printing.
+    Print an error message and optionally log it.
+    
+    Args:
+        message (str): Error message
+        file (file, optional): File to write to
+        log_function (callable, optional): Function to log message
     """
     if log_function:
         log_function(message)
-    elif HAS_RICH and console and not file:
-        console.print(f"[bold red]ERROR:[/bold red] {message}")
+    elif file:
+        print(f"ERROR: {message}", file=file)
     else:
-        if file:
-            print(f"ERROR: {message}", file=file)
-        else:
-            print(f"ERROR: {message}")
+        print(f"ERROR: {message}")
 
 def display_banner(title):
-    """Display a fancy banner with Rich if available."""
-    if HAS_RICH and console:
-        text = Text()
-        text.append("Password Security Audit Tool\n", style="bold cyan")
-        text.append(title, style="bold")
-        console.print(Panel(text, border_style="cyan"))
-    else:
-        width = shutil.get_terminal_size().columns if hasattr(shutil, 'get_terminal_size') else 80
-        print("=" * width)
-        print(f"Password Security Audit Tool - {title}".center(width))
-        print("=" * width)
-
-# Improved Status Panel implementation that integrates with progress display
-class StatusPanel:
-    """Status panel for displaying operation status without disrupting progress."""
+    """
+    Display a banner with the given title.
     
-    def __init__(self, console_instance):
-        """
-        Initialize a status panel.
-        
-        Args:
-            console_instance (Console): Rich console instance
-        """
-        self.console = console_instance
-        self.status = None
-        
-        # Only create a Status object if Rich is available
-        if HAS_RICH and self.console:
-            self.status = Status("Ready", console=self.console)
-        
-    def update(self, content):
-        """
-        Update the status message without disrupting progress display.
-        
-        Args:
-            content (str): New status message
-        """
-        if self.status:
-            # Update status in-place without creating new lines
-            self.status.update(status=content)
-        else:
-            # Fallback when Rich is not available
-            print(f"[Status] {content}")
-
-# Add the create_status_panel method to the console
-if HAS_RICH and console:
-    console.create_status_panel = lambda: StatusPanel(console)
-else:
-    # Define a dummy console if needed
-    class DummyStatusPanel:
-        def update(self, content):
-            print(f"Status: {content}")
-    
-    # If console doesn't exist, create a minimal version with required methods
-    if console is None:
-        class MinimalConsole:
-            def create_status_panel(self):
-                return DummyStatusPanel()
-        
-        console = MinimalConsole()
-    else:
-        # Add method to existing console
-        console.create_status_panel = lambda: DummyStatusPanel()
+    Args:
+        title (str): Banner title
+    """
+    width = shutil.get_terminal_size().columns if hasattr(shutil, 'get_terminal_size') else 80
+    print("=" * width)
+    print(f"Password Security Audit Tool - {title}".center(width))
+    print("=" * width)

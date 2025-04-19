@@ -11,7 +11,6 @@ import json
 import uuid
 import signal
 import hashlib
-import threading
 import time
 from concurrent.futures import ProcessPoolExecutor
 import concurrent.futures
@@ -32,7 +31,7 @@ from visualizations.core import generate_visualizations, generate_combined_visua
 
 from utils.file_utils import load_list, generate_pdfs_from_markdown
 from utils.misc import (display_banner, print_success, 
-                    print_info, print_warning, print_error, error_suppression, console)
+                    print_info, print_warning, print_error, error_suppression)
 from utils.terminal_animation import PasswordAuditAnimation
 from collections import defaultdict
 
@@ -142,7 +141,7 @@ def process_domains(domain_entries, logger):
         all_data = {"domains": {}, "combined": {}}
         results = []
         
-        # Process domains with our new animation
+        # Process domains with animation
         if ENABLE_ANIMATION:
             # Initialize the animation with the domain list
             animation = PasswordAuditAnimation(domain_list)

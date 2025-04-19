@@ -15,6 +15,7 @@ from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeEl
 from rich.table import Table
 from rich.text import Text
 from rich import box
+from rich.align import Align
 
 # Try to create a console, fail gracefully if Rich is not available
 try:
@@ -63,7 +64,7 @@ class PasswordAuditAnimation:
         }
         self.recent_findings = []
         self.frame_counter = 0
-        self.current_domain_accounts = 0
+        self.current_domain_accounts = 100  # Default to 100 for initial display
         self.current_domain_completed = 0
         
         # Initialize layout
@@ -132,7 +133,7 @@ class PasswordAuditAnimation:
         initial_domain = self.domains[0] if self.domains else "domain"
         self.domain_task = self.domain_progress.add_task(
             f"[cyan]Processing domain: {initial_domain}", 
-            total=100
+            total=self.current_domain_accounts
         )
         
         # Analysis progress (detailed steps)
@@ -170,7 +171,7 @@ class PasswordAuditAnimation:
         header_text.append(f" - Running time: {time_str}", style="dim")
         
         self.layout["header"].update(Panel(
-            header_text,
+            Align.center(header_text),
             style="white on blue",
             box=box.HEAVY
         ))
@@ -196,27 +197,38 @@ class PasswordAuditAnimation:
         footer_text.append("Press Ctrl+C to abort", style="dim")
         
         self.layout["footer"].update(Panel(
-            footer_text,
+            Align.center(footer_text),
             style="white on dark_blue",
             box=box.HEAVY
         ))
     
     def update_progress_section(self):
         """Update the progress section."""
-        # Main progress panel with nested progress bars
-        self.layout["progress"].update(
-            Panel(
-                Layout(
-                    Layout(self.overall_progress, size=3),
-                    Layout(self.domain_progress, size=3),
-                    Layout(self.analysis_progress, size=5)
-                ),
-                title="[b]Analysis Progress",
-                border_style="blue",
-                box=box.ROUNDED,
-                padding=(0, 1)
-            )
+        # Update overall progress
+        self.overall_progress.update(self.overall_task, completed=self.completed_domains)
+        
+        # Update domain progress
+        self.domain_progress.update(
+            self.domain_task, 
+            completed=self.current_domain_completed,
+            total=self.current_domain_accounts
         )
+        
+        # Main progress panel with nested progress bars
+        progress_panel = Panel(
+            Layout(
+                Layout(self.overall_progress, size=3),
+                Layout(self.domain_progress, size=3),
+                Layout(self.analysis_progress, size=5)
+            ),
+            title="[b]Analysis Progress",
+            border_style="blue",
+            box=box.ROUNDED,
+            padding=(0, 1)
+        )
+        
+        # Update the layout with the panel
+        self.layout["progress"].update(progress_panel)
         
         # Update analysis tasks with some simulated progress
         for task_id in self.analysis_tasks:
@@ -226,9 +238,16 @@ class PasswordAuditAnimation:
                 self.analysis_progress.update(self.analysis_tasks[task_id], completed=0)
             else:
                 # Increment based on domain progress
-                increment = 0.5 + (self.frame_counter % 3) * 0.5  # Vary the increment slightly
-                new_value = min(100, current + increment)
-                self.analysis_progress.update(self.analysis_tasks[task_id], completed=new_value)
+                if self.current_domain_accounts > 0:
+                    # Scale progress to match domain progress
+                    progress_ratio = self.current_domain_completed / self.current_domain_accounts
+                    new_value = min(100, 100 * progress_ratio)
+                    self.analysis_progress.update(self.analysis_tasks[task_id], completed=new_value)
+                else:
+                    # Increment based on frame count if no domain data
+                    increment = 0.5 + (self.frame_counter % 3) * 0.5  # Vary the increment slightly
+                    new_value = min(100, current + increment)
+                    self.analysis_progress.update(self.analysis_tasks[task_id], completed=new_value)
     
     def update_stats_section(self):
         """Update the statistics section."""
@@ -289,7 +308,7 @@ class PasswordAuditAnimation:
         if not self.recent_findings:
             findings_text.append("No significant findings yet...", style="dim")
         else:
-            for i, finding in enumerate(self.recent_findings[:10]):
+            for i, finding in enumerate(self.recent_findings[:12]):  # Show top 12 findings
                 severity_style = {
                     "Critical": "bold red",
                     "High": "red",
@@ -316,11 +335,31 @@ class PasswordAuditAnimation:
         domain_table.add_column("Domain", style="cyan")
         domain_table.add_column("Status", justify="right")
         
-        for i, domain in enumerate(self.domains):
-            if i < self.current_domain_index:
+        # Show at most 10 domains to prevent overflowing
+        visible_domains = []
+        
+        # Always include current domain and some before/after
+        current_idx = self.current_domain_index
+        start_idx = max(0, current_idx - 4)
+        end_idx = min(len(self.domains), current_idx + 6)
+        
+        # Add ellipses if more at beginning
+        if start_idx > 0:
+            visible_domains.append(("...", -1))
+        
+        # Add visible domains
+        for i in range(start_idx, end_idx):
+            visible_domains.append((self.domains[i], i))
+            
+        # Add ellipses if more at end
+        if end_idx < len(self.domains):
+            visible_domains.append(("...", -2))
+        
+        for domain, i in visible_domains:
+            if i < current_idx and i >= 0:
                 # Completed domain
                 status = "[bold green]COMPLETE[/bold green]"
-            elif i == self.current_domain_index:
+            elif i == current_idx:
                 # Current domain - with animated indicator
                 if self.frame_counter % 4 == 0:
                     status = "[bold blue]PROCESSING [white]⚡[/white][/bold blue]"
@@ -330,6 +369,12 @@ class PasswordAuditAnimation:
                     status = "[bold blue]PROCESSING [white]⚡⚡⚡[/white][/bold blue]"
                 else:
                     status = "[bold blue]PROCESSING [white]⚡⚡[/white][/bold blue]"
+            elif i == -1:
+                # Ellipses at beginning
+                status = "[dim]...[/dim]"
+            elif i == -2:
+                # Ellipses at end
+                status = "[dim]...[/dim]"
             else:
                 # Pending domain
                 status = "[dim]PENDING[/dim]"
@@ -358,17 +403,14 @@ class PasswordAuditAnimation:
         risk_table.add_column("Bar")
         
         total_risks = sum(self.risk_counts.values())
+        max_value = max(self.risk_counts.values()) if total_risks > 0 else 1
         
         # Calculate percentage of total for each risk level
         for level in ["Critical", "High", "Medium", "Low"]:
             count = self.risk_counts[level]
             
-            # Calculate bar width based on percentage
-            if total_risks > 0:
-                percentage = count / total_risks
-                width = int(20 * percentage)
-            else:
-                width = 0
+            # Calculate bar width based on percentage and fixed max width
+            width = int(20 * (count / max_value)) if max_value > 0 else 0
             
             # Create bar with appropriate color
             bar_color = {
@@ -390,6 +432,12 @@ class PasswordAuditAnimation:
                 # Animated end character
                 end_char = fill_chars[self.frame_counter % len(fill_chars)]
                 bar += f"[{bar_color}]{end_char}[/{bar_color}]"
+            else:
+                # Empty bar with animation for zero counts
+                if self.frame_counter % 4 == 0:
+                    bar = f"[{bar_color}]▏[/{bar_color}]"
+                else:
+                    bar = ""
             
             risk_table.add_row(level, str(count), bar)
             
@@ -457,7 +505,7 @@ class PasswordAuditAnimation:
             self.current_domain_index = domain_index
             
             if accounts is not None:
-                self.current_domain_accounts = accounts
+                self.current_domain_accounts = max(1, accounts)  # Ensure at least 1
                 self.current_domain_completed = 0
                 
                 # Update domain progress bar
@@ -465,7 +513,7 @@ class PasswordAuditAnimation:
                 self.domain_progress.update(
                     self.domain_task,
                     description=f"[cyan]Processing domain: {domain_name}",
-                    total=accounts,
+                    total=self.current_domain_accounts,
                     completed=0
                 )
     
@@ -479,7 +527,6 @@ class PasswordAuditAnimation:
         self.current_domain_completed = min(self.current_domain_completed + amount, self.current_domain_accounts)
         
         if self.current_domain_accounts > 0:
-            percentage = (self.current_domain_completed / self.current_domain_accounts) * 100
             self.domain_progress.update(
                 self.domain_task,
                 completed=self.current_domain_completed
@@ -503,11 +550,14 @@ class PasswordAuditAnimation:
             
             # Reset domain progress for next domain
             next_domain = self.domains[self.current_domain_index]
+            self.current_domain_accounts = 100  # Default until we know the account count
+            self.current_domain_completed = 0
+            
             self.domain_progress.update(
                 self.domain_task,
                 description=f"[cyan]Processing domain: {next_domain}",
                 completed=0,
-                total=100  # Default until we know the account count
+                total=self.current_domain_accounts
             )
     
     def update(self):
