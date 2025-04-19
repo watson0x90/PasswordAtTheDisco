@@ -1,7 +1,7 @@
 # utils/misc.py
 """
 Miscellaneous utility functions for the password audit tool.
-Enhanced with robust terminal animations and progress tracking.
+Enhanced with robust error handling and progress tracking.
 """
 
 import sys
@@ -98,75 +98,6 @@ class ThrottledProgress:
             self.progress.update(self.task_id, advance=self.pending_advance, **kwargs)
             self.pending_advance = 0
             self.last_update = time.time()
-
-def show_processing_animation(stop_event: threading.Event) -> None:
-    """
-    Display a spinning animation in the terminal until stopped.
-    Enhanced with better error handling and cleanup.
-    
-    Args:
-        stop_event (threading.Event): Event to signal when to stop animation
-    """
-    animation_thread = None
-    
-    try:
-        if not ENABLE_ANIMATION:
-            return
-            
-        if HAS_RICH:
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[bold blue]Processing domains..."),
-                BarColumn(bar_width=None),
-                TimeElapsedColumn(),
-                console=console,
-                transient=True,
-            ) as progress:
-                task = progress.add_task("", total=None)  # Indeterminate progress
-                while not stop_event.is_set():
-                    progress.update(task)
-                    time.sleep(0.1)
-            
-            # Show completion message if not interrupted
-            if not stop_event.is_set():
-                console.print("[bold green]Processing domains... Done![/bold green]")
-        else:
-            # Create spinner in a separate thread for better cleanup
-            def spinner_thread():
-                spinner = ['|', '/', '-', '\\']
-                i = 0
-                while not stop_event.is_set():
-                    char = spinner[i % len(spinner)]
-                    sys.stdout.write(f'\rProcessing domains... {char}')
-                    sys.stdout.flush()
-                    time.sleep(0.1)
-                    i += 1
-            
-            # Start animation thread
-            animation_thread = threading.Thread(target=spinner_thread)
-            animation_thread.daemon = True
-            animation_thread.start()
-            
-            # Wait for the stop event (this is non-blocking for the main thread)
-            while not stop_event.is_set():
-                time.sleep(0.2)
-                
-            # Cleanup when done (thread should terminate due to stop_event)
-            if animation_thread.is_alive():
-                animation_thread.join(timeout=1.0)
-                
-            sys.stdout.write('\rProcessing domains... Done!    \n')
-            sys.stdout.flush()
-    except Exception as e:
-        # Ensure we clean up even during exceptions
-        stop_event.set()
-        if animation_thread and animation_thread.is_alive():
-            animation_thread.join(timeout=0.5)
-        
-        if HAS_RICH and console:
-            console.print(f"[bold red]Animation error: {str(e)}[/bold red]")
-        else:
-            print(f"\nAnimation error: {str(e)}")
 
 def show_task_progress(task_name: str, total: int, update_callback=None):
     """

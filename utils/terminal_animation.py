@@ -1,3 +1,4 @@
+# utils/terminal_animation.py
 """
 Terminal animation module for password security audit tool.
 Provides rich visualization during the analysis process.
@@ -14,6 +15,12 @@ from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeEl
 from rich.table import Table
 from rich.text import Text
 from rich import box
+
+# Try to create a console, fail gracefully if Rich is not available
+try:
+    console = Console()
+except ImportError:
+    console = None
 
 class PasswordAuditAnimation:
     """
@@ -56,6 +63,8 @@ class PasswordAuditAnimation:
         }
         self.recent_findings = []
         self.frame_counter = 0
+        self.current_domain_accounts = 0
+        self.current_domain_completed = 0
         
         # Initialize layout
         self.setup_layout()
@@ -118,8 +127,11 @@ class PasswordAuditAnimation:
             TextColumn("({task.completed}/{task.total})"),
             expand=True
         )
+        
+        # Initialize with the first domain or a placeholder if no domains
+        initial_domain = self.domains[0] if self.domains else "domain"
         self.domain_task = self.domain_progress.add_task(
-            f"[cyan]Processing domain: {self.domains[0]}", 
+            f"[cyan]Processing domain: {initial_domain}", 
             total=100
         )
         
@@ -132,7 +144,7 @@ class PasswordAuditAnimation:
             expand=True
         )
         
-        # Add some standard analysis tasks
+        # Add analysis tasks
         self.analysis_tasks = {}
         self.analysis_tasks["cracking"] = self.analysis_progress.add_task(
             "[magenta]Password analysis", total=100
@@ -191,20 +203,13 @@ class PasswordAuditAnimation:
     
     def update_progress_section(self):
         """Update the progress section."""
-        progress_group = Panel(
-            self.overall_progress, 
-            title="[b]Overall Status", 
-            border_style="blue",
-            box=box.ROUNDED
-        )
-        
         # Main progress panel with nested progress bars
         self.layout["progress"].update(
             Panel(
                 Layout(
-                    Layout(progress_group, size=3),
+                    Layout(self.overall_progress, size=3),
                     Layout(self.domain_progress, size=3),
-                    Layout(self.analysis_progress, size=9)
+                    Layout(self.analysis_progress, size=5)
                 ),
                 title="[b]Analysis Progress",
                 border_style="blue",
@@ -212,6 +217,18 @@ class PasswordAuditAnimation:
                 padding=(0, 1)
             )
         )
+        
+        # Update analysis tasks with some simulated progress
+        for task_id in self.analysis_tasks:
+            current = self.analysis_progress.tasks[self.analysis_tasks[task_id]].completed
+            if current >= 100:
+                # Reset task when it completes
+                self.analysis_progress.update(self.analysis_tasks[task_id], completed=0)
+            else:
+                # Increment based on domain progress
+                increment = 0.5 + (self.frame_counter % 3) * 0.5  # Vary the increment slightly
+                new_value = min(100, current + increment)
+                self.analysis_progress.update(self.analysis_tasks[task_id], completed=new_value)
     
     def update_stats_section(self):
         """Update the statistics section."""
@@ -228,7 +245,7 @@ class PasswordAuditAnimation:
         stats_table.add_row(
             "Total Accounts", 
             str(self.stats["analyzed_accounts"]), 
-            ""
+            f"Processing"
         )
         stats_table.add_row(
             "Cracked", 
@@ -427,6 +444,71 @@ class PasswordAuditAnimation:
         
         # Keep only the most recent findings
         self.recent_findings = self.recent_findings[:20]
+    
+    def set_domain_progress(self, domain_index, accounts=None):
+        """
+        Update the current domain and its progress.
+        
+        Args:
+            domain_index (int): Index of the current domain
+            accounts (int, optional): Number of accounts in this domain
+        """
+        if domain_index >= 0 and domain_index < len(self.domains):
+            self.current_domain_index = domain_index
+            
+            if accounts is not None:
+                self.current_domain_accounts = accounts
+                self.current_domain_completed = 0
+                
+                # Update domain progress bar
+                domain_name = self.domains[domain_index]
+                self.domain_progress.update(
+                    self.domain_task,
+                    description=f"[cyan]Processing domain: {domain_name}",
+                    total=accounts,
+                    completed=0
+                )
+    
+    def increment_domain_progress(self, amount=1):
+        """
+        Increment progress for the current domain.
+        
+        Args:
+            amount (int): Amount to increment by
+        """
+        self.current_domain_completed = min(self.current_domain_completed + amount, self.current_domain_accounts)
+        
+        if self.current_domain_accounts > 0:
+            percentage = (self.current_domain_completed / self.current_domain_accounts) * 100
+            self.domain_progress.update(
+                self.domain_task,
+                completed=self.current_domain_completed
+            )
+    
+    def complete_current_domain(self):
+        """Mark the current domain as completed and advance to the next one."""
+        self.completed_domains += 1
+        self.overall_progress.update(self.overall_task, advance=1)
+        
+        # Update domain progress to 100%
+        self.current_domain_completed = self.current_domain_accounts
+        self.domain_progress.update(
+            self.domain_task,
+            completed=self.current_domain_accounts
+        )
+        
+        # Move to next domain
+        if self.current_domain_index < len(self.domains) - 1:
+            self.current_domain_index += 1
+            
+            # Reset domain progress for next domain
+            next_domain = self.domains[self.current_domain_index]
+            self.domain_progress.update(
+                self.domain_task,
+                description=f"[cyan]Processing domain: {next_domain}",
+                completed=0,
+                total=100  # Default until we know the account count
+            )
     
     def update(self):
         """Update the animation frame."""

@@ -12,6 +12,7 @@ import uuid
 import signal
 import hashlib
 import threading
+import time
 from concurrent.futures import ProcessPoolExecutor
 import concurrent.futures
 from copy import deepcopy
@@ -30,7 +31,7 @@ from reports.markdown.report import (generate_markdown_report, generate_combined
 from visualizations.core import generate_visualizations, generate_combined_visualizations
 
 from utils.file_utils import load_list, generate_pdfs_from_markdown
-from utils.misc import (show_task_progress, display_banner, print_success, 
+from utils.misc import (display_banner, print_success, 
                     print_info, print_warning, print_error, error_suppression, console)
 from utils.terminal_animation import PasswordAuditAnimation
 from collections import defaultdict
@@ -146,9 +147,19 @@ def process_domains(domain_entries, logger):
             # Initialize the animation with the domain list
             animation = PasswordAuditAnimation(domain_list)
             
+            # Add initial findings
+            animation.add_finding(
+                f"Starting password security audit on {len(domain_list)} domains",
+                "Medium"
+            )
+            animation.add_finding(
+                "Loaded word lists for pattern detection",
+                "Low"
+            )
+            
             with Live(animation.render(), refresh_per_second=10, screen=True) as live:
                 # Process domains in parallel
-                with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
+                with ProcessPoolExecutor(max_workers=min(os.cpu_count(), 4)) as executor:
                     task_args = [(domain_entry, forbidden_words, keyboard_patterns, common_passwords, 
                                 dictionary_words, global_seed, logger) for domain_entry in domain_entries]
                     
@@ -157,91 +168,119 @@ def process_domains(domain_entries, logger):
                     
                     # Process results as they complete
                     for i, future in enumerate(concurrent.futures.as_completed(futures)):
-                        domain = domain_entries[i].split(':')[0] if i < len(domain_entries) else f"domain_{i}"
-                        
-                        if shutdown_event.is_set():
-                            print_warning("Shutdown requested. Cancelling remaining tasks...")
-                            executor.shutdown(wait=False, cancel_futures=True)
-                            break
-                        
                         try:
+                            # Get the domain for the completed result
+                            domain_entry = domain_entries[i]
+                            domain = domain_entry.split(':')[0]
+                            
+                            if shutdown_event.is_set():
+                                print_warning("Shutdown requested. Cancelling remaining tasks...")
+                                animation.add_finding(
+                                    "Shutdown requested - cancelling remaining tasks",
+                                    "Critical"
+                                )
+                                animation.update()
+                                executor.shutdown(wait=False, cancel_futures=True)
+                                break
+                            
+                            # Get the result
                             result = future.result()
                             results.append(result)
                             
                             # Update animation with real data
                             cracked, uncracked, domain_data = result
                             
-                            # Update completion status for this domain
-                            animation.completed_domains += 1
-                            animation.current_domain_index = min(len(domain_list) - 1, 
-                                                               animation.current_domain_index + 1)
-                            animation.overall_progress.update(animation.overall_task, advance=1)
+                            # Update domain progress
+                            animation.complete_current_domain()
+                            
+                            # Skip updating stats if no valid data
+                            if not domain_data:
+                                animation.add_finding(
+                                    f"Failed to process domain {domain}",
+                                    "Critical"
+                                )
+                                animation.update()
+                                continue
                             
                             # Extract stats from the result
-                            if domain_data:
-                                # Update account counts
-                                total_accounts = len(domain_data.get('output_rows', []))
-                                cracked_count = sum(1 for row in domain_data.get('output_rows', []) 
-                                                  if row.get('Password Length', 'N/A') != 'N/A')
-                                uncracked_count = total_accounts - cracked_count
-                                
-                                animation.stats["total_accounts"] += total_accounts
-                                animation.stats["analyzed_accounts"] += total_accounts
-                                animation.stats["cracked_accounts"] += cracked_count
-                                animation.stats["uncracked_accounts"] += uncracked_count
-                                
-                                # Update risk counts
-                                risk_counter = domain_data.get('risk_counter', {})
-                                for level, count in risk_counter.items():
-                                    if level in animation.risk_counts:
-                                        animation.risk_counts[level] += count
-                                
-                                # Add findings based on real data
-                                da_path_accounts = sum(1 for row in domain_data.get('output_rows', [])
-                                                     if row.get('DA Domains', 'None') not in ('None', 'Unknown'))
-                                animation.stats["da_pathway_accounts"] += da_path_accounts
-                                
-                                # Add compliance stats
-                                out_of_compliance = sum(1 for row in domain_data.get('output_rows', [])
-                                                     if row.get('Days Out of Compliance', 'N/A') not in ('N/A', 'Unknown')
-                                                     and int(row.get('Days Out of Compliance', 0)) > 0)
-                                animation.stats["compliance_issues"] += out_of_compliance
-                                
-                                # Add non-expiring stats
-                                non_expiring = sum(1 for row in domain_data.get('output_rows', [])
-                                                 if row.get('Password Set to Expire', 'Yes') == 'No')
-                                animation.stats["non_expiring_accounts"] += non_expiring
-                                
-                                # Add significant findings
-                                if da_path_accounts > 0:
-                                    animation.add_finding(
-                                        f"Found {da_path_accounts} accounts with DA pathway in {domain}",
-                                        "Critical" if da_path_accounts > 5 else "High"
-                                    )
-                                
-                                if out_of_compliance > 0:
-                                    animation.add_finding(
-                                        f"Detected {out_of_compliance} out-of-compliance accounts in {domain}",
-                                        "Medium"
-                                    )
-                                
-                                if non_expiring > 0:
-                                    animation.add_finding(
-                                        f"Found {non_expiring} accounts with non-expiring passwords in {domain}",
-                                        "Medium"
-                                    )
-                                
-                                # Find and report on any accounts with critical issues
-                                critical_accounts = [row for row in domain_data.get('output_rows', [])
-                                                   if row.get('Risk Level') == 'Critical']
-                                if critical_accounts:
-                                    animation.add_finding(
-                                        f"Identified {len(critical_accounts)} critical risk accounts in {domain}",
-                                        "Critical"
-                                    )
+                            total_accounts = len(domain_data.get('output_rows', []))
+                            cracked_count = sum(1 for row in domain_data.get('output_rows', []) 
+                                              if row.get('Password Length', 'N/A') != 'N/A')
+                            uncracked_count = total_accounts - cracked_count
+                            
+                            # Update global stats
+                            animation.stats["total_accounts"] += total_accounts
+                            animation.stats["analyzed_accounts"] += total_accounts
+                            animation.stats["cracked_accounts"] += cracked_count
+                            animation.stats["uncracked_accounts"] += uncracked_count
+                            
+                            # Update risk counts
+                            risk_counter = domain_data.get('risk_counter', {})
+                            for level, count in risk_counter.items():
+                                if level in animation.risk_counts:
+                                    animation.risk_counts[level] += count
+                            
+                            # Add findings based on real data
+                            da_path_accounts = sum(1 for row in domain_data.get('output_rows', [])
+                                                 if row.get('DA Domains', 'None') not in ('None', 'Unknown'))
+                            animation.stats["da_pathway_accounts"] += da_path_accounts
+                            
+                            # Add compliance stats
+                            out_of_compliance = sum(1 for row in domain_data.get('output_rows', [])
+                                                 if row.get('Days Out of Compliance', 'N/A') not in ('N/A', 'Unknown')
+                                                 and int(row.get('Days Out of Compliance', 0)) > 0)
+                            animation.stats["compliance_issues"] += out_of_compliance
+                            
+                            # Add non-expiring stats
+                            non_expiring = sum(1 for row in domain_data.get('output_rows', [])
+                                             if row.get('Password Set to Expire', 'Yes') == 'No')
+                            animation.stats["non_expiring_accounts"] += non_expiring
+                            
+                            # Add summary finding
+                            animation.add_finding(
+                                f"Completed {domain}: {cracked_count} cracked, {uncracked_count} uncracked",
+                                "Medium"
+                            )
+                            
+                            # Add significant findings
+                            if da_path_accounts > 0:
+                                animation.add_finding(
+                                    f"Found {da_path_accounts} accounts with DA pathway in {domain}",
+                                    "Critical" if da_path_accounts > 5 else "High"
+                                )
+                            
+                            if out_of_compliance > 0:
+                                animation.add_finding(
+                                    f"Detected {out_of_compliance} out-of-compliance accounts in {domain}",
+                                    "Medium"
+                                )
+                            
+                            if non_expiring > 0:
+                                animation.add_finding(
+                                    f"Found {non_expiring} accounts with non-expiring passwords in {domain}",
+                                    "Medium"
+                                )
+                            
+                            # Find and report on any accounts with critical issues
+                            critical_accounts = [row for row in domain_data.get('output_rows', [])
+                                              if row.get('Risk Level') == 'Critical']
+                            if critical_accounts:
+                                animation.add_finding(
+                                    f"Identified {len(critical_accounts)} critical risk accounts in {domain}",
+                                    "Critical"
+                                )
+                            
+                            # Password insight findings
+                            password_insights = extract_password_insights(domain_data)
+                            if password_insights:
+                                for insight in password_insights[:2]:  # Limit to top 2 insights
+                                    animation.add_finding(insight["message"], insight["severity"])
                             
                             # Update the animation
                             animation.update()
+                            
+                            # Short sleep to allow animation to update
+                            time.sleep(0.1)
                             
                             # Print status message for logging
                             logger.info(f"Completed {domain} ({i+1}/{len(domain_entries)})")
@@ -255,8 +294,19 @@ def process_domains(domain_entries, logger):
                                 "Critical"
                             )
                             animation.update()
+                
+                # Add finding for completion
+                animation.add_finding(
+                    f"Completed processing of all {len(domain_list)} domains",
+                    "Medium"
+                )
+                animation.update()
+                
+                # Wait a moment for final animation update
+                time.sleep(0.5)
+                
         else:
-            # Non-animation path (similar to original code)
+            # Non-animation path (fallback for when animation is disabled)
             print_info("Processing domains...")
             try:
                 # Process domains in parallel
@@ -469,3 +519,92 @@ def process_domains(domain_entries, logger):
         with error_suppression(logger.error):
             logger.error(f"Critical error in process_domains: {str(e)}", exc_info=True)
         print_error("A critical error occurred during processing. Check logs for details.")
+
+
+def extract_password_insights(domain_data):
+    """
+    Extract interesting insights from password data for reporting.
+    
+    Args:
+        domain_data (dict): Processed domain data
+        
+    Returns:
+        list: List of insight dictionaries with message and severity
+    """
+    insights = []
+    
+    # Check complexity distribution
+    complexity_counter = domain_data.get('complexity_counter', {})
+    if complexity_counter:
+        # Find the most common complexity type
+        most_common = max(complexity_counter.items(), key=lambda x: x[1])
+        complexity_type, count = most_common
+        
+        # Map complexity to human-readable format
+        complexity_readable = {
+            'loweralpha': 'lowercase letters only',
+            'upperalpha': 'uppercase letters only',
+            'numeric': 'numbers only',
+            'mixedalphaspecialnum': 'strong (mixed case, numbers, symbols)',
+            'loweralphanum': 'lowercase letters and numbers'
+        }.get(complexity_type, complexity_type)
+        
+        total = sum(complexity_counter.values())
+        percentage = (count / total) * 100 if total > 0 else 0
+        
+        # Determine severity
+        if complexity_type in ['numeric', 'loweralpha', 'upperalpha']:
+            severity = "High"
+        elif complexity_type in ['loweralphanum', 'upperalphanum']:
+            severity = "Medium"
+        else:
+            severity = "Low"
+            
+        insights.append({
+            "message": f"{percentage:.1f}% of passwords use {complexity_readable}",
+            "severity": severity
+        })
+    
+    # Check common password issues
+    issues_counter = domain_data.get('issues_counter', {})
+    if issues_counter:
+        # Find the most common issue
+        most_common_issue = max(issues_counter.items(), key=lambda x: x[1])
+        issue, count = most_common_issue
+        
+        insights.append({
+            "message": f"Found {count} accounts with issue: {issue}",
+            "severity": "Medium"
+        })
+    
+    # Check banned words
+    banned_word_counter = domain_data.get('banned_word_counter', {})
+    if banned_word_counter:
+        # Find the most common banned word
+        top_words = sorted(banned_word_counter.items(), key=lambda x: x[1], reverse=True)[:3]
+        if top_words:
+            word, count = top_words[0]
+            
+            insights.append({
+                "message": f"Common banned word found: '{word}' (used {count} times)",
+                "severity": "High"
+            })
+    
+    # Check password lengths
+    password_lengths = domain_data.get('password_lengths', [])
+    if password_lengths:
+        avg_length = sum(password_lengths) / len(password_lengths) if password_lengths else 0
+        min_length = min(password_lengths) if password_lengths else 0
+        
+        if min_length < 8:
+            insights.append({
+                "message": f"Shortest password is only {min_length} characters (average: {avg_length:.1f})",
+                "severity": "Critical" if min_length < 6 else "High"
+            })
+        elif avg_length < 10:
+            insights.append({
+                "message": f"Average password length is only {avg_length:.1f} characters",
+                "severity": "Medium"
+            })
+    
+    return insights
