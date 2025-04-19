@@ -144,9 +144,6 @@ def process_domains(domain_entries, logger):
                 # Add a single task for tracking
                 task_id = progress.add_task("Processing", total=len(domain_entries))
                 
-                # Add live status display
-                status_panel = console.create_status_panel()
-                
                 # Process domains in parallel
                 with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
                     task_args = [(domain_entry, forbidden_words, keyboard_patterns, common_passwords, 
@@ -160,18 +157,20 @@ def process_domains(domain_entries, logger):
                         domain = domain_entries[i].split(':')[0] if i < len(domain_entries) else f"domain_{i}"
                         
                         if shutdown_event.is_set():
-                            status_panel.update("[bold red]Shutdown requested. Cancelling remaining tasks...[/bold red]")
+                            print_warning("Shutdown requested. Cancelling remaining tasks...")
                             executor.shutdown(wait=False, cancel_futures=True)
                             break
                         
                         try:
-                            results.append(future.result())
-                            # Update status with domain-specific information
-                            status_panel.update(f"[green]✓[/green] Completed {domain} ({i+1}/{len(domain_entries)})")
+                            result = future.result()
+                            results.append(result)
+                            # Update progress directly without using status panel
                             progress.update(task_id, advance=1, description=f"Processing {len(domain_entries)-i-1} remaining domains")
+                            # Print status update as a regular message
+                            print_info(f"Completed {domain} ({i+1}/{len(domain_entries)})")
                         except Exception as e:
-                            status_panel.update(f"[red]✗[/red] Error processing {domain}: {str(e)}")
                             logger.error(f"Error during domain processing: {str(e)}", exc_info=True)
+                            print_error(f"Error processing {domain}: {str(e)}")
                             progress.update(task_id, advance=1)
         else:
             # Non-animation path

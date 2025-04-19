@@ -9,9 +9,9 @@ import time
 import shutil
 import threading
 import datetime
-import psutil
-from core.config import ENABLE_ANIMATION
+import os
 from contextlib import contextmanager
+from core.config import ENABLE_ANIMATION
 
 # Try to import Rich, use fallback if not available
 try:
@@ -21,9 +21,17 @@ try:
     from rich.panel import Panel
     from rich.text import Text
     from rich.table import Table
+    from rich.status import Status
     HAS_RICH = True
 except ImportError:
     HAS_RICH = False
+
+# Try to import psutil, use fallback if not available
+try:
+    import psutil
+    HAS_PSUTIL = True
+except ImportError:
+    HAS_PSUTIL = False
 
 # Create Rich console if available with proper feature detection
 def setup_console():
@@ -182,6 +190,7 @@ def show_task_progress(task_name: str, total: int, update_callback=None):
     # Adjust bar width based on terminal width
     bar_width = max(10, min(40, terminal_width - 80))
         
+    # Use a single console instance and set transient=True to avoid duplicated lines
     progress = Progress(
         SpinnerColumn(),
         TextColumn(f"[bold blue]{task_name}"),
@@ -190,8 +199,9 @@ def show_task_progress(task_name: str, total: int, update_callback=None):
         TextColumn("[cyan]{task.completed}/{task.total}"),
         TimeElapsedColumn(),
         TimeRemainingColumn(),  # Add remaining time estimate
-        console=Console(stderr=True),  # Redirect to stderr to avoid mixing with regular output
-        transient=False,
+        console=console,  # Use the global console to prevent duplicate outputs
+        transient=True,   # This helps prevent duplicate lines by refreshing in place
+        refresh_per_second=5  # Lower refresh rate to reduce flicker
     )
     
     # Create a single task with the provided total
@@ -233,9 +243,10 @@ def create_metrics_live_display():
                 
             # Get memory usage from psutil
             try:
-                process = psutil.Process(os.getpid())
-                memory = process.memory_info().rss / (1024 * 1024)
-                metrics["Memory Usage"] = f"{memory:.1f} MB"
+                if HAS_PSUTIL:
+                    process = psutil.Process(os.getpid())
+                    memory = process.memory_info().rss / (1024 * 1024)
+                    metrics["Memory Usage"] = f"{memory:.1f} MB"
             except (ImportError, AttributeError):
                 metrics["Memory Usage"] = "Unknown"
             
@@ -449,3 +460,55 @@ def display_banner(title):
         print("=" * width)
         print(f"Password Security Audit Tool - {title}".center(width))
         print("=" * width)
+
+# Improved Status Panel implementation that integrates with progress display
+class StatusPanel:
+    """Status panel for displaying operation status without disrupting progress."""
+    
+    def __init__(self, console_instance):
+        """
+        Initialize a status panel.
+        
+        Args:
+            console_instance (Console): Rich console instance
+        """
+        self.console = console_instance
+        self.status = None
+        
+        # Only create a Status object if Rich is available
+        if HAS_RICH and self.console:
+            self.status = Status("Ready", console=self.console)
+        
+    def update(self, content):
+        """
+        Update the status message without disrupting progress display.
+        
+        Args:
+            content (str): New status message
+        """
+        if self.status:
+            # Update status in-place without creating new lines
+            self.status.update(status=content)
+        else:
+            # Fallback when Rich is not available
+            print(f"[Status] {content}")
+
+# Add the create_status_panel method to the console
+if HAS_RICH and console:
+    console.create_status_panel = lambda: StatusPanel(console)
+else:
+    # Define a dummy console if needed
+    class DummyStatusPanel:
+        def update(self, content):
+            print(f"Status: {content}")
+    
+    # If console doesn't exist, create a minimal version with required methods
+    if console is None:
+        class MinimalConsole:
+            def create_status_panel(self):
+                return DummyStatusPanel()
+        
+        console = MinimalConsole()
+    else:
+        # Add method to existing console
+        console.create_status_panel = lambda: DummyStatusPanel()
