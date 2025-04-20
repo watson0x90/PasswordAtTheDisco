@@ -35,8 +35,6 @@ from utils.misc import (display_banner, print_success,
 from utils.terminal_animation import PasswordAuditAnimation
 from collections import defaultdict
 
-from rich.live import Live
-
 
 def signal_handler(signum, frame):
     """Handle SIGINT (Ctrl+C) to gracefully shutdown."""
@@ -177,98 +175,89 @@ def process_domains(domain_entries, logger):
                 domain_account_counts[domain] = count
                 print_info(f"  {domain}: {count} accounts")
             
-            # Initialize the animation
+            # Initialize the simplified animation
             animation = PasswordAuditAnimation(domain_list)
             
-            # Use Rich's Live display to show the animation
-            with Live(animation.render(), refresh_per_second=10) as live:
-                # Process domains in parallel
-                with ProcessPoolExecutor(max_workers=min(os.cpu_count(), 4)) as executor:
-                    # Prepare all tasks
-                    task_args = [(domain_entry, forbidden_words, keyboard_patterns, common_passwords, 
-                                dictionary_words, global_seed, logger) for domain_entry in domain_entries]
-                    
-                    # Submit all tasks
-                    futures = [executor.submit(process_domain_wrapper, arg) for arg in task_args]
-                    
-                    # Keep track of which futures correspond to which domains
-                    future_to_domain_idx = {future: i for i, future in enumerate(futures)}
-                    domain_to_future = {domain_list[i]: future for i, future in enumerate(futures)}
-                    
-                    # Initialize active domain tracking
-                    active_domains = set()
-                    
-                    # Start with the first N domains based on max_workers
-                    max_concurrent = min(len(futures), executor._max_workers)
-                    
-                    # Set up initial active domains
-                    for i in range(min(max_concurrent, len(domain_list))):
-                        domain = domain_list[i]
-                        active_domains.add(domain)
-                        # Set domain as active with account count
-                        animation.set_domain_active(domain, is_active=True, 
-                                                  total_accounts=domain_account_counts.get(domain, 100))
-                    
-                    # Update display to show initial state
-                    live.update(animation.render())
-                    
-                    # Process results as they complete
-                    for future in concurrent.futures.as_completed(futures):
-                        try:
-                            # Get domain information
-                            domain_idx = future_to_domain_idx[future]
-                            domain_entry = domain_entries[domain_idx]
-                            domain = domain_entry.split(':')[0]
-                            
-                            if shutdown_event.is_set():
-                                print_warning("Shutdown requested. Cancelling remaining tasks...")
-                                executor.shutdown(wait=False, cancel_futures=True)
-                                break
-                            
-                            # Get the result
-                            cracked, uncracked, domain_data, accounts_count = future.result()
-                            results.append((cracked, uncracked, domain_data))
-                            
-                            # Mark domain as completed in animation
-                            animation.mark_domain_completed(domain, accounts_count)
-                            
-                            # Remove from active domains
-                            active_domains.remove(domain)
-                            
-                            # Update total accounts processed
-                            total_accounts_processed += accounts_count
-                            
-                            # Find next domain to process
-                            next_domain = None
-                            for d in domain_list:
-                                if (d not in active_domains and 
-                                    animation.domain_status.get(d) == "PENDING"):
-                                    next_domain = d
-                                    break
-                            
-                            # Set next domain as active if available
-                            if next_domain:
-                                active_domains.add(next_domain)
-                                animation.set_domain_active(next_domain, is_active=True, 
-                                                         total_accounts=domain_account_counts.get(next_domain, 100))
-                            
-                            # Update animation display
-                            live.update(animation.render())
-                            
-                            # Print status message for logging
-                            logger.info(f"Completed {domain} with {accounts_count} accounts ({animation.completed_domains}/{len(domain_entries)})")
-                        except Exception as e:
-                            logger.error(f"Error during domain processing: {str(e)}", exc_info=True)
-                            print_error(f"Error processing {domain}: {str(e)}")
-                            
-                            # Mark domain as error
-                            if domain in active_domains:
-                                active_domains.remove(domain)
-                            animation.mark_domain_error(domain)
-                            live.update(animation.render())
+            # Process domains in parallel
+            with ProcessPoolExecutor(max_workers=min(os.cpu_count(), 4)) as executor:
+                # Prepare all tasks
+                task_args = [(domain_entry, forbidden_words, keyboard_patterns, common_passwords, 
+                            dictionary_words, global_seed, logger) for domain_entry in domain_entries]
                 
-                # Final update pause to show completion
-                time.sleep(1.0)
+                # Submit all tasks
+                futures = [executor.submit(process_domain_wrapper, arg) for arg in task_args]
+                
+                # Keep track of which futures correspond to which domains
+                future_to_domain_idx = {future: i for i, future in enumerate(futures)}
+                domain_to_future = {domain_list[i]: future for i, future in enumerate(futures)}
+                
+                # Initialize active domain tracking
+                active_domains = set()
+                
+                # Start with the first N domains based on max_workers
+                max_concurrent = min(len(futures), executor._max_workers)
+                
+                # Set up initial active domains
+                for i in range(min(max_concurrent, len(domain_list))):
+                    domain = domain_list[i]
+                    active_domains.add(domain)
+                    # Set domain as active with account count
+                    animation.set_domain_active(domain, is_active=True, 
+                                              total_accounts=domain_account_counts.get(domain, 100))
+                
+                # Process results as they complete
+                for future in concurrent.futures.as_completed(futures):
+                    try:
+                        # Get domain information
+                        domain_idx = future_to_domain_idx[future]
+                        domain_entry = domain_entries[domain_idx]
+                        domain = domain_entry.split(':')[0]
+                        
+                        if shutdown_event.is_set():
+                            print_warning("Shutdown requested. Cancelling remaining tasks...")
+                            executor.shutdown(wait=False, cancel_futures=True)
+                            break
+                        
+                        # Get the result
+                        cracked, uncracked, domain_data, accounts_count = future.result()
+                        results.append((cracked, uncracked, domain_data))
+                        
+                        # Mark domain as completed in animation
+                        animation.mark_domain_completed(domain, accounts_count)
+                        
+                        # Remove from active domains
+                        active_domains.remove(domain)
+                        
+                        # Update total accounts processed
+                        total_accounts_processed += accounts_count
+                        
+                        # Find next domain to process
+                        next_domain = None
+                        for d in domain_list:
+                            if (d not in active_domains and 
+                                animation.domain_status.get(d) == "PENDING"):
+                                next_domain = d
+                                break
+                        
+                        # Set next domain as active if available
+                        if next_domain:
+                            active_domains.add(next_domain)
+                            animation.set_domain_active(next_domain, is_active=True, 
+                                                     total_accounts=domain_account_counts.get(next_domain, 100))
+                        
+                        # Print status message for logging
+                        logger.info(f"Completed {domain} with {accounts_count} accounts ({animation.completed_domains}/{len(domain_entries)})")
+                    except Exception as e:
+                        logger.error(f"Error during domain processing: {str(e)}", exc_info=True)
+                        print_error(f"Error processing {domain}: {str(e)}")
+                        
+                        # Mark domain as error
+                        if domain in active_domains:
+                            active_domains.remove(domain)
+                        animation.mark_domain_error(domain)
+            
+            # Stop the animation tracker
+            animation.tracker.stop()
                 
         else:
             # Non-animation path (fallback for when animation is disabled)
