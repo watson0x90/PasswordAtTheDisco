@@ -243,10 +243,9 @@ RISK_SCORE_EXPLANATION = """
 </div>
 """
 
-def html_head(title, include_pdf_export=True, include_search=False, include_redacted_search=False):
+def html_head(title, include_pdf_export=False, include_search=False, include_redacted_search=False):
     """Generate standard HTML head section."""
     from reports.html.styles import BASE_CSS, IFRAME_CSS, TABLE_SORT_CSS
-    from reports.html.scripts import PDF_EXPORT_JS
     
     css = f"""
     <style>
@@ -257,8 +256,6 @@ def html_head(title, include_pdf_export=True, include_search=False, include_reda
     """
     
     scripts = ""
-    if include_pdf_export:
-        scripts += PDF_EXPORT_JS
     
     return f"""
     <!DOCTYPE html>
@@ -349,13 +346,5 @@ def get_accounts_table_html(accounts, columns, include_risk_class=True):
                 {rows}
             </tbody>
         </table>
-    </div>
-    """
-
-def get_export_button(element_id, filename):
-    """Generate HTML for PDF export button."""
-    return f"""
-    <div class="no-print">
-        <button class="export-button" onclick="exportToPDF('{element_id}', '{filename}')">Export to PDF</button>
     </div>
     """

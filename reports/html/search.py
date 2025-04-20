@@ -5,7 +5,7 @@ Search functionality for HTML reports.
 
 import os
 from pathlib import Path
-from reports.html.components import html_head, get_export_button, RISK_VECTOR_EXPLANATION
+from reports.html.components import html_head, RISK_VECTOR_EXPLANATION
 from reports.html.scripts import SEARCH_JS, SEARCH_REDACTED_JS, TABLE_SORT_JS
 
 def generate_search_html(json_file, logger=None):
@@ -26,9 +26,6 @@ def generate_search_html(json_file, logger=None):
                 <h1>Account Search</h1>
                 <p><a href="./main.html">Back to Main</a></p>
         """
-        
-        # Add export button
-        html += get_export_button('reportContent', 'account_search.pdf')
         
         # Add search input
         html += """
@@ -111,9 +108,6 @@ def generate_search_redacted_html(json_file_with_placeholders, logger=None):
                 <h1>Account Search (Redacted)</h1>
                 <p><a href="./main.html">Back to Main</a></p>
         """
-        
-        # Add export button
-        html += get_export_button('reportContent', 'account_search_redacted.pdf')
         
         # Add search input
         html += """

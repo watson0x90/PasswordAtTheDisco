@@ -7,7 +7,7 @@ import os
 import hashlib
 from pathlib import Path
 from reports.html.components import (
-    html_head, get_export_button, create_error_message,
+    html_head, create_error_message,
     DA_EXPLANATION, CONTROLLABLES_EXPLANATION, NONEXPIRING_EXPLANATION,
     COMPLIANCE_EXPLANATION, RISK_VECTOR_EXPLANATION
 )
@@ -49,9 +49,6 @@ def generate_combined_actionable_report(domain, data, seed, visuals, logger=None
                 <h1>Actionable Password Security Report for {domain}</h1>
                 <p><a href="./main.html">Back to Main</a> | <a href="./search.html">Search Accounts</a></p>
         """
-        
-        # Add export button
-        html += get_export_button('reportContent', f'{domain}_actionable_report.pdf')
         
         html += f"""
         <p>Actionable items for cracked passwords with critical issues.</p>

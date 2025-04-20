@@ -39,57 +39,6 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 """
 
-# PDF Export functionality
-PDF_EXPORT_JS = """
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" integrity="sha512-GsLlZN/3F2ErC5ifS5QtgpiJtWd43JWSuIgh7mbzZ8zBps+dvLusV+eNQATqgA/HdeKFVgA5v3S/cIrLF7QnIg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script>
-function exportToPDF(elementId, filename) {
-    const element = document.getElementById(elementId);
-    
-    // Configure PDF options
-    const opt = {
-        margin: [10, 10],
-        filename: filename,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
-    };
-    
-    // Create a clone of the element to modify for PDF export
-    const clone = element.cloneNode(true);
-    
-    // Remove any elements with class 'no-print'
-    clone.querySelectorAll('.no-print').forEach(el => el.remove());
-    
-    // Show message during generation
-    const statusMsg = document.createElement('div');
-    statusMsg.id = 'pdfStatus';
-    statusMsg.style.position = 'fixed';
-    statusMsg.style.top = '50%';
-    statusMsg.style.left = '50%';
-    statusMsg.style.transform = 'translate(-50%, -50%)';
-    statusMsg.style.padding = '20px';
-    statusMsg.style.background = 'rgba(0,0,0,0.8)';
-    statusMsg.style.color = 'white';
-    statusMsg.style.borderRadius = '5px';
-    statusMsg.style.zIndex = '9999';
-    statusMsg.textContent = 'Generating PDF, please wait...';
-    document.body.appendChild(statusMsg);
-    
-    // Generate PDF
-    html2pdf().set(opt).from(clone).save().then(() => {
-        document.body.removeChild(statusMsg);
-    }).catch(error => {
-        console.error('PDF generation failed:', error);
-        statusMsg.textContent = 'PDF generation failed! ' + error.message;
-        setTimeout(() => {
-            document.body.removeChild(statusMsg);
-        }, 3000);
-    });
-}
-</script>
-"""
-
 # JavaScript for search functionality
 SEARCH_JS = """
 <script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>

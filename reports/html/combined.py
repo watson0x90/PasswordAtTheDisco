@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from collections import Counter
 from reports.html.components import (
-    html_head, get_export_button, create_error_message, 
+    html_head, create_error_message, 
     create_visualization_container, RISK_VECTOR_EXPLANATION
 )
 from reports.html.scripts import TABLE_SORT_JS
@@ -35,9 +35,6 @@ def generate_combined_html_report(combined_rows, global_password_to_users, globa
                 <h1>Cross-Domain Password Security Report</h1>
                 <p><a href="./main.html">Back to Main</a> | <a href="./search.html">Search Accounts</a></p>
         """
-        
-        # Add export button
-        html += get_export_button('reportContent', 'cross_domain_report.pdf')
         
         # Add risk vector explanation
         html += RISK_VECTOR_EXPLANATION

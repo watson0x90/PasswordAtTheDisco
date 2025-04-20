@@ -40,8 +40,6 @@ input[type="text"] { padding: 8px; width: 300px; margin-bottom: 20px; }
 .tab-buttons button:hover { background-color: #ddd; }
 .tab-buttons button.active { background-color: #ccc; }
 .tab-content { display: none; padding: 20px; border: 1px solid #ccc; border-top: none; }
-.export-button { padding: 8px 16px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; margin: 10px 0; }
-.export-button:hover { background-color: #45a049; }
 .filter-container { margin-bottom: 15px; }
 .filter-container button { padding: 5px 10px; margin-right: 5px; cursor: pointer; }
 .filter-container button.active { background-color: #0066cc; color: white; }

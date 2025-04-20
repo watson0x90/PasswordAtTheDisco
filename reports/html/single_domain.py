@@ -6,7 +6,7 @@ Single domain report generation module.
 import os
 from pathlib import Path
 from reports.html.components import (
-    html_head, get_export_button, create_error_message, create_visualization_container,
+    html_head, create_error_message, create_visualization_container,
     get_risk_distribution_html, get_accounts_table_html, RISK_VECTOR_EXPLANATION,
     RISK_SCORE_EXPLANATION
 )
@@ -34,9 +34,6 @@ def generate_html_report(domain, data, visuals, logger=None):
                 <h1>Password Security Report for {domain}</h1>
                 <p><a href="./main.html">Back to Main</a> | <a href="./search.html">Search Accounts</a></p>
         """
-        
-        # Add export button
-        html += get_export_button('reportContent', f'{domain}_report.pdf')
 
         try:
             # Get consistent data counts
