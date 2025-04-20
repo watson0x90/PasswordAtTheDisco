@@ -193,22 +193,22 @@ def process_domains(domain_entries, logger):
                     
                     # Keep track of which futures correspond to which domains
                     future_to_domain_idx = {future: i for i, future in enumerate(futures)}
+                    domain_to_future = {domain_list[i]: future for i, future in enumerate(futures)}
                     
-                    # Keep track of active futures for proper domain tracking
-                    active_futures = {}
-                    domains_being_processed = set()
+                    # Initialize active domain tracking
+                    active_domains = set()
                     
                     # Start with the first N domains based on max_workers
                     max_concurrent = min(len(futures), executor._max_workers)
                     
-                    # Initial setup of domains being processed
+                    # Set up initial active domains
                     for i in range(min(max_concurrent, len(domain_list))):
                         domain = domain_list[i]
-                        domains_being_processed.add(domain)
-                        # Set the initial domain for animation
-                        if i == 0:
-                            animation.set_domain(i, domain_account_counts.get(domain, 100))
-                            
+                        active_domains.add(domain)
+                        # Set domain as active with account count
+                        animation.set_domain_active(domain, is_active=True, 
+                                                  total_accounts=domain_account_counts.get(domain, 100))
+                    
                     # Update display to show initial state
                     live.update(animation.render())
                     
@@ -229,42 +229,42 @@ def process_domains(domain_entries, logger):
                             cracked, uncracked, domain_data, accounts_count = future.result()
                             results.append((cracked, uncracked, domain_data))
                             
-                            # Update tracking
-                            if domain in domains_being_processed:
-                                domains_being_processed.remove(domain)
+                            # Mark domain as completed in animation
+                            animation.mark_domain_completed(domain, accounts_count)
                             
-                            # Update animation with completion
-                            animation.complete_domain()
+                            # Remove from active domains
+                            active_domains.remove(domain)
                             
                             # Update total accounts processed
                             total_accounts_processed += accounts_count
-                            animation.set_total_accounts(total_accounts_processed)
                             
-                            # Find the next domain to process if available
-                            completed_domains = animation.completed_domains
-                            next_domain_idx = completed_domains
+                            # Find next domain to process
+                            next_domain = None
+                            for d in domain_list:
+                                if (d not in active_domains and 
+                                    animation.domain_status.get(d) == "PENDING"):
+                                    next_domain = d
+                                    break
                             
-                            # Set next domain as current if available
-                            if next_domain_idx < len(domain_list):
-                                next_domain = domain_list[next_domain_idx]
-                                next_count = domain_account_counts.get(next_domain, 100)
-                                
-                                # Only set domain if it's not already being processed
-                                if next_domain not in domains_being_processed:
-                                    domains_being_processed.add(next_domain)
-                                    animation.set_domain(next_domain_idx, next_count)
+                            # Set next domain as active if available
+                            if next_domain:
+                                active_domains.add(next_domain)
+                                animation.set_domain_active(next_domain, is_active=True, 
+                                                         total_accounts=domain_account_counts.get(next_domain, 100))
                             
-                            # Update the live display
+                            # Update animation display
                             live.update(animation.render())
                             
                             # Print status message for logging
-                            logger.info(f"Completed {domain} with {accounts_count} accounts ({completed_domains}/{len(domain_entries)})")
+                            logger.info(f"Completed {domain} with {accounts_count} accounts ({animation.completed_domains}/{len(domain_entries)})")
                         except Exception as e:
                             logger.error(f"Error during domain processing: {str(e)}", exc_info=True)
                             print_error(f"Error processing {domain}: {str(e)}")
                             
-                            # Still mark domain as complete even if error
-                            animation.complete_domain()
+                            # Mark domain as error
+                            if domain in active_domains:
+                                active_domains.remove(domain)
+                            animation.mark_domain_error(domain)
                             live.update(animation.render())
                 
                 # Final update pause to show completion
