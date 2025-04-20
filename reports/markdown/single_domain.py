@@ -1,3 +1,4 @@
+# reports/markdown/single_domain.py
 """
 Single domain Markdown report generation module.
 """

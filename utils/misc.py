@@ -12,6 +12,39 @@ import os
 from contextlib import contextmanager
 from core.config import ENABLE_ANIMATION
 
+
+def count_accounts_in_domain(domain_entry):
+    """
+    Count the number of accounts in a domain without processing them.
+    Fast preliminary count for progress tracking.
+    
+    Args:
+        domain_entry (str): Domain entry string in format domain:cracked_file:uncracked_file
+        
+    Returns:
+        int: Total number of accounts or default estimate if count fails
+    """
+    try:
+        domain, cracked_file, uncracked_file = domain_entry.split(':')
+        
+        # Count cracked accounts
+        cracked_count = 0
+        if os.path.exists(cracked_file):
+            with open(cracked_file, 'r', encoding='utf-8') as f:
+                for _ in f:
+                    cracked_count += 1
+                    
+        # Count uncracked accounts
+        uncracked_count = 0
+        if os.path.exists(uncracked_file):
+            with open(uncracked_file, 'r', encoding='utf-8') as f:
+                for _ in f:
+                    uncracked_count += 1
+                    
+        return cracked_count + uncracked_count
+    except Exception:
+        return 100 
+
 @contextmanager
 def error_suppression(log_function=None):
     """

@@ -1,3 +1,4 @@
+# reports/markdown/__init__.py
 """
 Markdown report generation module for password security audit.
 """

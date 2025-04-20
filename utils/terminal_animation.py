@@ -1,9 +1,10 @@
 # utils/terminal_animation.py
 """
-Simplified terminal animation module for password security audit tool.
+Improved terminal animation module for password security audit tool.
 """
 
 import time
+import threading
 from datetime import datetime
 from rich.console import Console
 from rich.live import Live
@@ -16,7 +17,7 @@ from rich.layout import Layout
 
 class PasswordAuditAnimation:
     """
-    Simplified animation class for the password audit.
+    Animation class for the password audit with improved tracking.
     """
     
     def __init__(self, domains):
@@ -37,6 +38,14 @@ class PasswordAuditAnimation:
         self.current_domain = domains[0] if domains else "Unknown"
         self.current_domain_total = 100  # Default
         self.current_domain_completed = 0
+        self.domain_status = {domain: "PENDING" for domain in domains}
+        if domains:
+            self.domain_status[domains[0]] = "PROCESSING"
+        
+        # For real-time clock updates
+        self.current_time = time.time()
+        self.timer_lock = threading.Lock()
+        self._start_timer_thread()
         
         # Create progress bars
         self.domain_progress = Progress(
@@ -53,10 +62,23 @@ class PasswordAuditAnimation:
             total=self.current_domain_total
         )
     
+    def _start_timer_thread(self):
+        """Start a separate thread to update the timer continuously."""
+        def update_timer():
+            while True:
+                with self.timer_lock:
+                    self.current_time = time.time()
+                time.sleep(0.2)  # Update 5 times per second
+                
+        timer_thread = threading.Thread(target=update_timer, daemon=True)
+        timer_thread.start()
+    
     def get_header(self):
-        """Create the header panel."""
-        # Calculate elapsed time
-        elapsed = time.time() - self.start_time
+        """Create the header panel with current running time."""
+        # Calculate current elapsed time using the thread-updated time
+        with self.timer_lock:
+            elapsed = self.current_time - self.start_time
+        
         hours, remainder = divmod(int(elapsed), 3600)
         minutes, seconds = divmod(remainder, 60)
         time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
@@ -81,10 +103,10 @@ class PasswordAuditAnimation:
         domains_table.add_column("Status", style="green", justify="right")
         
         # Determine which domains to show (focus on current + a few before/after)
-        current_idx = self.current_domain_index
         visible_count = min(10, len(self.domains))
         
         # Calculate start index to center around current domain
+        current_idx = self.current_domain_index
         if current_idx < visible_count // 2:
             start_idx = 0
         elif current_idx > len(self.domains) - visible_count // 2:
@@ -97,16 +119,14 @@ class PasswordAuditAnimation:
         # Show domains with appropriate status indicators
         for i in range(start_idx, end_idx):
             domain = self.domains[i]
-            if i < current_idx:
-                # Completed domain
-                domains_table.add_row(domain, "✓ COMPLETE")
-            elif i == current_idx:
-                # Current domain with animated indicator
+            status = self.domain_status.get(domain, "PENDING")
+            
+            # For the current processing domain, add animated lightning bolt
+            if domain == self.current_domain and status == "PROCESSING":
                 bolt = "⚡" * (1 + (self.frame_counter % 3))
-                domains_table.add_row(domain, f"{bolt} PROCESSING")
+                domains_table.add_row(domain, f"{bolt} {status}")
             else:
-                # Pending domain
-                domains_table.add_row(domain, "PENDING")
+                domains_table.add_row(domain, status)
         
         return Panel(
             domains_table,
@@ -116,15 +136,25 @@ class PasswordAuditAnimation:
         )
     
     def get_footer(self):
-        """Create the footer panel."""
+        """Create the footer panel with account processing stats."""
         # Choose lightning bolt animation frame
         bolt_patterns = ["⚡", "⚡⚡", "⚡⚡⚡", "⚡⚡"]
         bolt = bolt_patterns[self.frame_counter % len(bolt_patterns)]
         
+        # Include both current domain and total account processing info
         footer_text = Text()
         footer_text.append(f"{bolt} ", style="bold yellow")
         footer_text.append(f"Domains: {self.completed_domains}/{self.total_domains} | ", style="bold cyan")
-        footer_text.append(f"Accounts: {self.processed_accounts} | ", style="bold green")
+        
+        # Display the active domain and account info
+        domain_display = self.current_domain if self.current_domain else "None"
+        footer_text.append(f"Processing: {domain_display} | ", style="bold red")
+        
+        # Add current domain account info if available
+        if self.current_domain_total > 0:
+            footer_text.append(f"Current domain accounts: {self.current_domain_completed}/{self.current_domain_total} | ", style="bold magenta")
+            
+        footer_text.append(f"Total accounts: {self.processed_accounts} | ", style="bold green")
         footer_text.append("Press Ctrl+C to abort", style="dim")
         
         return Panel(
@@ -177,8 +207,17 @@ class PasswordAuditAnimation:
             total_accounts (int, optional): Total accounts in the domain
         """
         if 0 <= domain_index < len(self.domains):
+            # Mark previous domain as complete if it was being processed
+            if self.current_domain_index < len(self.domains):
+                prev_domain = self.domains[self.current_domain_index]
+                if prev_domain != self.domains[domain_index]:  # Only if changing domains
+                    if self.domain_status.get(prev_domain) == "PROCESSING":
+                        self.domain_status[prev_domain] = "COMPLETE"
+            
+            # Set new current domain
             self.current_domain_index = domain_index
             self.current_domain = self.domains[domain_index]
+            self.domain_status[self.current_domain] = "PROCESSING"
             
             if total_accounts is not None:
                 self.current_domain_total = max(1, total_accounts)
@@ -219,9 +258,13 @@ class PasswordAuditAnimation:
         self.completed_domains += 1
         self.processed_accounts += self.current_domain_completed
         
+        # Mark current domain as complete
+        if self.current_domain:
+            self.domain_status[self.current_domain] = "COMPLETE"
+        
         # Set progress to 100%
         self.update_progress(completed=self.current_domain_total)
         
-        # Move to next domain if available
-        if self.current_domain_index < len(self.domains) - 1:
-            self.set_domain(self.current_domain_index + 1)
+    def set_total_accounts(self, count):
+        """Set the total number of accounts processed across all domains."""
+        self.processed_accounts = count

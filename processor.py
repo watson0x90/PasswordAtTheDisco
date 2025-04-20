@@ -83,11 +83,11 @@ def process_single_domain(domain_entry, forbidden_words, keyboard_patterns, comm
         
         logger.info(f"Generated reports for {domain}")
         
-        return domain_data['cracked'], domain_data['uncracked'], result
+        return domain_data['cracked'], domain_data['uncracked'], result, len(cracked_accounts) + len(uncracked_accounts)
     except Exception as e:
         with error_suppression(logger.error):
             logger.error(f"Error processing domain {domain_entry}: {str(e)}", exc_info=True)
-        return [], [], None
+        return [], [], None, 0
 
 
 def process_domain_wrapper(args):
@@ -104,6 +104,30 @@ def generate_pdfs(logger):
     except Exception as e:
         with error_suppression(logger.error):
             logger.error(f"Error generating PDFs: {str(e)}")
+
+
+def count_accounts_in_domain(domain_entry):
+    """Count accounts in a domain without processing them fully."""
+    try:
+        domain, cracked_file, uncracked_file = domain_entry.split(':')
+        
+        # Count cracked accounts
+        cracked_count = 0
+        if os.path.exists(cracked_file):
+            with open(cracked_file, 'r', encoding='utf-8') as f:
+                for _ in f:
+                    cracked_count += 1
+                    
+        # Count uncracked accounts
+        uncracked_count = 0
+        if os.path.exists(uncracked_file):
+            with open(uncracked_file, 'r', encoding='utf-8') as f:
+                for _ in f:
+                    uncracked_count += 1
+                    
+        return cracked_count + uncracked_count
+    except Exception:
+        return 100  # Default fallback count
 
 
 def process_domains(domain_entries, logger):
@@ -140,14 +164,24 @@ def process_domains(domain_entries, logger):
         domain_list = [d.split(':')[0] for d in domain_entries]
         all_data = {"domains": {}, "combined": {}}
         results = []
+        total_accounts_processed = 0
         
         # Process domains with animation
         if ENABLE_ANIMATION:
+            # Precount accounts in each domain for better progress reporting
+            domain_account_counts = {}
+            print_info("Counting accounts in each domain...")
+            for i, domain_entry in enumerate(domain_entries):
+                domain = domain_entry.split(':')[0]
+                count = count_accounts_in_domain(domain_entry)
+                domain_account_counts[domain] = count
+                print_info(f"  {domain}: {count} accounts")
+            
             # Initialize the animation
             animation = PasswordAuditAnimation(domain_list)
             
             # Use Rich's Live display to show the animation
-            with Live(animation.render(), refresh_per_second=4) as live:
+            with Live(animation.render(), refresh_per_second=10) as live:
                 # Process domains in parallel
                 with ProcessPoolExecutor(max_workers=min(os.cpu_count(), 4)) as executor:
                     # Prepare all tasks
@@ -157,11 +191,33 @@ def process_domains(domain_entries, logger):
                     # Submit all tasks
                     futures = [executor.submit(process_domain_wrapper, arg) for arg in task_args]
                     
+                    # Keep track of which futures correspond to which domains
+                    future_to_domain_idx = {future: i for i, future in enumerate(futures)}
+                    
+                    # Keep track of active futures for proper domain tracking
+                    active_futures = {}
+                    domains_being_processed = set()
+                    
+                    # Start with the first N domains based on max_workers
+                    max_concurrent = min(len(futures), executor._max_workers)
+                    
+                    # Initial setup of domains being processed
+                    for i in range(min(max_concurrent, len(domain_list))):
+                        domain = domain_list[i]
+                        domains_being_processed.add(domain)
+                        # Set the initial domain for animation
+                        if i == 0:
+                            animation.set_domain(i, domain_account_counts.get(domain, 100))
+                            
+                    # Update display to show initial state
+                    live.update(animation.render())
+                    
                     # Process results as they complete
-                    for i, future in enumerate(concurrent.futures.as_completed(futures)):
+                    for future in concurrent.futures.as_completed(futures):
                         try:
                             # Get domain information
-                            domain_entry = domain_entries[i]
+                            domain_idx = future_to_domain_idx[future]
+                            domain_entry = domain_entries[domain_idx]
                             domain = domain_entry.split(':')[0]
                             
                             if shutdown_event.is_set():
@@ -170,15 +226,39 @@ def process_domains(domain_entries, logger):
                                 break
                             
                             # Get the result
-                            cracked, uncracked, domain_data = future.result()
+                            cracked, uncracked, domain_data, accounts_count = future.result()
                             results.append((cracked, uncracked, domain_data))
+                            
+                            # Update tracking
+                            if domain in domains_being_processed:
+                                domains_being_processed.remove(domain)
                             
                             # Update animation with completion
                             animation.complete_domain()
+                            
+                            # Update total accounts processed
+                            total_accounts_processed += accounts_count
+                            animation.set_total_accounts(total_accounts_processed)
+                            
+                            # Find the next domain to process if available
+                            completed_domains = animation.completed_domains
+                            next_domain_idx = completed_domains
+                            
+                            # Set next domain as current if available
+                            if next_domain_idx < len(domain_list):
+                                next_domain = domain_list[next_domain_idx]
+                                next_count = domain_account_counts.get(next_domain, 100)
+                                
+                                # Only set domain if it's not already being processed
+                                if next_domain not in domains_being_processed:
+                                    domains_being_processed.add(next_domain)
+                                    animation.set_domain(next_domain_idx, next_count)
+                            
+                            # Update the live display
                             live.update(animation.render())
                             
                             # Print status message for logging
-                            logger.info(f"Completed {domain} ({i+1}/{len(domain_entries)})")
+                            logger.info(f"Completed {domain} with {accounts_count} accounts ({completed_domains}/{len(domain_entries)})")
                         except Exception as e:
                             logger.error(f"Error during domain processing: {str(e)}", exc_info=True)
                             print_error(f"Error processing {domain}: {str(e)}")
@@ -199,6 +279,15 @@ def process_domains(domain_entries, logger):
                     task_args = [(domain_entry, forbidden_words, keyboard_patterns, common_passwords, 
                                 dictionary_words, global_seed, logger) for domain_entry in domain_entries]
                     results = list(executor.map(process_domain_wrapper, task_args))
+                    
+                    # Count total accounts
+                    for cracked, uncracked, _, count in results:
+                        total_accounts_processed += count
+                        all_cracked.extend(cracked)
+                        all_uncracked.extend(uncracked)
+                        
+                    # Extract just the data results (first 3 elements)
+                    results = [(c, u, d) for c, u, d, _ in results]
             except Exception as e:
                 with error_suppression(logger.error):
                     logger.error(f"Error during domain processing: {str(e)}", exc_info=True)
@@ -381,10 +470,9 @@ def process_domains(domain_entries, logger):
                 
             # Also add placeholders to combined rows
             for row in all_data_with_placeholders['combined']['combined_rows']:
-                if 'Password' in row and 'Password' in row:
+                if 'Password' in row and row['Password'] not in global_hash_to_users:  # Only for cracked passwords
                     password = row['Password']
-                    if password not in global_hash_to_users:  # Only for cracked passwords
-                        row['Password Placeholder'] = hashlib.md5((global_seed + password).encode()).hexdigest()
+                    row['Password Placeholder'] = hashlib.md5((global_seed + password).encode()).hexdigest()
             
             json_file_with_placeholders = html_reports_folder / 'password_data_with_placeholders.json'
             with open(json_file_with_placeholders, 'w', encoding='utf-8') as f:

@@ -1,3 +1,4 @@
+# reports/markdown/components.py
 """
 Reusable Markdown components for report generation.
 """
