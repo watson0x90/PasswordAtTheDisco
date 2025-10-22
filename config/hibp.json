@@ -1,0 +1,6 @@
+{
+  "ntlm_hash_file": "PwnedPasswordsDownloader/pwnedpasswords_ntlm.txt",
+  "enable_lookup": true,
+  "cache_size": 1000000,
+  "prefix_length": 5
+}

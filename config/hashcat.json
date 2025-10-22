@@ -1,0 +1,14 @@
+{
+  "binary_path": "../../../hashcat/hashcat",
+  "wordlists_dir": "../../../hashcat/wordlists",
+  "rules_dir": "../../../hashcat/rules",
+  "potfile_dir": "hashcat_potfiles",
+  "enable_json_status": true,
+  "enable_brain_mode": false,
+  "brain_host": "127.0.0.1",
+  "brain_port": 6863,
+  "brain_password": "changeme",
+  "default_workload_profile": 3,
+  "enable_optimized_kernel": true,
+  "status_timer": 10
+}

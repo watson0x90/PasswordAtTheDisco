@@ -1,0 +1,4 @@
+[submodule "PwnedPasswordsDownloader"]
+	path = PwnedPasswordsDownloader
+	url = https://github.com/watson0x90/PwnedPasswordsDownloader.git
+	branch = updated-downlaoder

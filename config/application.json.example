@@ -1,0 +1,14 @@
+{
+  "_comment": "Application configuration for Password!AtTheDisco",
+
+  "server": {
+    "_description": "Web server settings for serving HTML reports",
+    "port": 8008,
+    "host": "localhost"
+  },
+
+  "ui": {
+    "_description": "User interface settings",
+    "enable_animation": true
+  }
+}
