@@ -15,15 +15,17 @@ Usage:
     result = runner.crack_ntlm_hashes('hashes.txt', 'wordlist.txt')
 """
 
-import os
 import json
 import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-from dataclasses import dataclass
-from datetime import datetime
+
 from core.config import HASHCAT_CONFIG
+from utils.logging import get_logger
+
+logger = get_logger('hashcat')
 
 
 @dataclass
@@ -269,7 +271,7 @@ class HashcatRunner:
         cmd = self.build_command(hash_file, attack_config)
 
         # Run hashcat
-        print(f"Running hashcat: {' '.join(str(c) for c in cmd)}")
+        logger.info(f"Running hashcat: {' '.join(str(c) for c in cmd)}")
 
         status_updates = []
         errors = []
@@ -360,7 +362,7 @@ class HashcatRunner:
         cmd = self.build_command(hash_file, attack_config)
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            subprocess.run(cmd, capture_output=True, text=True, timeout=30)
 
             # Count lines in output
             if output_file.exists():
@@ -370,7 +372,7 @@ class HashcatRunner:
             return 0
 
         except Exception as e:
-            print(f"Error extracting cracked: {e}")
+            logger.error(f"Error extracting cracked: {e}")
             return 0
 
     def extract_uncracked(self, hash_file: Path, potfile: Path, output_file: Path) -> int:
@@ -396,7 +398,7 @@ class HashcatRunner:
         cmd = self.build_command(hash_file, attack_config)
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            subprocess.run(cmd, capture_output=True, text=True, timeout=30)
 
             # Count lines in output
             if output_file.exists():
@@ -406,7 +408,7 @@ class HashcatRunner:
             return 0
 
         except Exception as e:
-            print(f"Error extracting uncracked: {e}")
+            logger.error(f"Error extracting uncracked: {e}")
             return 0
 
     def _get_crack_statistics(self, hash_file: Path, potfile: Path) -> Tuple[int, int]:
@@ -425,7 +427,7 @@ class HashcatRunner:
         try:
             with open(hash_file, 'r') as f:
                 total = sum(1 for line in f if line.strip())
-        except:
+        except Exception:
             pass
 
         # Count cracked (lines in potfile)
@@ -434,7 +436,7 @@ class HashcatRunner:
             try:
                 with open(potfile, 'r') as f:
                     cracked = sum(1 for line in f if line.strip())
-            except:
+            except Exception:
                 pass
 
         return cracked, total

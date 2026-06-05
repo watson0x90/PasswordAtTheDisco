@@ -4,19 +4,26 @@ Domain analysis module for evaluating password security across a domain.
 Implements comprehensive domain-wide analysis and cross-domain sharing detection.
 """
 
-import threading
-import logging
 import concurrent.futures
-from datetime import datetime, timezone
+import logging
+import threading
 from collections import Counter, defaultdict
+from datetime import datetime, timezone
 
-from core.bloodhound_integration import fetch_bhe_data
-from core.bloodhound_integration import fetch_bhe_data, handle_bhe_data, extract_da_domains, extract_controllable_count
+from core.bloodhound_integration import (
+    extract_controllable_count,
+    extract_da_domains,
+    fetch_bhe_data,
+    handle_bhe_data,
+)
+from core.config import policy
+from core.hibp_correlation import HIBPChecker, categorize_hibp_risk
 from core.password_analysis import analyze_password
 from core.scoring import calculate_password_risk_score, compute_risk_level
 from core.vector import generate_risk_vector
-from core.config import policy
-from core.hibp_correlation import HIBPChecker, categorize_hibp_risk
+from utils.logging import get_logger
+
+logger = get_logger('domain_analysis')
 
 # Global shutdown event for graceful exit
 shutdown_event = threading.Event()
@@ -32,7 +39,7 @@ def _get_hibp_checker():
         try:
             hibp_checker = HIBPChecker()
         except Exception as e:
-            print(f"Warning: Could not initialize HIBP checker: {e}")
+            logger.warning(f"Could not initialize HIBP checker: {e}")
             # Create a disabled checker
             hibp_checker = type('obj', (object,), {'enabled': False, 'check_ntlm_hash': lambda self, h: (False, 0)})()
     return hibp_checker

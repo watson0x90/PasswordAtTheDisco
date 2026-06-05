@@ -14,12 +14,14 @@ Usage:
     is_breached, count = checker.check_ntlm_hash('8846F7EAEE8FB117AD06BDD830B7586C')
 """
 
-import os
-import bisect
-from pathlib import Path
-from typing import Tuple, Dict, List, Optional
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
 from core.config import HIBP_CONFIG
+from utils.logging import get_logger
+
+logger = get_logger('hibp')
 
 
 def plaintext_to_ntlm(password: str) -> str:
@@ -155,7 +157,7 @@ class HIBPChecker:
 
         # Check if file exists
         if not self.hibp_file.exists():
-            print(f"Warning: HIBP file not found at {self.hibp_file}")
+            logger.warning(f"HIBP file not found at {self.hibp_file}")
             self.enabled = False
         else:
             self.enabled = HIBP_CONFIG.get("ENABLE_LOOKUP", True)
@@ -166,7 +168,7 @@ class HIBPChecker:
 
     def _load_cache(self) -> None:
         """Load frequently breached hashes into memory cache."""
-        print(f"Loading HIBP hash cache from {self.hibp_file}...")
+        logger.info(f"Loading HIBP hash cache from {self.hibp_file}...")
 
         try:
             loaded = 0
@@ -187,10 +189,10 @@ class HIBPChecker:
                         loaded += 1
 
             self.total_hashes = loaded
-            print(f"✓ Loaded {loaded:,} HIBP hashes into cache")
+            logger.info(f"Loaded {loaded:,} HIBP hashes into cache")
 
         except Exception as e:
-            print(f"Error loading HIBP cache: {e}")
+            logger.error(f"Error loading HIBP cache: {e}")
             self.enabled = False
 
     def _initialize_index(self) -> None:
@@ -203,13 +205,13 @@ class HIBPChecker:
 
         # If index doesn't exist, build it
         if not self.index:
-            print(f"No prefix index found. Building {prefix_length}-character prefix index...")
-            print(f"(this may take 3-5 minutes)...")
+            logger.info(f"No prefix index found. Building {prefix_length}-character "
+                        "prefix index (this may take 3-5 minutes)...")
             self.indexer.build_index()
             self.index = self.indexer.load_index()
 
         if self.index:
-            print(f"✓ HIBP prefix index ready with {len(self.index):,} entries")
+            logger.info(f"HIBP prefix index ready with {len(self.index):,} entries")
 
     def _binary_search_file(self, ntlm_hash: str) -> Tuple[bool, int]:
         """
@@ -237,7 +239,7 @@ class HIBPChecker:
                 return True, count
 
         except Exception as e:
-            print(f"Error during prefix search: {e}")
+            logger.error(f"Error during prefix search: {e}")
             return False, 0
 
         return False, 0
@@ -403,8 +405,8 @@ class HIBPPrefixSearcher:
         Args:
             progress_interval: Update progress every N lines (default: 10000)
         """
-        print(f"Building {self.prefix_length}-character prefix index for {self.hibp_file.name}")
-        print(f"This will take approximately 3-5 minutes...")
+        logger.info(f"Building {self.prefix_length}-character prefix index for "
+                    f"{self.hibp_file.name} (this will take approximately 3-5 minutes)...")
 
         current_prefix = None
         byte_offset = 0
@@ -442,24 +444,25 @@ class HIBPPrefixSearcher:
 
                     # Progress update
                     if line_count % progress_interval == 0:
-                        print(f"  Processed {line_count:,} lines, {len(index_entries):,} prefixes...")
+                        logger.debug(f"Processed {line_count:,} lines, "
+                                     f"{len(index_entries):,} prefixes...")
 
             # Write index to file
-            print(f"Writing index to {self.index_file}...")
+            logger.info(f"Writing index to {self.index_file}...")
             with open(self.index_file, 'w') as f:
                 for prefix in sorted(index_entries.keys()):
                     f.write(f"{prefix}:{index_entries[prefix]}\n")
 
             avg_lines_per_prefix = line_count // len(index_entries) if index_entries else 0
 
-            print(f"✓ Index build complete!")
-            print(f"  Total lines processed: {line_count:,}")
-            print(f"  Total prefixes indexed: {len(index_entries):,}")
-            print(f"  Average lines per prefix: {avg_lines_per_prefix:,}")
-            print(f"  Index file: {self.index_file}")
+            logger.info(
+                f"Index build complete: {line_count:,} lines processed, "
+                f"{len(index_entries):,} prefixes indexed "
+                f"(avg {avg_lines_per_prefix:,} lines/prefix) -> {self.index_file}"
+            )
 
         except Exception as e:
-            print(f"Error building index: {e}")
+            logger.error(f"Error building index: {e}")
             raise
 
     def load_index(self) -> Dict[str, int]:
@@ -470,8 +473,8 @@ class HIBPPrefixSearcher:
             Dictionary of {prefix: byte_offset}
         """
         if not self.index_file.exists():
-            print(f"Index file not found: {self.index_file}")
-            print(f"Please run build_index() first to create the index.")
+            logger.warning(f"Index file not found: {self.index_file}. "
+                           "Run build_index() first to create the index.")
             return {}
 
         try:
@@ -480,11 +483,11 @@ class HIBPPrefixSearcher:
                     prefix, offset = line.strip().split(':')
                     self.index[prefix] = int(offset)
 
-            print(f"✓ Loaded prefix index with {len(self.index):,} entries")
+            logger.info(f"Loaded prefix index with {len(self.index):,} entries")
             return self.index
 
         except Exception as e:
-            print(f"Error loading index: {e}")
+            logger.error(f"Error loading index: {e}")
             return {}
 
     def lookup_hash(self, ntlm_hash: str) -> Tuple[bool, int]:
@@ -557,7 +560,7 @@ class HIBPPrefixSearcher:
                         break
 
         except Exception as e:
-            print(f"Error during lookup: {e}")
+            logger.error(f"Error during lookup: {e}")
             return False, 0
 
         # Not found
@@ -600,7 +603,7 @@ def analyze_hibp_correlation(cracked_file: Path, output_file: Path = None) -> Di
                     })
 
     except Exception as e:
-        print(f"Error reading file: {e}")
+        logger.error(f"Error reading file: {e}")
         return {}
 
     # Check all accounts
