@@ -9,12 +9,15 @@ from pathlib import Path
 
 import chardet
 
-# Optional imports for PDF generation (not required for HTML generation)
+# Optional imports for PDF generation (not required for HTML generation).
+# weasyprint raises OSError (not ImportError) when its native GTK/Pango/cairo
+# libraries are missing (common on Windows), so catch both and degrade to
+# HTML-only rather than crashing every importer of this module.
 try:
     import markdown
     from weasyprint import CSS, HTML
     PDF_SUPPORT = True
-except ImportError:
+except (ImportError, OSError):
     PDF_SUPPORT = False
 
 def load_list(file_path: str) -> set:
