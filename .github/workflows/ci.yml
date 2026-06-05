@@ -50,12 +50,6 @@ jobs:
       - name: Install ruff
         run: python -m pip install --upgrade pip ruff==0.15.16
 
-      # Blocking: newly added/maintained code must stay lint-clean.
-      - name: Lint maintained code
-        run: ruff check tests/ core/config.py
-
-      # Advisory: surfaces the legacy lint baseline without failing the build.
-      # Remove `continue-on-error` once the baseline is cleaned up.
-      - name: Lint full codebase (advisory)
-        continue-on-error: true
+      # The full codebase is lint-clean, so this is a hard gate.
+      - name: Lint
         run: ruff check . --output-format=github
