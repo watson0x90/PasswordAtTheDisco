@@ -4,9 +4,9 @@ Data processing module for the password audit tool.
 Handles loading and processing of password data files.
 """
 
-from utils.file_utils import decode_hex
 from models.account import Account
 from models.password import Password
+from utils.file_utils import decode_hex
 
 
 def process_domain(domain, cracked_file, uncracked_file):
@@ -15,7 +15,8 @@ def process_domain(domain, cracked_file, uncracked_file):
 
     Supports two formats:
     1. Simple format: username:hash:password
-    2. SecretsDump format: username:rid:lm_hash:ntlm_hash::::password
+    2. SecretsDump format: username:rid:lm_hash:ntlm_hash:::password
+       (the count of empty placeholder fields before the password may vary)
 
     Args:
         domain (str): The domain name
@@ -30,11 +31,21 @@ def process_domain(domain, cracked_file, uncracked_file):
         for line in f:
             parts = line.strip().split(':')
 
-            # SecretsDump format: username:rid:lm_hash:ntlm_hash::::password
-            if len(parts) >= 8:
+            # SecretsDump format: username:rid:lm_hash:ntlm_hash[:...]:password
+            # The number of empty placeholder fields between the NTLM hash and
+            # the password varies (the README shows three colons, some tooling
+            # emits four), so parse by role rather than by exact field count:
+            # username is field 0, the NTLM hash is field 3, and the password is
+            # everything after the run of empty placeholder fields. Joining the
+            # remaining fields with ':' preserves passwords that contain colons.
+            if len(parts) >= 7:
                 username = parts[0]
                 ntlm_hash = parts[3]  # NTLM hash is at index 3
-                password = parts[-1]   # Password is last field
+
+                idx = 4
+                while idx < len(parts) and parts[idx] == '':
+                    idx += 1
+                password = ':'.join(parts[idx:])
 
                 # Skip if no password (empty field)
                 if not password:

@@ -37,13 +37,14 @@ def _write(tmp_path, name, lines):
 
 
 class TestProcessDomainSecretsDump:
-    # NOTE: the cracked branch requires len(parts) >= 8, i.e. four trailing
-    # colons (`nt::::password`). The README documents the cracked format with
-    # three (`nt:::password`), which this code would silently skip -- a
-    # doc/code mismatch worth reconciling. These tests pin the code behavior.
-    def test_parses_secretsdump_cracked_line(self, tmp_path):
+    # The cracked parser keys off field roles (username=0, NTLM=3, password =
+    # everything after the trailing empty placeholder fields), so it accepts
+    # both the README's 7-field form (`nt:::password`) and the 8-field form
+    # (`nt::::password`), and preserves passwords containing colons.
+    def test_parses_secretsdump_cracked_line_7_fields(self, tmp_path):
+        # README-documented format: username:rid:lm:nt:::password
         cracked = _write(tmp_path, "cracked.txt", [
-            "alice:1001:aad3b435b51404eeaad3b435b51404ee:ntlmhashvalue::::Summer2024!",
+            "alice:1001:aad3b435b51404eeaad3b435b51404ee:ntlmhashvalue:::Summer2024!",
         ])
         uncracked = _write(tmp_path, "uncracked.txt", [])
         cracked_accounts, _ = process_domain("CORP.INT", cracked, uncracked)
@@ -54,6 +55,14 @@ class TestProcessDomainSecretsDump:
         assert acc["password"] == "Summer2024!"
         assert acc["domain"] == "CORP.INT"
 
+    def test_parses_secretsdump_cracked_line_8_fields(self, tmp_path):
+        cracked = _write(tmp_path, "cracked.txt", [
+            "alice:1001:aad3b435b51404eeaad3b435b51404ee:ntlmhashvalue::::Summer2024!",
+        ])
+        uncracked = _write(tmp_path, "uncracked.txt", [])
+        cracked_accounts, _ = process_domain("CORP.INT", cracked, uncracked)
+        assert cracked_accounts[0]["password"] == "Summer2024!"
+
     def test_empty_password_field_skipped(self, tmp_path):
         cracked = _write(tmp_path, "cracked.txt", [
             "bob:1002:aad3b435b51404eeaad3b435b51404ee:ntlm::::",
@@ -62,16 +71,15 @@ class TestProcessDomainSecretsDump:
         cracked_accounts, _ = process_domain("CORP.INT", cracked, uncracked)
         assert cracked_accounts == []
 
-    def test_colon_in_password_is_truncated(self, tmp_path):
-        # KNOWN LIMITATION: lines are split on ':' and the password taken as the
-        # last field, so a password containing a colon loses everything before
-        # its final colon. This test documents the current behavior.
+    def test_colon_in_password_is_preserved(self, tmp_path):
+        # A password containing colons must survive intact (split on ':' and
+        # taking only the last field would have truncated it to "word").
         cracked = _write(tmp_path, "cracked.txt", [
             "carol:1003:aad3b435b51404eeaad3b435b51404ee:ntlm::::pa:ss:word",
         ])
         uncracked = _write(tmp_path, "uncracked.txt", [])
         cracked_accounts, _ = process_domain("CORP.INT", cracked, uncracked)
-        assert cracked_accounts[0]["password"] == "word"
+        assert cracked_accounts[0]["password"] == "pa:ss:word"
 
     def test_parses_secretsdump_uncracked_line(self, tmp_path):
         cracked = _write(tmp_path, "cracked.txt", [])
