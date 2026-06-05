@@ -8,9 +8,6 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 import numpy as np
-from datetime import datetime
-from collections import Counter
-import math
 
 def create_risk_distribution_chart(domain, data):
     """

@@ -690,7 +690,6 @@ def analyze_cross_domain_sharing(all_cracked, all_uncracked, domains):
         combined_rows = []
         
         # Collect domain risk levels to enhance cross-domain risk assessment
-        domain_risk_levels = {}
         
         # First pass: gather all cracked and uncracked accounts
         for acc in all_cracked:

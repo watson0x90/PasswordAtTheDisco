@@ -7,8 +7,7 @@ Provides functions to generate actionable Excel reports.
 import os
 import hashlib
 import pandas as pd
-from collections import Counter
-from core.config import reports_folder, excel_folder
+from core.config import excel_folder
 
 def write_actionable_excel(domain, rows, seed, logger=None):
     """

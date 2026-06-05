@@ -7,7 +7,6 @@ Generates interactive charts that can be embedded directly in HTML.
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
-import json
 
 
 def generate_chart_html(fig, div_id="chart", height=500):

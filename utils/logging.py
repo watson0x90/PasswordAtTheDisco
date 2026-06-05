@@ -6,9 +6,7 @@ Provides functions for setting up and using logging.
 
 import logging
 import os
-import sys
 from datetime import datetime
-from pathlib import Path
 from core.config import BASE_DIR
 from utils.misc import error_suppression
 

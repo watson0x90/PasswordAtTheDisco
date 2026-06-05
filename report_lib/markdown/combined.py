@@ -4,10 +4,7 @@ Combined/cross-domain Markdown report generation module.
 """
 
 import os
-import base64
-from pathlib import Path
 from collections import Counter, defaultdict
-from datetime import datetime
 from core.config import markdown_folder
 from utils.visualization_helper import add_visualization_to_markdown
 from report_lib.markdown.components import (

@@ -16,8 +16,7 @@ from concurrent.futures import ProcessPoolExecutor
 import concurrent.futures
 from copy import deepcopy
 
-from core.config import (reports_folder, html_reports_folder, markdown_folder, pdf_folder, csv_folder, excel_folder,
-                         ENABLE_ANIMATION, create_report_directory)
+from core.config import (reports_folder, markdown_folder, pdf_folder, ENABLE_ANIMATION, create_report_directory)
 from core.data import process_domain
 from core.domain_analysis import analyze_domain, analyze_cross_domain_sharing, shutdown_event
 import core.config as config_module
@@ -226,11 +225,7 @@ def process_domains(domain_entries, logger):
 
     # Override global config variables to use new directories for this run
     # Store originals to restore later if needed
-    original_csv_folder = config_module.csv_folder
-    original_excel_folder = getattr(config_module, 'excel_folder', None)
-    original_html_folder = config_module.html_reports_folder
-    original_markdown_folder = config_module.markdown_folder
-    original_pdf_folder = config_module.pdf_folder
+    getattr(config_module, 'excel_folder', None)
 
     # Set new directories
     config_module.csv_folder = report_dirs['csv_dir']
@@ -341,7 +336,7 @@ def process_domains(domain_entries, logger):
                 
                 # Keep track of which futures correspond to which domains
                 future_to_domain_idx = {future: i for i, future in enumerate(futures)}
-                domain_to_future = {domain_list[i]: future for i, future in enumerate(futures)}
+                {domain_list[i]: future for i, future in enumerate(futures)}
                 
                 # Initialize active domain tracking
                 active_domains = set()

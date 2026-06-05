@@ -4,7 +4,6 @@ Reusable Markdown components for report generation.
 """
 
 from datetime import datetime
-from collections import Counter
 
 def get_markdown_header(title, include_timestamp=True):
     """

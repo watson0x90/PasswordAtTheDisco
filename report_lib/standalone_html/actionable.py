@@ -14,7 +14,7 @@ from report_lib.standalone_html.components import (
     create_breadcrumb, create_risk_badge, create_user_detail_offcanvas,
     create_navbar, create_sidebar, create_page_wrapper
 )
-from report_lib.standalone_html.scripts import TABLE_SORT_JS, TAB_SWITCH_JS, ACTIONABLE_REPORT_JS, USER_DETAIL_JS
+from report_lib.standalone_html.scripts import TABLE_SORT_JS, ACTIONABLE_REPORT_JS, USER_DETAIL_JS
 
 def generate_html_actionable_report(domain, data, seed, visuals, logger=None):
     """
@@ -70,7 +70,6 @@ def generate_combined_actionable_report(domain, data, seed, visuals, logger=None
 
         try:
             cracked_rows = [row for row in data['output_rows'] if row.get('Password Length', 'N/A') != 'N/A']
-            risk_order = {"Critical": 4, "High": 3, "Medium": 2, "Low": 1, "Unknown": 0}
 
             # DA accounts section with explanation
             da_accounts = [row for row in cracked_rows if row.get('DA Domains', 'None') not in ('None', 'Unknown')]
@@ -431,7 +430,6 @@ def build_da_accounts_table(accounts, seed):
         placeholder = hashlib.md5((seed + acc['Password']).encode()).hexdigest()
         action = "Reset Immediately" if acc.get('Enabled', 'No') == 'Yes' and acc.get('Risk Level', '') in ('High', 'Critical') else "Review and Secure"
         risk_level = acc.get('Risk Level', 'Unknown')
-        row_id = f"breakdown-da-{idx}"
 
         # Type badge (all in this table are Cracked)
         type_badge = '<span class="badge bg-success">Cracked</span>'
@@ -439,7 +437,7 @@ def build_da_accounts_table(accounts, seed):
         # HIBP data
         hibp_breached = acc.get('HIBP Breached', 'No')
         hibp_count = acc.get('HIBP Breach Count', 0)
-        hibp_risk = acc.get('HIBP Risk Level', 'None')
+        acc.get('HIBP Risk Level', 'None')
 
         hibp_badge = '<span class="badge bg-danger">Yes</span>' if hibp_breached == 'Yes' else '<span class="badge bg-secondary">No</span>'
 

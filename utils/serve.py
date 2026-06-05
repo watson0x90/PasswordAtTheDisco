@@ -6,7 +6,6 @@ Provides a menu-driven interface to select and view reports.
 """
 
 import os
-import sys
 import socket
 import http.server
 import socketserver
@@ -19,7 +18,7 @@ try:
     from rich.console import Console
     from rich.prompt import Prompt
     from utils.branding import (show_report_menu_header, show_report_list,
-                                show_format_menu, show_server_panel, print_error)
+                                show_server_panel, print_error)
     console = Console()
     RICH_AVAILABLE = True
 except ImportError:

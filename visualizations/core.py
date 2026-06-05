@@ -4,16 +4,13 @@ Core visualization module for password security analysis.
 Coordinates generation of various visualization types.
 """
 
+import importlib.util
 import os
+
 from core.config import html_reports_folder
 
-# Optional import for Plotly (not required for basic functionality)
-try:
-    import plotly.graph_objects as go
-    import plotly.express as px
-    PLOTLY_AVAILABLE = True
-except ImportError:
-    PLOTLY_AVAILABLE = False
+# Plotly is an optional dependency (not required for basic functionality).
+PLOTLY_AVAILABLE = importlib.util.find_spec("plotly") is not None
 
 def save_plot(fig, filename):
     """

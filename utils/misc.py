@@ -4,13 +4,9 @@ Miscellaneous utility functions for the password audit tool.
 Enhanced with robust error handling.
 """
 
-import sys
-import time
 import shutil
-import datetime
 import os
 from contextlib import contextmanager
-from core.config import ENABLE_ANIMATION
 
 
 def count_accounts_in_domain(domain_entry):

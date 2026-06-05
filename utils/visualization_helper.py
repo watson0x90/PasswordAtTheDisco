@@ -6,7 +6,6 @@ Provides functions to consistently add visualizations to reports.
 
 import os
 import base64
-from pathlib import Path
 
 def get_vis_path(visuals, vis_type, format_type='html'):
     """Helper function to safely get visualization path regardless of format"""
@@ -50,7 +49,7 @@ def add_visualization_to_html(visuals, vis_type, title, fallback_text="Visualiza
                 Plotly.newPlot('{chart_id}', plotlyData.data, plotlyData.layout, {{responsive: true}});
             </script>
             """
-        except Exception as e:
+        except Exception:
             # Fall back to iframe if inline fails
             pass
 

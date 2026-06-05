@@ -10,13 +10,11 @@ import base64
 import requests
 import datetime
 import json
-import sys
 import time
 import random
 import urllib.parse
 from typing import Optional, List, Dict, Any, Tuple
 from core.config import BHE_CONFIG
-from collections import defaultdict
 from utils.misc import error_suppression
 
 

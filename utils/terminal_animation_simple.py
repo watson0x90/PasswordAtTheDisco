@@ -5,7 +5,6 @@ Provides basic console output without fancy formatting.
 """
 
 import time
-import threading
 
 class SimpleDomainTracker:
     """

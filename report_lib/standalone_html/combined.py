@@ -9,16 +9,14 @@ from pathlib import Path
 from collections import Counter
 from report_lib.standalone_html.components import (
     html_head, create_error_message,
-    create_visualization_container,
     create_breadcrumb, create_metric_card, create_user_detail_offcanvas,
     create_navbar, create_sidebar, create_page_wrapper
 )
 from report_lib.standalone_html.modern_components import (
-    create_stat_widget, create_stat_grid, create_callout, create_progress_card,
+    create_stat_grid, create_callout, create_progress_card,
     create_metric_border_card
 )
 from report_lib.standalone_html.scripts import TABLE_SORT_JS, USER_DETAIL_JS
-from report_lib.standalone_html.styles import BASE_CSS
 from utils.visualization_helper import add_visualization_to_html
 
 def generate_user_details_json_combined(combined_rows):

@@ -18,15 +18,13 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List
 from collections import defaultdict
 
 # Import CoreUI dark theme
 from visualizations.theme import (
     get_dark_layout,
-    get_risk_colors_list,
-    COREUI_COLORS,
-    CATEGORICAL_COLORS
+    COREUI_COLORS
 )
 
 

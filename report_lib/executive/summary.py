@@ -11,7 +11,6 @@ Provides high-level business-focused security assessments including:
 import os
 from pathlib import Path
 from datetime import datetime
-from collections import defaultdict
 from report_lib.standalone_html.components import (
     html_head, create_navbar, create_sidebar, create_page_wrapper, create_breadcrumb
 )
@@ -518,9 +517,9 @@ def calculate_cost_risk_matrix(all_domain_results):
     _, _, _, breakdown = calculate_security_posture_score(all_domain_results)
 
     critical_count = breakdown.get('critical_count', 0)
-    high_count = breakdown.get('high_count', 0)
+    breakdown.get('high_count', 0)
     da_pathway_count = breakdown.get('da_pathway_count', 0)
-    total_accounts = breakdown.get('total_accounts', 0)
+    breakdown.get('total_accounts', 0)
 
     # Breach cost estimation (industry averages from IBM Cost of Data Breach Report)
     # Average cost per compromised record: ~$150
@@ -592,7 +591,7 @@ def generate_executive_summary(all_domain_results, metadata, logger=None):
         score, rating, color, breakdown = calculate_security_posture_score(all_domain_results)
 
         # Estimate business impact
-        impact = estimate_breach_impact(all_domain_results)
+        estimate_breach_impact(all_domain_results)
 
         # Get top risks
         top_risks = get_top_risks(all_domain_results, limit=10)

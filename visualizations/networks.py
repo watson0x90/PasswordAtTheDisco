@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 import networkx as nx
 import math
 import re
-from collections import defaultdict, Counter
+from collections import defaultdict
 import numpy as np
 
 # Import CoreUI dark theme
@@ -16,8 +16,7 @@ from visualizations.theme import (
     get_dark_layout,
     get_risk_colors_list,
     get_legend_config,
-    COREUI_COLORS,
-    CATEGORICAL_COLORS
+    COREUI_COLORS
 )
 
 

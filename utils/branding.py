@@ -4,13 +4,12 @@ Branding and visual display module for Password!AtTheDisco.
 Provides ASCII art, Rich panels, and beautiful terminal output.
 """
 
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 from rich import box
-from datetime import datetime
 
 console = Console()
 

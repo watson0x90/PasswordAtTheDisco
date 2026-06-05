@@ -7,10 +7,8 @@ import os
 import json
 from pathlib import Path
 from report_lib.standalone_html.components import (
-    html_head, create_error_message, create_visualization_container,
-    get_risk_distribution_html, get_accounts_table_html,
-    RISK_SCORE_EXPLANATION, create_breadcrumb, create_overview_section,
-    create_bootstrap_card, create_metric_card, create_risk_badge, create_user_detail_offcanvas,
+    html_head, create_error_message, get_risk_distribution_html, RISK_SCORE_EXPLANATION, create_breadcrumb, create_overview_section,
+    create_bootstrap_card, create_risk_badge, create_user_detail_offcanvas,
     create_navbar, create_sidebar, create_page_wrapper
 )
 from report_lib.standalone_html.scripts import TABLE_SORT_JS, USER_DETAIL_JS
@@ -168,13 +166,12 @@ def generate_html_report(domain, data, visuals, logger=None):
 
         if total_accounts > 0:
             percent_cracked = round(cracked/total_accounts*100, 1)
-            percent_uncracked = round(uncracked/total_accounts*100, 1)
+            round(uncracked/total_accounts*100, 1)
             percent_compliance = round(out_of_compliance/total_accounts*100, 1) if total_accounts > 0 else 0
             percent_nonexpiring = round(non_expiring/total_accounts*100, 1) if total_accounts > 0 else 0
             percent_hibp = round(hibp_breached/total_accounts*100, 1) if total_accounts > 0 else 0
         else:
             percent_cracked = 0
-            percent_uncracked = 0
             percent_compliance = 0
             percent_nonexpiring = 0
             percent_hibp = 0

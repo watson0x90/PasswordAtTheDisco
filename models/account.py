@@ -4,7 +4,7 @@ Account model for representing user accounts in password security analysis.
 """
 
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Dict, Any
 
 class Account:
     """

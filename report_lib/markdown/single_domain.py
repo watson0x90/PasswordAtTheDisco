@@ -5,8 +5,6 @@ Single domain Markdown report generation module.
 
 import os
 from collections import defaultdict
-from datetime import datetime
-from pathlib import Path
 from core.config import markdown_folder
 from utils.visualization_helper import add_visualization_to_markdown, add_standard_visualizations_markdown
 from report_lib.markdown.components import (

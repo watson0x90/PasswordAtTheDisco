@@ -5,9 +5,6 @@ Actionable Markdown report generation module.
 
 import os
 import hashlib
-from pathlib import Path
-from collections import defaultdict
-from datetime import datetime
 from core.config import markdown_folder
 from report_lib.markdown.components import (
     get_markdown_header, get_risk_vector_explanation, get_markdown_table,

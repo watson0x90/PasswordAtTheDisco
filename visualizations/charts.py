@@ -7,10 +7,8 @@ Provides functions to create various chart types.
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
-import numpy as np
 from datetime import datetime
 from collections import Counter, defaultdict
-import math
 
 # Import CoreUI dark theme
 from visualizations.theme import (
