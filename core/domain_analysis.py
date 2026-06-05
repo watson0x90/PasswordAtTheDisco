@@ -102,6 +102,19 @@ def extract_controllable_count(bhe_data):
     return total
 
 
+def _risk_after_boost(new_score, row):
+    """Risk level for a privilege-boosted score, preserving the Domain-Admin
+    pathway Critical override.
+
+    The shared-password privilege boost recomputes an account's risk level from a
+    higher score. It must keep the has_da_path override: otherwise an account that
+    has a DA pathway (always Critical) is silently downgraded to a lower level when
+    its boosted score is still below the numeric Critical threshold.
+    """
+    has_da_path = row.get('DA Domains', 'None') not in ('None', 'Unknown', [])
+    return compute_risk_level(new_score, has_da_path)
+
+
 def analyze_domain(domain, cracked_accounts, uncracked_accounts, password_to_users_domain,
                   hash_to_users_domain, forbidden_words, keyboard_patterns,
                   common_passwords, dictionary_words, logger=None, domain_policy=None):
@@ -513,9 +526,9 @@ def analyze_domain(domain, cracked_accounts, uncracked_accounts, password_to_use
                         
                         # Round to one decimal place
                         row['Score'] = round(new_score, 1)
-                        
-                        # Update risk level based on new score
-                        new_risk = compute_risk_level(new_score, False)
+
+                        # Risk after the boost, preserving the DA-pathway override.
+                        new_risk = _risk_after_boost(new_score, row)
                         
                         if new_risk != previous_risk:
                             row['Risk Level'] = new_risk
@@ -800,7 +813,9 @@ def analyze_cross_domain_sharing(all_cracked, all_uncracked, domains):
                         'Shared With': shared_with,
                         'Domains Shared': domains_shared,
                         'Score': modified_score,
-                        'Risk Level': compute_risk_level(modified_score),
+                        'Risk Level': compute_risk_level(
+                            modified_score,
+                            acc.get('DA Domains', 'Unknown') not in ('None', 'Unknown', [])),
                         'Risk Vector': f"UNCRACKED/S:{min(9, shared_with)}/CD:{len(shared_domains)}",
                         'DA Domains': acc.get('DA Domains', 'Unknown'),
                         'Controlled Object Count': acc.get('Controlled Object Count', 'Unknown'),
