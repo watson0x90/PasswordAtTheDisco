@@ -367,23 +367,32 @@ reports/latest -> DOMAIN-2025-10-21-143022/  # Symlink to latest
 
 ## 🔬 Testing
 
-Comprehensive test suite available:
+Unit tests cover the pure-logic core (CVSS-style risk scoring and password
+analysis). They depend only on the standard library, so they run fast with no
+external services:
 
 ```bash
-# Test HIBP integration
-python scripts/test_hibp_integration.py
+# Install dev tooling (pytest, pytest-cov, ruff)
+pip install -r requirements-dev.txt
 
-# Test with cleanup
-python scripts/test_hibp_integration.py --cleanup
+# Run the test suite
+pytest
+
+# Run with coverage
+pytest --cov --cov-report=term-missing
+
+# Lint
+ruff check .
 ```
 
-See [TESTING.md](TESTING.md) for complete testing documentation.
+CI runs the suite and linting on every push and pull request
+(see [.github/workflows/ci.yml](.github/workflows/ci.yml)).
 
 ## 🤝 Contributing
 
 We welcome contributions! Please see our [Development Guide](docs/DEVELOPMENT.md) for:
 - Development environment setup
-- Coding standards (PEP 8, Black, flake8)
+- Coding standards (PEP 8, enforced with [ruff](https://docs.astral.sh/ruff/))
 - Testing requirements
 - Pull request process
 - Git workflow
@@ -398,13 +407,14 @@ cd PasswordAtTheDisco
 python3 -m venv venv
 source venv/bin/activate
 
-# Install dependencies
-pip install -r requirements.txt
+# Install dependencies (runtime + dev tooling)
+pip install -r requirements-dev.txt
 
 # Make changes, test, commit
 git checkout -b feature/your-feature
 # ... make changes ...
-pytest  # Run tests
+pytest          # Run tests
+ruff check .    # Lint
 git commit -m "feat(scope): description"
 git push origin feature/your-feature
 ```

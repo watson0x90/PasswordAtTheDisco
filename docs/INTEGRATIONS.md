@@ -58,8 +58,8 @@ Create `config/bloodhound.json`:
   "domain": "bloodhound.yourcompany.com",
   "port": 443,
   "scheme": "https",
-  "token_id": "47a0ed15-f3ac-475a-98ea-a4212e7ad6d1",
-  "token_key": "pOF/JGUrixzkJP9LA9VRnYatuFO7moxVPEm69o58BdFViWAydVPvRQ==",
+  "token_id": "your-token-id-here",
+  "token_key": "your-token-key-here",
   "search_limit": 1,
   "controllables_limit": 10
 }
