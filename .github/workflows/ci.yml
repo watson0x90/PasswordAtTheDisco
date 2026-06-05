@@ -23,11 +23,11 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       # The current test suite covers pure-logic modules (scoring, password
-      # analysis) that depend only on the standard library, so CI installs only
-      # the test tooling. Expand this when tests start exercising modules that
-      # need the full runtime stack (reporting, visualizations).
+      # analysis, models, file parsing). These need only the standard library
+      # plus chardet (used by decode_hex), so CI installs a minimal set rather
+      # than the full runtime stack (reporting, visualizations).
       - name: Install test tooling
-        run: python -m pip install --upgrade pip pytest pytest-cov
+        run: python -m pip install --upgrade pip pytest pytest-cov chardet
 
       - name: Run tests
         run: python -m pytest tests/ --cov --cov-report=term-missing
