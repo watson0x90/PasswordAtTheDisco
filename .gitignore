@@ -191,8 +191,8 @@ test_html_output/
 # Scripts directory (internal development only)
 scripts/
 
-# Test files
-test_*.py
+# Ad-hoc dev test scripts in the repo root (the tracked suite lives in tests/)
+/test_*.py
 regenerate_html.py
 alt_logo.txt
 
@@ -208,3 +208,8 @@ puppetter_helper/
 # Claude Code development files
 .claude/
 CLAUDE.md
+
+# Live config files (contain real credentials/paths).
+# Bootstrapped automatically from the committed *.json.example templates.
+config/*.json
+!config/*.json.example

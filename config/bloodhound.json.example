@@ -1,0 +1,9 @@
+{
+  "domain": "127.0.0.1",
+  "port": 8080,
+  "scheme": "http",
+  "token_id": "your-token-id-here",
+  "token_key": "your-token-key-here",
+  "search_limit": 1,
+  "controllables_limit": 10
+}

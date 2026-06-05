@@ -1,9 +1,0 @@
-{
-  "server": {
-    "port": 8008,
-    "host": "localhost"
-  },
-  "ui": {
-    "enable_animation": true
-  }
-}

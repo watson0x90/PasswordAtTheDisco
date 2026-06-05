@@ -4,10 +4,11 @@ Configuration module for the password audit tool.
 Defines paths, settings, and loads policy configuration.
 """
 
-from pathlib import Path
 import json
 import os
+import shutil
 import sys
+from pathlib import Path
 
 # Ensure core directories exist
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -109,14 +110,23 @@ def load_json_config(config_file: Path, config_name: str) -> dict:
         SystemExit: If file doesn't exist or is invalid
     """
     if not config_file.exists():
-        print(f"\n{'='*70}")
-        print(f"ERROR: {config_name} configuration file not found!")
-        print(f"{'='*70}")
-        print(f"Expected location: {config_file}")
-        print(f"\nPlease create the configuration file with your settings.")
-        print(f"See README.md for configuration instructions.")
-        print(f"{'='*70}\n")
-        sys.exit(1)
+        # Bootstrap from the committed .example template if one exists, so a
+        # fresh clone works out of the box and nobody has to commit real
+        # credentials. The live config file is gitignored.
+        example_file = config_file.with_suffix(config_file.suffix + '.example')
+        if example_file.exists():
+            shutil.copyfile(example_file, config_file)
+            print(f"Created {config_file.name} from {example_file.name} "
+                  f"- edit it with your settings.")
+        else:
+            print(f"\n{'='*70}")
+            print(f"ERROR: {config_name} configuration file not found!")
+            print(f"{'='*70}")
+            print(f"Expected location: {config_file}")
+            print("\nPlease create the configuration file with your settings.")
+            print("See README.md for configuration instructions.")
+            print(f"{'='*70}\n")
+            sys.exit(1)
 
     try:
         with open(config_file, 'r', encoding='utf-8') as f:
@@ -128,7 +138,7 @@ def load_json_config(config_file: Path, config_name: str) -> dict:
         print(f"{'='*70}")
         print(f"File: {config_file}")
         print(f"Error: {e}")
-        print(f"\nPlease fix the JSON syntax in your configuration file.")
+        print("\nPlease fix the JSON syntax in your configuration file.")
         print(f"{'='*70}\n")
         sys.exit(1)
     except Exception as e:
