@@ -52,7 +52,7 @@ def decode_hex(password: str) -> str:
                 encoding = result['encoding'] or 'utf-8'
                 try:
                     decoded.append(byte_data.decode(encoding))
-                except:
+                except Exception:
                     decoded.append(x)
             else:
                 decoded.append(x)

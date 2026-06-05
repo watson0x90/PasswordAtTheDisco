@@ -395,7 +395,7 @@ def build_da_accounts_table(accounts, seed):
     accounts.sort(key=lambda x: (not (x.get('Enabled', 'Unknown') == 'Yes'), -risk_order.get(x['Risk Level'], 0)))
 
     # Build the table with Bootstrap classes
-    table_html = f"""
+    table_html = """
     <div class="mb-3 d-flex align-items-center gap-2">
         <span class="text-muted"><i class="bi bi-funnel me-1"></i>Filter by risk:</span>
         <div class="btn-group" role="group" aria-label="Risk filter">
@@ -491,7 +491,7 @@ def build_controllables_table(accounts, seed):
         return '<div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>No cracked accounts with controlled objects identified.</div>'
 
     # Build the table with Bootstrap classes
-    table_html = f"""
+    table_html = """
     <div class="mb-3 d-flex align-items-center gap-2">
         <span class="text-muted"><i class="bi bi-funnel me-1"></i>Filter by risk:</span>
         <div class="btn-group" role="group" aria-label="Risk filter">
@@ -572,7 +572,7 @@ def build_nonexpiring_table(accounts, seed):
     accounts.sort(key=lambda x: not (x.get('Enabled', 'Unknown') == 'Yes'))
 
     # Build the table with Bootstrap classes
-    table_html = f"""
+    table_html = """
     <div class="mb-3 d-flex align-items-center gap-2">
         <span class="text-muted"><i class="bi bi-funnel me-1"></i>Filter by risk:</span>
         <div class="btn-group" role="group" aria-label="Risk filter">
@@ -652,7 +652,7 @@ def build_compliance_table(accounts):
     ))
     
     # Build the table with Bootstrap classes
-    table_html = f"""
+    table_html = """
     <div class="mb-3 d-flex align-items-center gap-2">
         <span class="text-muted"><i class="bi bi-funnel me-1"></i>Filter by risk:</span>
         <div class="btn-group" role="group" aria-label="Risk filter">

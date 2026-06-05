@@ -1106,13 +1106,13 @@ def generate_executive_summary(all_domain_results, metadata, logger=None):
         """
 
         for idx, risk in enumerate(top_risks, 1):
-            risk_badge = f"<span class='badge bg-danger'>Critical</span>" if risk['risk_level'] == 'Critical' else \
-                        f"<span class='badge bg-warning text-dark'>High</span>" if risk['risk_level'] == 'High' else \
-                        f"<span class='badge bg-info'>Medium</span>" if risk['risk_level'] == 'Medium' else \
-                        f"<span class='badge bg-success'>Low</span>"
+            risk_badge = "<span class='badge bg-danger'>Critical</span>" if risk['risk_level'] == 'Critical' else \
+                        "<span class='badge bg-warning text-dark'>High</span>" if risk['risk_level'] == 'High' else \
+                        "<span class='badge bg-info'>Medium</span>" if risk['risk_level'] == 'Medium' else \
+                        "<span class='badge bg-success'>Low</span>"
 
             has_da = "Yes" if risk['da_domains'] not in ('None', 'Unknown', []) else "No"
-            da_badge = f"<span class='badge bg-danger'>Yes</span>" if has_da == "Yes" else "<span class='badge bg-secondary'>No</span>"
+            da_badge = "<span class='badge bg-danger'>Yes</span>" if has_da == "Yes" else "<span class='badge bg-secondary'>No</span>"
 
             content += f"""
                                     <tr>

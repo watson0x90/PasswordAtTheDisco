@@ -10,12 +10,9 @@ import threading
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 
-from core.bloodhound_integration import (
-    extract_controllable_count,
-    extract_da_domains,
-    fetch_bhe_data,
-    handle_bhe_data,
-)
+# Note: handle_bhe_data, extract_da_domains and extract_controllable_count are
+# (re)defined locally below; only fetch_bhe_data is used from this import.
+from core.bloodhound_integration import fetch_bhe_data
 from core.config import policy
 from core.hibp_correlation import HIBPChecker, categorize_hibp_risk
 from core.password_analysis import analyze_password
@@ -79,10 +76,10 @@ def extract_da_domains(bhe_data):
         bhe_item = bhe_data[0]
         if isinstance(bhe_item, dict):
             return [c['domain'] for c in bhe_item.get('controllables', []) 
-                   if isinstance(c, dict) and c.get('labels', {}).get('has_da_path') == True] or 'None'
+                   if isinstance(c, dict) and c.get('labels', {}).get('has_da_path') is True] or 'None'
     elif isinstance(bhe_data, dict):
         return [c['domain'] for c in bhe_data.get('controllables', []) 
-               if isinstance(c, dict) and c.get('labels', {}).get('has_da_path') == True] or 'None'
+               if isinstance(c, dict) and c.get('labels', {}).get('has_da_path') is True] or 'None'
     return 'None'
 
 def extract_controllable_count(bhe_data):

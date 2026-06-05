@@ -532,10 +532,10 @@ def extract_da_domains(bhe_data):
         bhe_item = bhe_data[0]
         if isinstance(bhe_item, dict):
             return [c['domain'] for c in bhe_item.get('controllables', []) 
-                   if isinstance(c, dict) and c.get('labels', {}).get('has_da_path') == True] or 'None'
+                   if isinstance(c, dict) and c.get('labels', {}).get('has_da_path') is True] or 'None'
     elif isinstance(bhe_data, dict):
         return [c['domain'] for c in bhe_data.get('controllables', []) 
-               if isinstance(c, dict) and c.get('labels', {}).get('has_da_path') == True] or 'None'
+               if isinstance(c, dict) and c.get('labels', {}).get('has_da_path') is True] or 'None'
     return 'None'
 
 def extract_controllable_count(bhe_data):
@@ -621,13 +621,13 @@ def test_bloodhound_connection(verbose: bool = True, config_override: Optional[D
             results['connected'] = True
 
             if verbose:
-                print(f"✓ Successfully connected to BloodHound!")
+                print("✓ Successfully connected to BloodHound!")
                 print(f"  Server Version: {version.server_version}")
                 print(f"  API Version: {version.api_version}\n")
         except requests.exceptions.ConnectionError as e:
             results['error'] = f"Connection failed: Unable to reach {config['DOMAIN']}:{config['PORT']}"
             if verbose:
-                print(f"✗ Connection failed")
+                print("✗ Connection failed")
                 print(f"  Error: Unable to reach {config['DOMAIN']}:{config['PORT']}")
                 print(f"  Details: {str(e)}\n")
             return False, results
@@ -635,9 +635,9 @@ def test_bloodhound_connection(verbose: bool = True, config_override: Optional[D
             if e.response.status_code == 401:
                 results['error'] = "Authentication failed: Invalid token ID or token key"
                 if verbose:
-                    print(f"✗ Authentication failed")
-                    print(f"  Error: Invalid credentials (401 Unauthorized)")
-                    print(f"  Please check your token_id and token_key in config/bloodhound.json\n")
+                    print("✗ Authentication failed")
+                    print("  Error: Invalid credentials (401 Unauthorized)")
+                    print("  Please check your token_id and token_key in config/bloodhound.json\n")
             else:
                 results['error'] = f"HTTP Error: {e.response.status_code}"
                 if verbose:
@@ -647,7 +647,7 @@ def test_bloodhound_connection(verbose: bool = True, config_override: Optional[D
         except Exception as e:
             results['error'] = f"Unexpected error: {str(e)}"
             if verbose:
-                print(f"✗ Unexpected error")
+                print("✗ Unexpected error")
                 print(f"  Error: {str(e)}\n")
             return False, results
 
@@ -670,7 +670,7 @@ def test_bloodhound_connection(verbose: bool = True, config_override: Optional[D
                 print()
         except Exception as e:
             if verbose:
-                print(f"⚠ Warning: Could not fetch domains")
+                print("⚠ Warning: Could not fetch domains")
                 print(f"  Error: {str(e)}\n")
 
         # Step 4: Test sample query (get one user from first domain)
@@ -694,7 +694,7 @@ def test_bloodhound_connection(verbose: bool = True, config_override: Optional[D
                         print()
             except Exception as e:
                 if verbose:
-                    print(f"⚠ Warning: Sample query failed")
+                    print("⚠ Warning: Sample query failed")
                     print(f"  Error: {str(e)}\n")
         else:
             if verbose:
@@ -710,7 +710,7 @@ def test_bloodhound_connection(verbose: bool = True, config_override: Optional[D
             print(f"✓ Server Version: {version.server_version}")
             print(f"✓ Available Domains: {len(results['domains'])}")
             if results['sample_user']:
-                print(f"✓ Sample Query: SUCCESS")
+                print("✓ Sample Query: SUCCESS")
             print("="*70 + "\n")
             print("🎉 BloodHound credentials are working correctly!\n")
 

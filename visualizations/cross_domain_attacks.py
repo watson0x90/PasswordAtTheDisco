@@ -95,7 +95,7 @@ class CrossDomainVisualizer:
         interactive_path = self.output_dir / f"{output_file}.html"
         fig_interactive.write_html(str(interactive_path))
 
-        print(f"✓ Lateral movement graph created:")
+        print("✓ Lateral movement graph created:")
         print(f"  Static: {static_path}")
         print(f"  Interactive: {interactive_path}")
 

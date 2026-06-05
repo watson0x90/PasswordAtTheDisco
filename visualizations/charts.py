@@ -146,7 +146,7 @@ def create_score_breakdown_chart(domain, data):
             go.Bar(
                 x=usernames,
                 y=base_scores,
-                name=f'Base Score',
+                name='Base Score',
                 marker_color=color_map['base_score'],
                 text=base_scores,
                 textposition='auto',
@@ -160,7 +160,7 @@ def create_score_breakdown_chart(domain, data):
             go.Bar(
                 x=usernames,
                 y=temporal_scores,
-                name=f'Temporal Score',
+                name='Temporal Score',
                 marker_color=color_map['temporal_score'],
                 text=temporal_scores,
                 textposition='auto',
@@ -174,7 +174,7 @@ def create_score_breakdown_chart(domain, data):
             go.Bar(
                 x=usernames,
                 y=environmental_scores,
-                name=f'Environmental Score',
+                name='Environmental Score',
                 marker_color=color_map['environmental_score'],
                 text=environmental_scores,
                 textposition='auto',

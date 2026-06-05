@@ -70,7 +70,7 @@ class SimpleDomainTracker:
             text.append("⏱️ ", style="bold white")  # Timer emoji
             text.append(f"Running time: {time_str}", style="cyan")
             text.append(" | ", style="white")
-            text.append(f"Progress: ", style="green")
+            text.append("Progress: ", style="green")
             text.append(f"{self.completed_domains}/{self.total_domains}", style="bold green")
             text.append(" domains", style="green")
             text.append(" | ", style="white")
