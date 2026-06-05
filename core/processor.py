@@ -5,22 +5,21 @@ Processor module for orchestrating password security analysis.
 Coordinates data processing, analysis, and report generation.
 """
 
-import os
-import sys
-import json
-import uuid
-import signal
-import hashlib
-import time
-from concurrent.futures import ProcessPoolExecutor
 import concurrent.futures
+import hashlib
+import json
+import os
+import signal
+import sys
+import time
+import uuid
+from concurrent.futures import ProcessPoolExecutor
 from copy import deepcopy
 
-from core.config import (reports_folder, markdown_folder, pdf_folder, ENABLE_ANIMATION, create_report_directory)
-from core.data import process_domain
-from core.domain_analysis import analyze_domain, analyze_cross_domain_sharing, shutdown_event
 import core.config as config_module
-
+from core.config import ENABLE_ANIMATION, create_report_directory, markdown_folder, pdf_folder, reports_folder
+from core.data import process_domain
+from core.domain_analysis import analyze_cross_domain_sharing, analyze_domain, shutdown_event
 from report_lib.csv.report import write_csv_report
 
 # Optional import for Excel (requires pandas)
@@ -30,19 +29,23 @@ except ImportError:
     write_actionable_excel = None
 # SQLite functionality disabled - using standalone HTML reports instead
 ReportWriter = None
-from report_lib.markdown.report import (generate_markdown_report, generate_combined_report,
-                                 generate_actionable_report, generate_explained_actionable_report)
+from report_lib.markdown.report import (
+    generate_actionable_report,
+    generate_combined_report,
+    generate_explained_actionable_report,
+    generate_markdown_report,
+)
+from report_lib.standalone_html.about import generate_about_html
+from report_lib.standalone_html.actionable import generate_html_actionable_report
+from report_lib.standalone_html.combined import generate_combined_html_report, generate_main_html
+from report_lib.standalone_html.search import generate_search_html, generate_search_redacted_html
+
 # Add standalone HTML generation
 from report_lib.standalone_html.single_domain import generate_html_report
-from report_lib.standalone_html.combined import generate_combined_html_report, generate_main_html
-from report_lib.standalone_html.actionable import generate_html_actionable_report
-from report_lib.standalone_html.search import generate_search_html, generate_search_redacted_html
-from report_lib.standalone_html.about import generate_about_html
-from visualizations.core import generate_visualizations, generate_combined_visualizations
+from utils.file_utils import generate_pdfs_from_markdown, load_list
+from utils.misc import display_banner, error_suppression, print_error, print_info, print_success, print_warning
+from visualizations.core import generate_combined_visualizations, generate_visualizations
 
-from utils.file_utils import load_list, generate_pdfs_from_markdown
-from utils.misc import (display_banner, print_success, 
-                    print_info, print_warning, print_error, error_suppression)
 # Import terminal animation (with fallback if Rich not available)
 try:
     from utils.terminal_animation import PasswordAuditAnimation
@@ -69,11 +72,11 @@ def process_single_domain(domain_entry, forbidden_words, keyboard_patterns, comm
                 import report_lib.excel.report as excel_mod
             except ImportError:
                 excel_mod = None
+            import report_lib.markdown.actionable as md_actionable_mod
+            import report_lib.markdown.combined as md_combined_mod
+            import report_lib.markdown.components as md_comp_mod
             import report_lib.markdown.report as md_mod
             import report_lib.markdown.single_domain as md_single_mod
-            import report_lib.markdown.combined as md_combined_mod
-            import report_lib.markdown.actionable as md_actionable_mod
-            import report_lib.markdown.components as md_comp_mod
             import visualizations.core as viz_mod
 
             # Patch CSV folder
@@ -258,9 +261,9 @@ def process_domains(domain_entries, logger):
         import report_lib.excel.report as excel_report_module
     except ImportError:
         excel_report_module = None
+    import report_lib.markdown.components as md_components_module
     import report_lib.markdown.report as md_report_module
     import report_lib.markdown.single_domain as md_single_module
-    import report_lib.markdown.components as md_components_module
     import visualizations.core as viz_core_module
 
     # Update CSV report module

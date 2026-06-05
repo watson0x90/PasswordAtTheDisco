@@ -5,8 +5,17 @@ Search functionality for HTML reports.
 
 import os
 from pathlib import Path
-from report_lib.standalone_html.components import html_head, create_breadcrumb, create_user_detail_offcanvas, create_navbar, create_sidebar, create_page_wrapper
+
+from report_lib.standalone_html.components import (
+    create_breadcrumb,
+    create_navbar,
+    create_page_wrapper,
+    create_sidebar,
+    create_user_detail_offcanvas,
+    html_head,
+)
 from report_lib.standalone_html.scripts import SEARCH_JS, SEARCH_REDACTED_JS, TABLE_SORT_JS, USER_DETAIL_JS
+
 
 def generate_search_html(json_file, logger=None):
     """

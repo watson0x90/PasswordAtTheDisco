@@ -7,7 +7,8 @@ Provides functions for displaying information in the terminal.
 import os
 import sys
 import time
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
+
 
 class ProgressBar:
     """

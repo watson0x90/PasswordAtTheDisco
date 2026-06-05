@@ -5,13 +5,20 @@ Single domain Markdown report generation module.
 
 import os
 from collections import defaultdict
+
 from core.config import markdown_folder
-from utils.visualization_helper import add_visualization_to_markdown, add_standard_visualizations_markdown
 from report_lib.markdown.components import (
-    get_markdown_header, get_risk_score_explanation, get_risk_vector_explanation,
-    get_executive_summary, get_domain_overview, format_risk_distribution, get_markdown_table
+    format_risk_distribution,
+    get_domain_overview,
+    get_executive_summary,
+    get_markdown_header,
+    get_markdown_table,
+    get_risk_score_explanation,
+    get_risk_vector_explanation,
 )
-from report_lib.markdown.utils import get_risk_distribution, get_password_length_stats, extract_basic_stats
+from report_lib.markdown.utils import extract_basic_stats, get_password_length_stats, get_risk_distribution
+from utils.visualization_helper import add_standard_visualizations_markdown, add_visualization_to_markdown
+
 
 def generate_markdown_report(domain, data, visuals, logger=None):
     """

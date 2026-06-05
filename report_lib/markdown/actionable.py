@@ -3,14 +3,20 @@
 Actionable Markdown report generation module.
 """
 
-import os
 import hashlib
+import os
+
 from core.config import markdown_folder
 from report_lib.markdown.components import (
-    get_markdown_header, get_risk_vector_explanation, get_markdown_table,
-    get_domain_admin_explanation, get_controllables_explanation, 
-    get_nonexpiring_explanation, get_compliance_explanation
+    get_compliance_explanation,
+    get_controllables_explanation,
+    get_domain_admin_explanation,
+    get_markdown_header,
+    get_markdown_table,
+    get_nonexpiring_explanation,
+    get_risk_vector_explanation,
 )
+
 
 def generate_combined_actionable_report(domain, data, seed, logger=None):
     """

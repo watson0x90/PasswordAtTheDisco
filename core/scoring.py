@@ -6,6 +6,7 @@ Implements the base, temporal, and environmental score components.
 
 import math
 
+
 def calculate_base_score(complexity_label, password_length, is_common, is_dictionary_word, 
                          banned_words_count, keyboard_patterns_count, similar_passwords):
     """

@@ -5,13 +5,14 @@ Provides functions for loading and manipulating files.
 """
 
 import os
-import chardet
 from pathlib import Path
+
+import chardet
 
 # Optional imports for PDF generation (not required for HTML generation)
 try:
     import markdown
-    from weasyprint import HTML, CSS
+    from weasyprint import CSS, HTML
     PDF_SUPPORT = True
 except ImportError:
     PDF_SUPPORT = False

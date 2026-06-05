@@ -4,16 +4,18 @@ BloodHound Enterprise API integration module.
 Provides functionality for interacting with BloodHound to retrieve account data.
 """
 
-import hmac
-import hashlib
 import base64
-import requests
 import datetime
+import hashlib
+import hmac
 import json
-import time
 import random
+import time
 import urllib.parse
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
+import requests
+
 from core.config import BHE_CONFIG
 from utils.misc import error_suppression
 

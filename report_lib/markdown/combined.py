@@ -5,11 +5,11 @@ Combined/cross-domain Markdown report generation module.
 
 import os
 from collections import Counter, defaultdict
+
 from core.config import markdown_folder
+from report_lib.markdown.components import get_markdown_header, get_markdown_table, get_risk_vector_explanation
 from utils.visualization_helper import add_visualization_to_markdown
-from report_lib.markdown.components import (
-    get_markdown_header, get_risk_vector_explanation, get_markdown_table
-)
+
 
 def generate_combined_report(combined_rows, global_password_to_users, global_hash_to_users, visuals, logger=None):
     """

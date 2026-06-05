@@ -6,6 +6,7 @@ Provides basic console output without fancy formatting.
 
 import time
 
+
 class SimpleDomainTracker:
     """
     Simple domain progress tracker without Rich dependency.

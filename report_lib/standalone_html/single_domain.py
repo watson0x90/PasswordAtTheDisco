@@ -3,16 +3,27 @@
 Single domain report generation module.
 """
 
-import os
 import json
+import os
 from pathlib import Path
+
 from report_lib.standalone_html.components import (
-    html_head, create_error_message, get_risk_distribution_html, RISK_SCORE_EXPLANATION, create_breadcrumb, create_overview_section,
-    create_bootstrap_card, create_risk_badge, create_user_detail_offcanvas,
-    create_navbar, create_sidebar, create_page_wrapper
+    RISK_SCORE_EXPLANATION,
+    create_bootstrap_card,
+    create_breadcrumb,
+    create_error_message,
+    create_navbar,
+    create_overview_section,
+    create_page_wrapper,
+    create_risk_badge,
+    create_sidebar,
+    create_user_detail_offcanvas,
+    get_risk_distribution_html,
+    html_head,
 )
 from report_lib.standalone_html.scripts import TABLE_SORT_JS, USER_DETAIL_JS
 from utils.visualization_helper import add_visualization_to_html
+
 
 def generate_user_details_json_single(output_rows):
     """

@@ -3,21 +3,30 @@
 Combined domain report generation module.
 """
 
-import os
 import json
-from pathlib import Path
+import os
 from collections import Counter
+from pathlib import Path
+
 from report_lib.standalone_html.components import (
-    html_head, create_error_message,
-    create_breadcrumb, create_metric_card, create_user_detail_offcanvas,
-    create_navbar, create_sidebar, create_page_wrapper
+    create_breadcrumb,
+    create_error_message,
+    create_metric_card,
+    create_navbar,
+    create_page_wrapper,
+    create_sidebar,
+    create_user_detail_offcanvas,
+    html_head,
 )
 from report_lib.standalone_html.modern_components import (
-    create_stat_grid, create_callout, create_progress_card,
-    create_metric_border_card
+    create_callout,
+    create_metric_border_card,
+    create_progress_card,
+    create_stat_grid,
 )
 from report_lib.standalone_html.scripts import TABLE_SORT_JS, USER_DETAIL_JS
 from utils.visualization_helper import add_visualization_to_html
+
 
 def generate_user_details_json_combined(combined_rows):
     """
@@ -302,6 +311,7 @@ def build_password_sharing_section(combined_rows, global_password_to_users, glob
         str: HTML string for the section
     """
     from collections import defaultdict
+
     from report_lib.standalone_html.components import create_risk_badge
 
     # Prepare DA sharing analysis

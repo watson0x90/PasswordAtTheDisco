@@ -5,14 +5,16 @@ Password Security Audit Tool with CVSS-Style Risk Scoring
 Main entry point for the application
 """
 
-import sys
 import logging
+import sys
+
 from cli import parse_arguments
-from core.processor import process_domains, generate_pdfs, count_accounts_in_domain
-from utils.serve import serve_html_reports
-from utils.logging import setup_logging
 from core.bloodhound_integration import test_bloodhound_connection
-from utils.branding import show_banner, show_config_panel, show_completion_summary
+from core.processor import count_accounts_in_domain, generate_pdfs, process_domains
+from utils.branding import show_banner, show_completion_summary, show_config_panel
+from utils.logging import setup_logging
+from utils.serve import serve_html_reports
+
 
 def main():
     """Main entry point for the password audit tool."""

@@ -4,10 +4,10 @@ Markdown report generation module for password security audit.
 """
 
 from report_lib.markdown.report import (
-    generate_markdown_report,
+    generate_actionable_report,
     generate_combined_report,
-    generate_actionable_report, 
-    generate_explained_actionable_report
+    generate_explained_actionable_report,
+    generate_markdown_report,
 )
 
 __all__ = [

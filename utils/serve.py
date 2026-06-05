@@ -5,20 +5,21 @@ Interactive server module for hosting HTML password audit reports.
 Provides a menu-driven interface to select and view reports.
 """
 
+import http.server
 import os
 import socket
-import http.server
 import socketserver
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
-from contextlib import redirect_stdout, redirect_stderr
-from core.config import list_report_directories, get_latest_report_dir, REPORTS_BASE_DIR, APP_CONFIG
+
+from core.config import APP_CONFIG, REPORTS_BASE_DIR, get_latest_report_dir, list_report_directories
 
 # Optional Rich imports (not required for basic functionality)
 try:
     from rich.console import Console
     from rich.prompt import Prompt
-    from utils.branding import (show_report_menu_header, show_report_list,
-                                show_server_panel, print_error)
+
+    from utils.branding import print_error, show_report_list, show_report_menu_header, show_server_panel
     console = Console()
     RICH_AVAILABLE = True
 except ImportError:

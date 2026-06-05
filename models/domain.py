@@ -3,8 +3,9 @@
 Domain model for representing domains in password security analysis.
 """
 
-from typing import Dict, Any, List, Counter
 from collections import defaultdict
+from typing import Any, Counter, Dict, List
+
 
 class Domain:
     """

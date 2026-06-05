@@ -3,7 +3,8 @@
 Password model for representing passwords in security analysis.
 """
 
-from typing import Optional, Dict, Any, List, Set
+from typing import Any, Dict, List, Optional, Set
+
 from core.config import policy
 
 # Optional import for Levenshtein (not required for basic functionality)

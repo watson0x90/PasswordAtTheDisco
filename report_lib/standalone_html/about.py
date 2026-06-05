@@ -5,8 +5,13 @@ About page generator for HTML reports.
 
 import os
 from pathlib import Path
+
 from report_lib.standalone_html.components import (
-    html_head, create_navbar, create_sidebar, create_page_wrapper, create_about_content
+    create_about_content,
+    create_navbar,
+    create_page_wrapper,
+    create_sidebar,
+    html_head,
 )
 
 

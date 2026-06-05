@@ -4,8 +4,9 @@ Visualization helper utility for password security audit reports.
 Provides functions to consistently add visualizations to reports.
 """
 
-import os
 import base64
+import os
+
 
 def get_vis_path(visuals, vis_type, format_type='html'):
     """Helper function to safely get visualization path regardless of format"""

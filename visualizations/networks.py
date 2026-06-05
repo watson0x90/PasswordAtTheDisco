@@ -4,20 +4,16 @@ Networks visualization module for password security analysis.
 Provides functions to create network graph visualizations.
 """
 
-import plotly.graph_objects as go
-import networkx as nx
 import math
 import re
 from collections import defaultdict
+
+import networkx as nx
 import numpy as np
+import plotly.graph_objects as go
 
 # Import CoreUI dark theme
-from visualizations.theme import (
-    get_dark_layout,
-    get_risk_colors_list,
-    get_legend_config,
-    COREUI_COLORS
-)
+from visualizations.theme import COREUI_COLORS, get_dark_layout, get_legend_config, get_risk_colors_list
 
 
 def rgb_string_to_tuple(rgb_str):

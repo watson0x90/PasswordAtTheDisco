@@ -4,8 +4,8 @@ Simplified terminal animation module for password security audit tool.
 Shows basic domain processing status and running time with Rich formatting.
 """
 
-import time
 import threading
+import time
 
 # Optional import for Rich (not required for basic functionality)
 try:

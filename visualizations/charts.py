@@ -4,21 +4,23 @@ Charts visualization module for password security analysis.
 Provides functions to create various chart types.
 """
 
-import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
-from datetime import datetime
 from collections import Counter, defaultdict
+from datetime import datetime
+
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 # Import CoreUI dark theme
 from visualizations.theme import (
+    CATEGORICAL_COLORS,
+    COREUI_COLORS,
     get_dark_layout,
+    get_legend_config,
     get_risk_colors_list,
     get_score_component_color,
-    get_legend_config,
-    COREUI_COLORS,
-    CATEGORICAL_COLORS
 )
+
 
 def create_risk_levels_chart(domain, data):
     """

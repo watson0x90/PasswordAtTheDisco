@@ -7,6 +7,7 @@ Handles argument parsing and command-line options.
 
 import argparse
 
+
 def parse_arguments():
     """Parse command-line arguments for the password audit tool."""
     parser = argparse.ArgumentParser(description='Audit password files across multiple domains.')

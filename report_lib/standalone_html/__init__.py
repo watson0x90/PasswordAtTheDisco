@@ -4,12 +4,12 @@ HTML report generation module for password security audit.
 """
 
 from report_lib.standalone_html.report import (
-    generate_html_report,
-    generate_html_actionable_report, 
     generate_combined_html_report,
-    generate_main_html, 
+    generate_html_actionable_report,
+    generate_html_report,
+    generate_main_html,
     generate_search_html,
-    generate_search_redacted_html
+    generate_search_redacted_html,
 )
 
 __all__ = [

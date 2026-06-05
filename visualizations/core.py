@@ -71,12 +71,18 @@ def generate_visualizations(domain, data):
         return {}
 
     from visualizations.charts import (
-        create_risk_levels_chart, create_password_issues_chart,
-        create_length_distribution_chart, create_complexity_distribution_chart,
-        create_top_banned_words_chart, create_last_password_set_chart,
-        create_expiration_status_chart, create_compliance_distribution_chart,
-        create_da_risk_chart, create_password_age_chart,
-        create_score_breakdown_chart, create_risk_factors_chart
+        create_complexity_distribution_chart,
+        create_compliance_distribution_chart,
+        create_da_risk_chart,
+        create_expiration_status_chart,
+        create_last_password_set_chart,
+        create_length_distribution_chart,
+        create_password_age_chart,
+        create_password_issues_chart,
+        create_risk_factors_chart,
+        create_risk_levels_chart,
+        create_score_breakdown_chart,
+        create_top_banned_words_chart,
     )
     from visualizations.networks import create_password_similarity_graph
     
@@ -148,7 +154,7 @@ def generate_visualizations(domain, data):
     from visualizations.charts import (
         create_hibp_breach_distribution_chart,
         create_hibp_top_breached_chart,
-        create_hibp_vs_risk_chart
+        create_hibp_vs_risk_chart,
     )
 
     # HIBP Breach Distribution
@@ -185,13 +191,14 @@ def generate_combined_visualizations(combined_rows, global_password_to_users, gl
         return {}
 
     from visualizations.charts import (
-        create_combined_sharing_chart, create_last_password_set_chart,
-        create_expiration_status_chart, create_da_exposure_chart,
-        create_top_shared_passwords_chart, create_top_shared_hashes_chart
+        create_combined_sharing_chart,
+        create_da_exposure_chart,
+        create_expiration_status_chart,
+        create_last_password_set_chart,
+        create_top_shared_hashes_chart,
+        create_top_shared_passwords_chart,
     )
-    from visualizations.networks import (
-        create_sharing_heatmap, create_shared_network
-    )
+    from visualizations.networks import create_shared_network, create_sharing_heatmap
     
     visuals = {}
     os.makedirs(html_reports_folder, exist_ok=True)

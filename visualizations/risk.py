@@ -4,10 +4,11 @@ Risk visualizations module for password security analysis.
 Provides functions to create risk-related visualizations.
 """
 
-import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
 import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
 
 def create_risk_distribution_chart(domain, data):
     """

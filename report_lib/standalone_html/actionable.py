@@ -3,18 +3,27 @@
 Actionable report generation module.
 """
 
-import os
-import json
 import hashlib
+import json
+import os
 from pathlib import Path
+
 from report_lib.standalone_html.components import (
-    html_head, create_error_message,
-    DA_EXPLANATION, CONTROLLABLES_EXPLANATION, NONEXPIRING_EXPLANATION,
     COMPLIANCE_EXPLANATION,
-    create_breadcrumb, create_risk_badge, create_user_detail_offcanvas,
-    create_navbar, create_sidebar, create_page_wrapper
+    CONTROLLABLES_EXPLANATION,
+    DA_EXPLANATION,
+    NONEXPIRING_EXPLANATION,
+    create_breadcrumb,
+    create_error_message,
+    create_navbar,
+    create_page_wrapper,
+    create_risk_badge,
+    create_sidebar,
+    create_user_detail_offcanvas,
+    html_head,
 )
-from report_lib.standalone_html.scripts import TABLE_SORT_JS, ACTIONABLE_REPORT_JS, USER_DETAIL_JS
+from report_lib.standalone_html.scripts import ACTIONABLE_REPORT_JS, TABLE_SORT_JS, USER_DETAIL_JS
+
 
 def generate_html_actionable_report(domain, data, seed, visuals, logger=None):
     """

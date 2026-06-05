@@ -5,9 +5,11 @@ Provides functions to generate various CSV report formats.
 """
 
 import csv
-import os
 import json
+import os
+
 from core import config as config_module
+
 
 def write_csv_report(domain, rows, is_combined=False):
     """

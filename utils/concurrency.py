@@ -4,11 +4,11 @@ Concurrency utility functions for the password audit tool.
 Provides utilities for parallel processing with proper shutdown handling.
 """
 
+import concurrent.futures
 import os
 import signal
 import threading
-import concurrent.futures
-from typing import List, Callable, Any, Dict, Tuple
+from typing import Any, Callable, Dict, List, Tuple
 
 # Global shutdown event for graceful shutdown
 shutdown_event = threading.Event()

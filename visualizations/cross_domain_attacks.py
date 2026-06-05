@@ -14,18 +14,16 @@ Usage:
     visualizer.create_lateral_movement_graph(shared_passwords)
 """
 
-import networkx as nx
-import matplotlib.pyplot as plt
-import plotly.graph_objects as go
+from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List
-from collections import defaultdict
+
+import matplotlib.pyplot as plt
+import networkx as nx
+import plotly.graph_objects as go
 
 # Import CoreUI dark theme
-from visualizations.theme import (
-    get_dark_layout,
-    COREUI_COLORS
-)
+from visualizations.theme import COREUI_COLORS, get_dark_layout
 
 
 class CrossDomainVisualizer:

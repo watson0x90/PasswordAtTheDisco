@@ -3,4 +3,4 @@
 Visualization modules for password security audit.
 """
 
-from visualizations.core import generate_visualizations, generate_combined_visualizations
+from visualizations.core import generate_combined_visualizations, generate_visualizations

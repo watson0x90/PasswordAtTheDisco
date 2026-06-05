@@ -3,7 +3,8 @@
 Risk model for representing password security risk assessments.
 """
 
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
+
 
 class Risk:
     """

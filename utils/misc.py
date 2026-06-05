@@ -4,8 +4,8 @@ Miscellaneous utility functions for the password audit tool.
 Enhanced with robust error handling.
 """
 
-import shutil
 import os
+import shutil
 from contextlib import contextmanager
 
 

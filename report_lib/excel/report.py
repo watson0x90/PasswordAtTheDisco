@@ -4,10 +4,13 @@ Excel report generation module for password security audit.
 Provides functions to generate actionable Excel reports.
 """
 
-import os
 import hashlib
+import os
+
 import pandas as pd
+
 from core.config import excel_folder
+
 
 def write_actionable_excel(domain, rows, seed, logger=None):
     """

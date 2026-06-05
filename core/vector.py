@@ -6,6 +6,7 @@ Converts risk factors into compact vector string representation.
 
 import math
 
+
 def generate_risk_vector(password_analysis, shared_with, da_domains, controlled_object_count,
                         similar_passwords=None, domain_risk_level=None, hibp_breach_count=0):
     """
