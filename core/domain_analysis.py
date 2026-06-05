@@ -115,6 +115,96 @@ def _risk_after_boost(new_score, row):
     return compute_risk_level(new_score, has_da_path)
 
 
+def apply_shared_password_risk(output_rows, risk_counter, logger=None):
+    """Escalate risk for accounts sharing a password with a privileged account.
+
+    Mutates ``output_rows`` (and keeps ``risk_counter`` in sync) in place. Two
+    escalations are applied to each cracked account:
+
+    * If its password is also used by an account that has a Domain-Admin
+      pathway, the account is raised to Critical.
+    * If its password is also used by an account controlling more than twice as
+      many objects, its score is boosted proportionally.
+
+    This pass only ever ESCALATES. The boost re-score goes through
+    :func:`_risk_after_boost`, which preserves the DA-pathway Critical override
+    so a DA-path account is never silently downgraded.
+    """
+    # Passwords used by at least one account that has a DA pathway.
+    da_passwords = {
+        row['Password'] for row in output_rows
+        if row['Password Length'] != 'N/A'
+        and row.get('DA Domains', 'None') not in ('None', 'Unknown', [])
+    }
+
+    # Highest controlled-object count seen for each password.
+    password_to_max_controllables = {}
+    for row in output_rows:
+        if row['Password Length'] == 'N/A':
+            continue
+        count = row.get('Controlled Object Count', 'Unknown')
+        if count == 'Unknown':
+            continue
+        try:
+            value = int(count)
+        except (ValueError, TypeError):
+            continue
+        password = row['Password']
+        password_to_max_controllables[password] = max(
+            password_to_max_controllables.get(password, 0), value)
+
+    for row in output_rows:
+        try:
+            if row['Password Length'] == 'N/A':
+                continue
+            password = row['Password']
+            previous_risk = row['Risk Level']
+            update_needed = False
+
+            # Shared with a DA account -> Critical.
+            if password in da_passwords and row.get('DA Domains', 'None') in ('None', 'Unknown', []):
+                row['Risk Level'] = "Critical"
+                row['Score'] = max(row['Score'], 8.0)
+                update_needed = True
+                parts = row['Risk Vector'].split('/')
+                for i, part in enumerate(parts):
+                    if part.startswith("DA:"):
+                        parts[i] = "DA:S"  # shared with a DA account
+                row['Risk Vector'] = '/'.join(parts)
+
+            # Shared with a higher-privilege account -> boost the score.
+            max_controllables = password_to_max_controllables.get(password, 0)
+            current_controllables = 0
+            if row.get('Controlled Object Count', 'Unknown') != 'Unknown':
+                try:
+                    current_controllables = int(row['Controlled Object Count'])
+                except (ValueError, TypeError):
+                    pass
+
+            if max_controllables > 0 and max_controllables > current_controllables * 2:
+                privilege_boost = min(1.5, 1.0 + (max_controllables - current_controllables) / 100)
+                new_score = min(10.0, row['Score'] * privilege_boost)
+                row['Score'] = round(new_score, 1)
+                # Preserves the DA-pathway override (no silent downgrade).
+                new_risk = _risk_after_boost(new_score, row)
+                if new_risk != previous_risk:
+                    row['Risk Level'] = new_risk
+                    update_needed = True
+                    parts = row['Risk Vector'].split('/')
+                    for i, part in enumerate(parts):
+                        if part.startswith("CO:"):
+                            parts[i] = f"CO:S{part[3:]}"  # shared privileges
+                    row['Risk Vector'] = '/'.join(parts)
+
+            if update_needed and previous_risk != row['Risk Level']:
+                risk_counter[previous_risk] -= 1
+                risk_counter[row['Risk Level']] += 1
+        except Exception as e:
+            if logger:
+                logger.error(f"Error updating risk for {row.get('Username', 'unknown')}: {str(e)}", exc_info=True)
+    return output_rows
+
+
 def analyze_domain(domain, cracked_accounts, uncracked_accounts, password_to_users_domain,
                   hash_to_users_domain, forbidden_words, keyboard_patterns,
                   common_passwords, dictionary_words, logger=None, domain_policy=None):
@@ -461,94 +551,9 @@ def analyze_domain(domain, cracked_accounts, uncracked_accounts, password_to_use
                     logger.error(f"Error processing uncracked account {acc['username']}: {str(e)}", exc_info=True)
                 # Continue processing other accounts
         
-        # Post-processing: Identify passwords used by accounts with DA pathway
-        da_passwords = {row['Password'] for row in output_rows 
-                       if row['Password Length'] != 'N/A' and 
-                       row.get('DA Domains', 'None') not in ('None', 'Unknown', [])}
-        
-        # Create a mapping of passwords to maximum controllable objects
-        password_to_max_controllables = {}
-        for row in output_rows:
-            if row['Password Length'] != 'N/A':  # Only for cracked accounts
-                password = row['Password']
-                controllable_count = row.get('Controlled Object Count', 'Unknown')
-                
-                # Convert to integer if possible
-                if controllable_count != 'Unknown':
-                    try:
-                        count_value = int(controllable_count)
-                        
-                        # Update maximum if this is higher
-                        current_max = password_to_max_controllables.get(password, 0)
-                        password_to_max_controllables[password] = max(current_max, count_value)
-                    except (ValueError, TypeError):
-                        pass
-        
-        # Update risk levels and scores based on shared passwords
-        for row in output_rows:
-            try:
-                if row['Password Length'] != 'N/A':
-                    password = row['Password']
-                    previous_risk = row['Risk Level']
-                    update_needed = False
-                    
-                    # Check if password is shared with DA account
-                    if password in da_passwords and row.get('DA Domains', 'None') in ('None', 'Unknown', []):
-                        row['Risk Level'] = "Critical"
-                        row['Score'] = max(row['Score'], 8.0)
-                        update_needed = True
-                        
-                        # Update risk vector to indicate DA password sharing
-                        parts = row['Risk Vector'].split('/')
-                        for i, part in enumerate(parts):
-                            if part.startswith("DA:"):
-                                parts[i] = "DA:S"  # Indicates shared with DA account
-                        row['Risk Vector'] = '/'.join(parts)
-                    
-                    # Check if password is shared with high-privilege account (many controllables)
-                    max_controllables = password_to_max_controllables.get(password, 0)
-                    current_controllables = 0
-                    
-                    if row.get('Controlled Object Count', 'Unknown') != 'Unknown':
-                        try:
-                            current_controllables = int(row['Controlled Object Count'])
-                        except (ValueError, TypeError):
-                            pass
-                    
-                    # If this account shares password with another account that has significantly more privileges
-                    if max_controllables > 0 and max_controllables > current_controllables * 2:
-                        # Increase the environmental score component 
-                        original_score = row['Score']
-                        
-                        # Increase score proportionally to the difference in privilege
-                        privilege_boost = min(1.5, 1.0 + (max_controllables - current_controllables) / 100)
-                        new_score = min(10.0, original_score * privilege_boost)
-                        
-                        # Round to one decimal place
-                        row['Score'] = round(new_score, 1)
-
-                        # Risk after the boost, preserving the DA-pathway override.
-                        new_risk = _risk_after_boost(new_score, row)
-                        
-                        if new_risk != previous_risk:
-                            row['Risk Level'] = new_risk
-                            update_needed = True
-                            
-                            # Update risk vector to indicate shared privileges
-                            parts = row['Risk Vector'].split('/')
-                            for i, part in enumerate(parts):
-                                if part.startswith("CO:"):
-                                    parts[i] = f"CO:S{part[3:]}"  # Indicates shared privileges
-                            row['Risk Vector'] = '/'.join(parts)
-                    
-                    # Update risk counter if risk level changed
-                    if update_needed and previous_risk != row['Risk Level']:
-                        risk_counter[previous_risk] -= 1
-                        risk_counter[row['Risk Level']] += 1
-            except Exception as e:
-                if logger:
-                    logger.error(f"Error updating risk for {row.get('Username', 'unknown')}: {str(e)}", exc_info=True)
-                # Continue processing other rows
+        # Escalate risk for accounts that share a password with a DA or
+        # higher-privilege account (mutates output_rows and risk_counter).
+        apply_shared_password_risk(output_rows, risk_counter, logger=logger)
 
         # Calculate domain-wide risk metrics
         domain_risk = calculate_domain_risk({
