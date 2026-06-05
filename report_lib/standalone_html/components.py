@@ -1090,8 +1090,10 @@ def create_navbar(current_page='dashboard', include_search=True, include_export=
             <!-- Center: Search Form -->
             {search_html}
 
-            <!-- Right: Empty spacer for balance -->
-            <div style="width: 200px;"></div>
+            <!-- Right: Export menu (empty spacer when not included) -->
+            <ul class="navbar-nav" style="min-width: 200px; justify-content: flex-end;">
+                {export_html}
+            </ul>
         </div>
     </header>
     '''
