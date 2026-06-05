@@ -126,3 +126,45 @@ class TestGetBloodhoundClientStatus:
         fake_version = type("V", (), {"server_version": "5.0", "api_version": "2"})()
         monkeypatch.setattr(bhi.Client, "get_version", lambda self, logger=None: fake_version)
         assert bhi.get_bloodhound_client() is not None
+
+
+class TestShortestPathAttackOnly:
+    """DA-path detection must scope to traversable (attack) edges, not all edges."""
+
+    @staticmethod
+    def _resp(status):
+        m = MagicMock()
+        m.status_code = status
+        m.json.return_value = {"data": {}}
+        return m
+
+    def test_only_traversable_sent_by_default(self, monkeypatch):
+        c = _client()
+        captured = {}
+
+        def fake(method, uri, **kw):
+            captured["uri"] = uri
+            return self._resp(200)
+
+        monkeypatch.setattr(c, "_request", fake)
+        c.get_shortest_path("S-1-start", "S-1-end")
+        assert "only_traversable=true" in captured["uri"]
+
+    def test_only_traversable_omitted_when_disabled(self, monkeypatch):
+        c = _client()
+        captured = {}
+
+        def fake(method, uri, **kw):
+            captured["uri"] = uri
+            return self._resp(200)
+
+        monkeypatch.setattr(c, "_request", fake)
+        c.get_shortest_path("S-1-start", "S-1-end", only_traversable=False)
+        assert "only_traversable" not in captured["uri"]
+
+    def test_path_presence_status_mapping(self, monkeypatch):
+        c = _client()
+        monkeypatch.setattr(c, "_request", lambda *a, **k: self._resp(200))
+        assert c.get_shortest_path("a", "b")["has_path"] is True
+        monkeypatch.setattr(c, "_request", lambda *a, **k: self._resp(404))
+        assert c.get_shortest_path("a", "b")["has_path"] is False

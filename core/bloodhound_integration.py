@@ -330,10 +330,23 @@ class Client:
             
             return controllables_lable_and_count
 
-    def get_shortest_path(self, source_object_id: str, target_object_id: str, logger=None) -> Dict:
-        """Get the shortest path between two objects in BloodHound."""
+    def get_shortest_path(self, source_object_id: str, target_object_id: str,
+                          only_traversable: bool = True, logger=None) -> Dict:
+        """Get the shortest path between two objects in BloodHound.
+
+        Args:
+            only_traversable: When True (default), pathfinding is restricted to
+                BloodHound's traversable (attack-path) edge kinds, so a returned
+                path represents a real privilege-escalation route rather than mere
+                graph connectivity. When False, all edge kinds (including purely
+                informational ones) are searched, which over-reports DA pathways.
+        """
         with error_suppression(logger.debug if logger else None):
-            response = self._request("GET", f"/api/v2/graphs/shortest-path?start_node={source_object_id}&end_node={target_object_id}", logger=logger)
+            uri = (f"/api/v2/graphs/shortest-path?start_node={source_object_id}"
+                   f"&end_node={target_object_id}")
+            if only_traversable:
+                uri += "&only_traversable=true"
+            response = self._request("GET", uri, logger=logger)
             if response.status_code == 200:
                 return {"has_path": True, "path": response.json().get("data", [])}
             elif response.status_code == 404:
