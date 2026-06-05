@@ -1,0 +1,7 @@
+# Development dependencies (testing + linting).
+# Install with: pip install -r requirements.txt -r requirements-dev.txt
+-r requirements.txt
+
+pytest==9.0.3
+pytest-cov==7.1.0
+ruff==0.15.16

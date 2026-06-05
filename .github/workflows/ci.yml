@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # The current test suite covers pure-logic modules (scoring, password
+      # analysis) that depend only on the standard library, so CI installs only
+      # the test tooling. Expand this when tests start exercising modules that
+      # need the full runtime stack (reporting, visualizations).
+      - name: Install test tooling
+        run: python -m pip install --upgrade pip pytest pytest-cov
+
+      - name: Run tests
+        run: python -m pytest tests/ --cov --cov-report=term-missing
+
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ruff
+        run: python -m pip install --upgrade pip ruff==0.15.16
+
+      # Blocking: newly added/maintained code must stay lint-clean.
+      - name: Lint maintained code
+        run: ruff check tests/ core/config.py
+
+      # Advisory: surfaces the legacy lint baseline without failing the build.
+      # Remove `continue-on-error` once the baseline is cleaned up.
+      - name: Lint full codebase (advisory)
+        continue-on-error: true
+        run: ruff check . --output-format=github

@@ -1,0 +1,34 @@
+# Tooling configuration for Password!AtTheDisco.
+# Runtime dependencies are pinned in requirements.txt; dev tools in requirements-dev.txt.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+
+[tool.coverage.run]
+source = ["core", "models", "utils", "report_lib", "visualizations"]
+omit = ["*/__init__.py", "PwnedPasswordsDownloader/*"]
+
+[tool.coverage.report]
+skip_empty = true
+
+[tool.ruff]
+target-version = "py39"
+line-length = 120
+extend-exclude = ["PwnedPasswordsDownloader", "lists"]
+
+[tool.ruff.lint]
+# Pyflakes (F: dead code, real bugs), select pycodestyle errors (E), and
+# import sorting (I). Whitespace warnings (W) and line-length (E501) are left
+# out of the gate for now to avoid a mass cosmetic reformat of the codebase.
+select = ["E4", "E7", "E9", "F", "I"]
+# E402 (import not at top) is intentional in several modules that configure
+# sys.path before importing.
+ignore = ["E402"]
+
+[tool.ruff.lint.per-file-ignores]
+# Package __init__ files re-export names; unused-import there is intentional.
+"**/__init__.py" = ["F401"]
+# Tests use star-style fixtures and long parametrize tables.
+"tests/*" = ["E501"]
