@@ -414,7 +414,11 @@ class HIBPPrefixSearcher:
         index_entries = {}
 
         try:
-            with open(self.hibp_file, 'r', encoding='utf-8') as f:
+            # Read in binary so byte offsets are exact regardless of line
+            # ending. Text mode collapses CRLF to LF, which under-counts one
+            # byte per line; over a 1.3B-line file that drift makes every
+            # seek-based lookup miss (HIBP silently returns 0 breaches).
+            with open(self.hibp_file, 'rb') as f:
                 while True:
                     # Track position before reading line
                     line_start = byte_offset
@@ -423,13 +427,15 @@ class HIBPPrefixSearcher:
                     if not line:
                         break
 
-                    # Update byte offset
-                    line_bytes = len(line.encode('utf-8'))
-                    byte_offset += line_bytes
+                    # Update byte offset by the exact number of bytes read
+                    byte_offset += len(line)
                     line_count += 1
 
                     # Extract hash (first part before ':')
-                    hash_value = line.split(':')[0].upper()
+                    sep = line.find(b':')
+                    if sep < 0:
+                        continue
+                    hash_value = line[:sep].decode('ascii', 'ignore').upper()
 
                     if len(hash_value) < self.prefix_length:
                         continue
@@ -529,14 +535,15 @@ class HIBPPrefixSearcher:
         else:
             end_offset = None  # Read to end of file
 
-        # Search within the prefix range
+        # Search within the prefix range. Binary mode so seek/tell are exact
+        # byte positions matching the byte-accurate index (handles CRLF files).
         try:
-            with open(self.hibp_file, 'r') as f:
+            with open(self.hibp_file, 'rb') as f:
                 f.seek(start_offset)
 
                 while True:
                     # Check if we've passed the end offset
-                    if end_offset and f.tell() >= end_offset:
+                    if end_offset is not None and f.tell() >= end_offset:
                         break
 
                     line = f.readline()
@@ -544,7 +551,7 @@ class HIBPPrefixSearcher:
                         break
 
                     # Parse line
-                    parts = line.strip().split(':')
+                    parts = line.decode('ascii', 'ignore').strip().split(':')
                     if len(parts) != 2:
                         continue
 

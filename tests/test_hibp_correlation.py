@@ -21,10 +21,10 @@ NTLM_EMPTY = "31D6CFE0D16AE931B73C59D7E0C089C0"
 NTLM_PASSWORD = "8846F7EAEE8FB117AD06BDD830B7586C"
 
 
-def _write_hibp_file(tmp_path, rows):
-    """Write a HIBP 'HASH:COUNT' fixture with pure \\n line endings."""
+def _write_hibp_file(tmp_path, rows, newline="\n"):
+    """Write a HIBP 'HASH:COUNT' fixture with the given line ending."""
     path = tmp_path / "hibp.txt"
-    body = "".join(f"{h}:{c}\n" for h, c in rows)
+    body = "".join(f"{h}:{c}{newline}" for h, c in rows)
     path.write_bytes(body.encode("utf-8"))
     return path
 
@@ -144,6 +144,30 @@ class TestPrefixSearcher:
         searcher.load_index()
         assert searcher.lookup_hash(NTLM_PASSWORD) == (True, 1000)
         assert searcher.lookup_hash(NTLM_EMPTY) == (True, 5)
+
+    @pytest.mark.parametrize("newline", ["\n", "\r\n"])
+    def test_lookup_works_with_either_line_ending(self, tmp_path, newline):
+        path = _write_hibp_file(
+            tmp_path, [(NTLM_EMPTY, 5), (NTLM_PASSWORD, 1000)], newline=newline)
+        searcher = HIBPPrefixSearcher(path, prefix_length=5)
+        searcher.build_index()
+        searcher.load_index()
+        assert searcher.lookup_hash(NTLM_PASSWORD) == (True, 1000)
+        assert searcher.lookup_hash(NTLM_EMPTY) == (True, 5)
+
+    @pytest.mark.parametrize("newline", ["\n", "\r\n"])
+    def test_index_offsets_are_byte_accurate(self, tmp_path, newline):
+        # The recorded prefix offset must equal the TRUE byte position of that
+        # prefix's first line. With CRLF this drifts under text-mode counting
+        # and accumulates over a 1.3B-line file until every seek misses (HIBP
+        # silently returns 0). The offset must be byte-exact for any ending.
+        path = _write_hibp_file(
+            tmp_path, [(NTLM_EMPTY, 5), (NTLM_PASSWORD, 1000)], newline=newline)
+        searcher = HIBPPrefixSearcher(path, prefix_length=5)
+        searcher.build_index()
+        idx = searcher.load_index()
+        expected = len(f"{NTLM_EMPTY}:5{newline}".encode("utf-8"))  # true start of line 2
+        assert idx[NTLM_PASSWORD[:5]] == expected
 
     def test_lookup_invalid_length_returns_not_found(self, tmp_path):
         path = _write_hibp_file(tmp_path, [(NTLM_PASSWORD, 1000)])
