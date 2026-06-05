@@ -52,8 +52,14 @@ class Domain:
 class Client:
     """BloodHound Enterprise API client."""
 
-    def __init__(self, scheme: str, host: str, port: int, credentials: Credentials) -> None:
-        """Initialize client with connection parameters and credentials."""
+    def __init__(self, scheme: str, host: str, port: int, credentials: Credentials,
+                 timeout=None) -> None:
+        """Initialize client with connection parameters and credentials.
+
+        Args:
+            timeout: (connect, read) seconds tuple for requests. Defaults to the
+                values in BHE_CONFIG; prevents hanging on an unreachable host.
+        """
         self._scheme = scheme
         self._host = host
         self._port = port
@@ -61,6 +67,10 @@ class Client:
         self._last_request_time = 0
         self._min_request_interval = 0.1  # Minimum 100ms between requests
         self._max_jitter = 0.05  # Up to 50ms random jitter
+        self._timeout = timeout or (
+            BHE_CONFIG.get("CONNECT_TIMEOUT", 5),
+            BHE_CONFIG.get("READ_TIMEOUT", 30),
+        )
 
     def _format_url(self, uri: str) -> str:
         """Format the URL for API requests."""
@@ -106,6 +116,7 @@ class Client:
                         "Content-Type": "application/json",
                     },
                     data=body,
+                    timeout=self._timeout,
                 )
             except Exception as e:
                 if logger:
@@ -751,10 +762,15 @@ def get_bloodhound_client(logger=None) -> Optional[Client]:
             credentials=credentials
         )
 
-        # Test connection by getting version
+        # Test connection by getting version. get_version suppresses its own
+        # exceptions and returns None on failure, so an explicit None check is
+        # required -- otherwise an unreachable host is reported as "connected".
         version = client.get_version(logger=logger)
+        if version is None:
+            if logger:
+                logger.debug("BloodHound connection check failed: no version returned")
+            return None
 
-        # If we got here without exception, connection works
         if logger:
             logger.debug(f"BloodHound connection successful: {version.server_version}")
 

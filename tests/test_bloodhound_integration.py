@@ -5,6 +5,9 @@ Covers the pure data-extraction helpers, credential/client construction, and
 URL formatting -- none of which touch the network.
 """
 
+from unittest.mock import MagicMock
+
+import core.bloodhound_integration as bhi
 from core.bloodhound_integration import (
     Client,
     Credentials,
@@ -84,3 +87,42 @@ class TestExtractControllableCount:
     def test_empty_returns_zero(self):
         assert extract_controllable_count([]) == 0
         assert extract_controllable_count({}) == 0
+
+
+class TestRequestTimeout:
+    """Requests must carry a timeout so an unreachable host can't hang the audit."""
+
+    def test_client_has_default_timeout_tuple(self):
+        c = _client()
+        assert isinstance(c._timeout, tuple) and len(c._timeout) == 2
+
+    def test_explicit_timeout_override(self):
+        c = Client("https", "h", 443, Credentials("id", "key"), timeout=(1, 2))
+        assert c._timeout == (1, 2)
+
+    def test_request_passes_timeout_to_requests(self, monkeypatch):
+        captured = {}
+
+        def fake_request(**kwargs):
+            captured.update(kwargs)
+            return MagicMock(status_code=200)
+
+        monkeypatch.setattr(bhi.requests, "request", fake_request)
+        c = Client("https", "h", 443, Credentials("id", "key"), timeout=(3, 7))
+        c._request("GET", "/api/version")
+        assert captured.get("timeout") == (3, 7)
+
+
+class TestGetBloodhoundClientStatus:
+    """get_bloodhound_client must report failure honestly, not always 'connected'."""
+
+    def test_returns_none_when_version_is_none(self, monkeypatch):
+        # get_version returns None on a failed connection (it swallows its own
+        # exception); the client must then be treated as unavailable.
+        monkeypatch.setattr(bhi.Client, "get_version", lambda self, logger=None: None)
+        assert bhi.get_bloodhound_client() is None
+
+    def test_returns_client_when_version_present(self, monkeypatch):
+        fake_version = type("V", (), {"server_version": "5.0", "api_version": "2"})()
+        monkeypatch.setattr(bhi.Client, "get_version", lambda self, logger=None: fake_version)
+        assert bhi.get_bloodhound_client() is not None

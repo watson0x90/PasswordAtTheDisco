@@ -5,5 +5,7 @@
   "token_id": "your-token-id-here",
   "token_key": "your-token-key-here",
   "search_limit": 1,
-  "controllables_limit": 10
+  "controllables_limit": 10,
+  "connect_timeout": 5,
+  "read_timeout": 30
 }

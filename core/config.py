@@ -160,7 +160,11 @@ BHE_CONFIG = {
     "TOKEN_ID": _bhe_json.get("token_id", ""),
     "TOKEN_KEY": _bhe_json.get("token_key", ""),
     "SEARCH_LIMIT": _bhe_json.get("search_limit", 1),
-    "CONTROLLABLES_LIMIT": _bhe_json.get("controllables_limit", 10)
+    "CONTROLLABLES_LIMIT": _bhe_json.get("controllables_limit", 10),
+    # Per-request (connect, read) timeouts in seconds. Without these an
+    # unreachable host that drops packets would hang every request forever.
+    "CONNECT_TIMEOUT": _bhe_json.get("connect_timeout", 5),
+    "READ_TIMEOUT": _bhe_json.get("read_timeout", 30)
 }
 
 # Hashcat 7.1.2 configuration
