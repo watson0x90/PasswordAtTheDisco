@@ -6,30 +6,22 @@ Using CoreUI 5 Dark Theme for consistency with Flask UI.
 
 # CoreUI 5 CDN Links (for standalone HTML files)
 COREUI_CDN = """
-<!-- Google Fonts - Iceland (for branding) -->
-<link href="https://fonts.googleapis.com/css2?family=Iceland&display=swap" rel="stylesheet">
-
+<!-- Vendored offline assets (copied into each report's vendor/ dir so reports
+     render with no internet access -- important for air-gapped review). -->
 <!-- CoreUI 5.2.0 CSS -->
-<link href="https://cdn.jsdelivr.net/npm/@coreui/coreui@5.2.0/dist/css/coreui.min.css" rel="stylesheet">
+<link href="vendor/coreui/coreui.min.css" rel="stylesheet">
 
-<!-- CoreUI Icons -->
-<link href="https://unpkg.com/@coreui/icons/css/free.min.css" rel="stylesheet">
-<link href="https://unpkg.com/@coreui/icons/css/brand.min.css" rel="stylesheet">
-
-<!-- Bootstrap Icons (for additional icons) -->
-<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css" rel="stylesheet">
-
-<!-- Font Awesome 6.7.2 -->
-<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+<!-- Bootstrap Icons 1.13.1 (the only icon set used: bi bi-*) -->
+<link href="vendor/bootstrap-icons/bootstrap-icons.min.css" rel="stylesheet">
 """
 
 # CoreUI 5 JavaScript Bundle
 COREUI_JS = """
 <!-- CoreUI 5.2.0 JS Bundle (includes Popper) -->
-<script src="https://cdn.jsdelivr.net/npm/@coreui/coreui@5.2.0/dist/js/coreui.bundle.min.js"></script>
+<script src="vendor/coreui/coreui.bundle.min.js"></script>
 
-<!-- Plotly.js for interactive charts -->
-<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+<!-- Plotly.js 2.32.0 for interactive charts -->
+<script src="vendor/plotly/plotly.min.js"></script>
 
 <!-- Custom theme initialization -->
 <script>

@@ -53,3 +53,24 @@ class TestTableMacros:
                            [{"password": "<svg onload=x>", "total": 2, "domain_counts": [("D<b>", 1)]}])
         assert "<svg" not in out and "&lt;svg" in out
         assert "D&lt;b&gt;" in out
+
+
+class TestOfflineAssets:
+    def test_no_cdn_urls_remain(self):
+        from report_lib.standalone_html.styles import COREUI_CDN, COREUI_JS
+        blob = COREUI_CDN + COREUI_JS
+        for cdn in ("cdn.jsdelivr.net", "cdn.plot.ly", "cdnjs.cloudflare", "unpkg.com", "fonts.googleapis"):
+            assert cdn not in blob, f"CDN reference still present: {cdn}"
+        assert "vendor/coreui/coreui.min.css" in COREUI_CDN
+        assert "vendor/plotly/plotly.min.js" in COREUI_JS
+
+    def test_copy_vendor_assets(self, tmp_path):
+        from report_lib.templating import copy_vendor_assets
+        copy_vendor_assets(tmp_path)
+        v = tmp_path / "vendor"
+        for rel in ("coreui/coreui.min.css", "coreui/coreui.bundle.min.js",
+                    "bootstrap-icons/bootstrap-icons.min.css",
+                    "bootstrap-icons/fonts/bootstrap-icons.woff2",
+                    "plotly/plotly.min.js"):
+            assert (v / rel).exists(), f"missing vendored asset: {rel}"
+        copy_vendor_assets(tmp_path)  # idempotent, no error

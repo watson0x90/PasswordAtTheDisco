@@ -237,6 +237,11 @@ def process_domains(domain_entries, logger):
     config_module.markdown_folder = report_dirs['markdown_dir']
     config_module.pdf_folder = report_dirs['pdf_dir']
 
+    # Copy the vendored front-end assets (CoreUI/Bootstrap Icons/Plotly) into the
+    # report so its HTML renders without any internet access (air-gapped review).
+    from report_lib.templating import copy_vendor_assets
+    copy_vendor_assets(report_dirs['html_dir'])
+
     # Initialize SQLite writer for this report
     # Use report-specific database path
     # Optional SQLite database setup

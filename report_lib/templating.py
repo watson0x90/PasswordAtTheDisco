@@ -9,12 +9,25 @@ Trusted, pre-built HTML fragments (CSS/JS bundles, plotly chart markup,
 chrome rendered elsewhere) are passed through explicitly with the ``| safe``
 filter.
 """
+import shutil
 from functools import lru_cache
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
+_VENDOR_DIR = Path(__file__).parent / "vendor"
+
+
+def copy_vendor_assets(html_dir) -> None:
+    """Copy the vendored front-end assets (CoreUI, Bootstrap Icons, Plotly) into
+    a report's html directory as ``vendor/``, so the HTML reports render without
+    any internet access (air-gapped review). No-op if already present."""
+    dest = Path(html_dir) / "vendor"
+    if dest.exists():
+        return
+    if _VENDOR_DIR.exists():
+        shutil.copytree(_VENDOR_DIR, dest)
 
 
 @lru_cache(maxsize=1)

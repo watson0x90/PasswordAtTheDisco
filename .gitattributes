@@ -1,0 +1,3 @@
+# Vendored offline front-end assets must be stored byte-identical (no EOL
+# conversion) so they match the upstream CDN files on every platform.
+report_lib/vendor/** -text
