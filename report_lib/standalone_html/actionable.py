@@ -8,6 +8,8 @@ import json
 import os
 from pathlib import Path
 
+from markupsafe import escape as escape_html
+
 from report_lib.standalone_html.components import (
     COMPLIANCE_EXPLANATION,
     CONTROLLABLES_EXPLANATION,
@@ -22,7 +24,7 @@ from report_lib.standalone_html.components import (
     create_user_detail_offcanvas,
     html_head,
 )
-from report_lib.standalone_html.scripts import ACTIONABLE_REPORT_JS, USER_DETAIL_JS
+from report_lib.standalone_html.scripts import ACTIONABLE_REPORT_JS, render_user_detail_js
 
 
 def generate_html_actionable_report(domain, data, seed, visuals, logger=None):
@@ -160,7 +162,7 @@ def generate_combined_actionable_report(domain, data, seed, visuals, logger=None
         content += create_user_detail_offcanvas()
 
         # Add JavaScript (table sorting, actionable report, and user detail)
-        user_detail_script = USER_DETAIL_JS.replace('{USER_DATA_JSON}', user_details_json_str)
+        user_detail_script = render_user_detail_js(user_details_json_str)
 
         content += f"""
                 {ACTIONABLE_REPORT_JS}
@@ -466,10 +468,10 @@ def build_da_accounts_table(accounts, seed):
         <tr class="risk-row risk-{risk_level.lower()}" data-risk="{risk_level}">
             <td>
                 <a href="#" class="user-detail-link text-decoration-none"
-                   data-username="{acc['Username']}"
+                   data-username="{escape_html(acc['Username'])}"
                    data-coreui-toggle="offcanvas"
                    data-coreui-target="#userDetailOffcanvas">
-                    <code>{acc['Username']}</code>
+                    <code>{escape_html(acc['Username'])}</code>
                 </a>
             </td>
             <td>{type_badge}</td>
@@ -477,7 +479,7 @@ def build_da_accounts_table(accounts, seed):
             <td>{create_risk_badge(risk_level)}</td>
             <td>{hibp_badge}</td>
             <td><span class="badge {hibp_count_badge}">{hibp_count:,}</span></td>
-            <td>{acc.get('Shared With', 'N/A')}</td>
+            <td>{escape_html(acc.get('Shared With', 'N/A'))}</td>
             <td>{'<span class="badge bg-success">Yes</span>' if acc.get('Enabled', 'Unknown') == 'Yes' else '<span class="badge bg-secondary">No</span>'}</td>
             <td><small>{acc.get('Last Logon', 'Unknown')}</small></td>
             <td><span class="badge {action_badge}">{action}</span></td>
@@ -544,16 +546,16 @@ def build_controllables_table(accounts, seed):
         <tr class="risk-row risk-{risk_level.lower()}" data-risk="{risk_level}">
             <td>
                 <a href="#" class="user-detail-link text-decoration-none"
-                   data-username="{acc['Username']}"
+                   data-username="{escape_html(acc['Username'])}"
                    data-coreui-toggle="offcanvas"
                    data-coreui-target="#userDetailOffcanvas">
-                    <code>{acc['Username']}</code>
+                    <code>{escape_html(acc['Username'])}</code>
                 </a>
             </td>
             <td><small class="font-monospace">{placeholder}</small></td>
             <td>{create_risk_badge(risk_level)}</td>
             <td><small>{risk_vector}</small></td>
-            <td>{acc.get('Shared With', 'N/A')}</td>
+            <td>{escape_html(acc.get('Shared With', 'N/A'))}</td>
             <td>{'<span class="badge bg-success">Yes</span>' if acc.get('Enabled', 'Unknown') == 'Yes' else '<span class="badge bg-secondary">No</span>'}</td>
             <td><span class="badge bg-primary">{controllables}</span></td>
             <td><small>{acc.get('Last Logon', 'Unknown')}</small></td>
@@ -622,10 +624,10 @@ def build_nonexpiring_table(accounts, seed):
         <tr class="risk-row risk-{risk_level.lower()}" data-risk="{risk_level}">
             <td>
                 <a href="#" class="user-detail-link text-decoration-none"
-                   data-username="{acc['Username']}"
+                   data-username="{escape_html(acc['Username'])}"
                    data-coreui-toggle="offcanvas"
                    data-coreui-target="#userDetailOffcanvas">
-                    <code>{acc['Username']}</code>
+                    <code>{escape_html(acc['Username'])}</code>
                 </a>
             </td>
             <td><small class="font-monospace">{placeholder}</small></td>
@@ -702,10 +704,10 @@ def build_compliance_table(accounts):
         <tr class="risk-row risk-{risk_level.lower()}" data-risk="{risk_level}">
             <td>
                 <a href="#" class="user-detail-link text-decoration-none"
-                   data-username="{acc['Username']}"
+                   data-username="{escape_html(acc['Username'])}"
                    data-coreui-toggle="offcanvas"
                    data-coreui-target="#userDetailOffcanvas">
-                    <code>{acc['Username']}</code>
+                    <code>{escape_html(acc['Username'])}</code>
                 </a>
             </td>
             <td><span class="badge bg-secondary">{acc['Password Length']}</span></td>

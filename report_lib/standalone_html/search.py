@@ -14,7 +14,7 @@ from report_lib.standalone_html.components import (
     create_user_detail_offcanvas,
     html_head,
 )
-from report_lib.standalone_html.scripts import SEARCH_JS, SEARCH_REDACTED_JS, USER_DETAIL_JS
+from report_lib.standalone_html.scripts import SEARCH_JS, SEARCH_REDACTED_JS, render_user_detail_js
 
 
 def generate_search_html(json_file, logger=None):
@@ -115,7 +115,7 @@ def generate_search_html(json_file, logger=None):
         # Note: User data will be loaded from password_data.json by SEARCH_JS
         # and made available to USER_DETAIL_JS via the allAccounts array
         # Initialize userDetailsData as empty object - SEARCH_JS will populate it dynamically
-        user_detail_script = USER_DETAIL_JS.replace('{USER_DATA_JSON}', '{}')
+        user_detail_script = render_user_detail_js('{}')
 
         content += f"""
                 {SEARCH_JS}
@@ -247,7 +247,7 @@ def generate_search_redacted_html(json_file_with_placeholders, logger=None):
 
         # Add JavaScript (table sorting, redacted search, and user detail)
         # Initialize userDetailsData as empty object - SEARCH_REDACTED_JS will populate it dynamically
-        user_detail_script = USER_DETAIL_JS.replace('{USER_DATA_JSON}', '{}')
+        user_detail_script = render_user_detail_js('{}')
 
         content += f"""
                 {SEARCH_REDACTED_JS}

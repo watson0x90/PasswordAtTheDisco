@@ -24,7 +24,7 @@ from report_lib.standalone_html.modern_components import (
     create_progress_card,
     create_stat_grid,
 )
-from report_lib.standalone_html.scripts import USER_DETAIL_JS
+from report_lib.standalone_html.scripts import render_user_detail_js
 from report_lib.templating import render_macro
 from utils.visualization_helper import add_visualization_to_html
 
@@ -247,7 +247,7 @@ def generate_combined_html_report(combined_rows, global_password_to_users, globa
         content += create_user_detail_offcanvas()
 
         # Add JavaScript (table sorting and user detail)
-        user_detail_script = USER_DETAIL_JS.replace('{USER_DATA_JSON}', user_details_json_str)
+        user_detail_script = render_user_detail_js(user_details_json_str)
 
         content += f"""
                 {user_detail_script}

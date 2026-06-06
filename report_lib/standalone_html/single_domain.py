@@ -20,7 +20,7 @@ from report_lib.standalone_html.components import (
     get_risk_distribution_html,
     html_head,
 )
-from report_lib.standalone_html.scripts import USER_DETAIL_JS
+from report_lib.standalone_html.scripts import render_user_detail_js
 from report_lib.templating import render, render_macro
 from utils.visualization_helper import add_visualization_to_html
 
@@ -268,7 +268,7 @@ def generate_html_report(domain, data, visuals, logger=None):
             user_details_json_str = '{}'
 
         offcanvas_html = create_user_detail_offcanvas()
-        user_detail_script = USER_DETAIL_JS.replace('{USER_DATA_JSON}', user_details_json_str)
+        user_detail_script = render_user_detail_js(user_details_json_str)
 
         content = render(
             "partials/single_domain_content.html.j2",

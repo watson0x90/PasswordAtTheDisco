@@ -1482,3 +1482,16 @@ function exportJSON() {
 }
 </script>
 """
+
+
+def render_user_detail_js(user_details_json_str):
+    """Embed the user-details JSON into USER_DETAIL_JS, escaped for the <script>
+    context. json.dumps does not escape <, >, & -- so an attacker-controlled
+    value (e.g. a cracked password containing a closing script tag) could
+    otherwise break out of the script tag. Escaping them to their unicode form
+    keeps the value inert JSON (the JS parser restores it at runtime)."""
+    safe = (user_details_json_str
+            .replace("&", "\\u0026")
+            .replace("<", "\\u003c")
+            .replace(">", "\\u003e"))
+    return USER_DETAIL_JS.replace("{USER_DATA_JSON}", safe)
