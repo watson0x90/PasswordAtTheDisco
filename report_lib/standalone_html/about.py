@@ -9,10 +9,11 @@ from pathlib import Path
 from report_lib.standalone_html.components import (
     create_about_content,
     create_navbar,
-    create_page_wrapper,
     create_sidebar,
     html_head,
 )
+from report_lib.standalone_html.scripts import SIDEBAR_NAV_JS
+from report_lib.templating import render
 
 
 def generate_about_html(report_metadata, domains=None, logger=None):
@@ -43,14 +44,14 @@ def generate_about_html(report_metadata, domains=None, logger=None):
         navbar = create_navbar(current_page='about', include_search=True, include_export=False)
         sidebar = create_sidebar(current_page='about', domains=domains)
         about_content = create_about_content(report_metadata)
+        head = html_head("About - Password Security Audit", enable_sidebar=True)
 
-        # Build complete HTML
-        html = html_head("About - Password Security Audit", enable_sidebar=True)
-        html += create_page_wrapper(about_content, navbar, sidebar)
-        html += """
-</body>
-</html>
-        """
+        # Render via the autoescaping Jinja2 base layout
+        html = render(
+            "about.html.j2",
+            head=head, navbar=navbar, sidebar=sidebar,
+            about_content=about_content, sidebar_nav_js=SIDEBAR_NAV_JS,
+        )
 
         # Write to file
         from core import config as config_module

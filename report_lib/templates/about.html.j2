@@ -1,0 +1,6 @@
+{% extends "base.html.j2" %}
+{% block content %}
+{# Phase 1: the about content is still produced by create_about_content().
+   It is migrated to autoescaped template markup in a later phase. #}
+{{ about_content | safe }}
+{% endblock %}

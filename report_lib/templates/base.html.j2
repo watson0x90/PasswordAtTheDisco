@@ -1,0 +1,24 @@
+{# Base report layout. `head`, `navbar`, `sidebar` and `sidebar_nav_js` are
+   trusted, pre-rendered chrome (passed through | safe). Page templates fill the
+   `content` block, where {{ value }} interpolation is autoescaped. #}
+{{ head | safe }}
+<body>
+    <div class="wrapper">
+        {{ navbar | safe }}
+
+        <div class="body flex-grow-1">
+            {{ sidebar | safe }}
+
+            <!-- Main Content Area -->
+            <div class="main-content">
+                <div class="container-fluid p-4">
+{% block content %}{% endblock %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{ sidebar_nav_js | safe }}
+{% block extra_scripts %}{% endblock %}
+</body>
+</html>
