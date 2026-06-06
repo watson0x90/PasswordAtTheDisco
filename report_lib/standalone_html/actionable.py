@@ -71,7 +71,7 @@ def generate_combined_actionable_report(domain, data, seed, visuals, logger=None
             da_count = len(da_accounts)
             sections_html = build_section_with_tabs(
                 "Riskiest Cracked Accounts with DA Pathway",
-                f"**Count in this Domain**: {da_count} accounts",
+                f"<strong>Count in this Domain</strong>: {da_count} accounts",
                 DA_EXPLANATION,
                 build_da_accounts_table(da_accounts, seed),
                 "tab-action",
@@ -88,7 +88,7 @@ def generate_combined_actionable_report(domain, data, seed, visuals, logger=None
             controllables_count = len(controllables_accounts)
             sections_html += build_section_with_tabs(
                 "Top 100 Accounts by Controllables",
-                f"**Count in this Domain**: {controllables_count} accounts (top 100 shown)",
+                f"<strong>Count in this Domain</strong>: {controllables_count} accounts (top 100 shown)",
                 CONTROLLABLES_EXPLANATION,
                 build_controllables_table(controllables_accounts, seed),
                 "tab-action-controllables",
@@ -99,7 +99,7 @@ def generate_combined_actionable_report(domain, data, seed, visuals, logger=None
             non_expiring_count = len(non_expiring_accounts)
             sections_html += build_section_with_tabs(
                 "Accounts with Non-Expiring Passwords",
-                f"**Count in this Domain**: {non_expiring_count} accounts",
+                f"<strong>Count in this Domain</strong>: {non_expiring_count} accounts",
                 NONEXPIRING_EXPLANATION,
                 build_nonexpiring_table(non_expiring_accounts, seed),
                 "tab-action-nonexpiring",
@@ -111,7 +111,7 @@ def generate_combined_actionable_report(domain, data, seed, visuals, logger=None
                                         and int(row.get('Days Out of Compliance', 0)) > 0]
             sections_html += build_section_with_tabs(
                 "Out-of-Compliance Accounts",
-                f"**Count in this Domain**: {len(out_of_compliance_accounts)} accounts",
+                f"<strong>Count in this Domain</strong>: {len(out_of_compliance_accounts)} accounts",
                 COMPLIANCE_EXPLANATION,
                 build_compliance_table(out_of_compliance_accounts),
                 "tab-action-compliance",
