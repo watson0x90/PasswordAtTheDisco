@@ -7,21 +7,32 @@ Coordinates generation of various visualization types.
 import importlib.util
 import os
 
-from core.config import html_reports_folder
+from core.config import ENABLE_STATIC_CHARTS, html_reports_folder
+from utils.logging import get_logger
+
+logger = get_logger('visualizations')
 
 # Plotly is an optional dependency (not required for basic functionality).
 PLOTLY_AVAILABLE = importlib.util.find_spec("plotly") is not None
 
-def save_plot(fig, filename):
+def save_plot(fig, filename, static=None):
     """
-    Save Plotly figure as PNG, HTML, and JSON in html_report folder.
+    Save a Plotly figure for embedding in reports.
+
+    Always produces the interactive forms (a standalone HTML file and the inline
+    JSON used by the HTML reports). The static PNG (via kaleido) is only needed
+    for Markdown/PDF and is the most fragile step -- kaleido 0.2.1 can hang on
+    some platforms -- so it is opt-in (config ``reports.enable_static_charts``)
+    and guarded; on failure the chart degrades to HTML-only.
 
     Args:
         fig (Figure): Plotly figure object
         filename (str): Base filename without extension
+        static (bool|None): Force static PNG export on/off; defaults to the
+            ENABLE_STATIC_CHARTS config flag.
 
     Returns:
-        dict: Paths to saved files and inline JSON data
+        dict: Paths to saved files and inline JSON data ('png' is '' if skipped)
     """
     if not PLOTLY_AVAILABLE:
         # Return empty paths if plotly not available
@@ -32,8 +43,16 @@ def save_plot(fig, filename):
     html_path = html_reports_folder / f'{filename}.html'
     json_path = html_reports_folder / f'{filename}.json'
 
-    # Save PNG and HTML files (for backward compatibility)
-    fig.write_image(png_path, width=800, height=500)
+    # Static PNG export -- opt-in and guarded (see docstring).
+    png_str = ''
+    if ENABLE_STATIC_CHARTS if static is None else static:
+        try:
+            fig.write_image(png_path, width=800, height=500)
+            png_str = str(png_path)
+        except Exception as e:
+            logger.warning(f"Static chart export failed for {filename}; "
+                           f"chart will be HTML-only: {e}")
+
     fig.write_html(html_path)
 
     # Get Plotly figure as JSON for inline embedding
@@ -49,7 +68,7 @@ def save_plot(fig, filename):
     fig_dict = json_module.loads(fig_json)
 
     return {
-        'png': str(png_path),  # Convert PosixPath to string for JSON serialization
+        'png': png_str,  # '' when static export is disabled/failed (HTML-only)
         'html': str(html_path),  # Convert PosixPath to string for JSON serialization
         'json': str(json_path),  # Convert PosixPath to string for JSON serialization
         'plotly': fig_dict  # Store as dict (not string) for proper serialization

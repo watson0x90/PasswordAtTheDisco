@@ -225,11 +225,19 @@ APP_CONFIG = {
     },
     "UI": {
         "ENABLE_ANIMATION": _app_json.get("ui", {}).get("enable_animation", True)
+    },
+    "REPORTS": {
+        # Static PNG chart export (via plotly+kaleido) is only needed for the
+        # Markdown/PDF reports; the HTML reports embed interactive charts inline.
+        # It is OFF by default because kaleido 0.2.1 can hang on some platforms
+        # (notably Windows). Enable only with a working kaleido.
+        "ENABLE_STATIC_CHARTS": _app_json.get("reports", {}).get("enable_static_charts", False)
     }
 }
 
 # Set legacy ENABLE_ANIMATION variable for backward compatibility
 ENABLE_ANIMATION = APP_CONFIG["UI"]["ENABLE_ANIMATION"]
+ENABLE_STATIC_CHARTS = APP_CONFIG["REPORTS"]["ENABLE_STATIC_CHARTS"]
 
 # Demo data configuration
 DEMO_CONFIG = {
