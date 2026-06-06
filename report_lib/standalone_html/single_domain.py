@@ -23,7 +23,7 @@ from report_lib.standalone_html.components import (
     get_risk_distribution_html,
     html_head,
 )
-from report_lib.standalone_html.scripts import TABLE_SORT_JS, USER_DETAIL_JS
+from report_lib.standalone_html.scripts import USER_DETAIL_JS
 from report_lib.templating import render_macro
 from utils.visualization_helper import add_visualization_to_html
 
@@ -406,7 +406,6 @@ def generate_html_report(domain, data, visuals, logger=None):
         user_detail_script = USER_DETAIL_JS.replace('{USER_DATA_JSON}', user_details_json_str)
 
         content += f"""
-                {TABLE_SORT_JS}
                 {user_detail_script}
         """
 

@@ -22,7 +22,7 @@ from report_lib.standalone_html.components import (
     create_user_detail_offcanvas,
     html_head,
 )
-from report_lib.standalone_html.scripts import ACTIONABLE_REPORT_JS, TABLE_SORT_JS, USER_DETAIL_JS
+from report_lib.standalone_html.scripts import ACTIONABLE_REPORT_JS, USER_DETAIL_JS
 
 
 def generate_html_actionable_report(domain, data, seed, visuals, logger=None):
@@ -163,7 +163,6 @@ def generate_combined_actionable_report(domain, data, seed, visuals, logger=None
         user_detail_script = USER_DETAIL_JS.replace('{USER_DATA_JSON}', user_details_json_str)
 
         content += f"""
-                {TABLE_SORT_JS}
                 {ACTIONABLE_REPORT_JS}
                 {user_detail_script}
         """

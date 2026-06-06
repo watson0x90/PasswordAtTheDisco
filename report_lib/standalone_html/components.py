@@ -685,30 +685,6 @@ def create_error_message(message="An error occurred while processing the data.")
     </div>
     """
 
-def create_visualization_container(title, iframe_path=None, fallback_text=None):
-    """Create a visualization container using Bootstrap card."""
-    if iframe_path:
-        content = f"""
-        <iframe src="./{iframe_path}" width="100%" height="500" frameborder="0"
-                loading="lazy" class="rounded" title="{title}"></iframe>
-        """
-    else:
-        content = f"""
-        <div class="alert alert-warning mb-0" role="alert">
-            <i class="bi bi-exclamation-triangle me-2"></i>{fallback_text or 'Visualization not available'}
-        </div>
-        """
-
-    return f"""
-    <div class="card shadow-sm mb-4">
-        <div class="card-header bg-primary text-white">
-            <h5 class="mb-0"><i class="bi bi-bar-chart me-2"></i>{title}</h5>
-        </div>
-        <div class="card-body">
-            {content}
-        </div>
-    </div>
-    """
 
 def get_risk_distribution_html(distribution, total=None):
     """Generate HTML for risk distribution using Bootstrap badges and list group."""
@@ -744,55 +720,6 @@ def get_risk_distribution_html(distribution, total=None):
 
     return html
 
-def get_accounts_table_html(accounts, columns, include_risk_class=True):
-    """Generate HTML table for accounts using Bootstrap table classes."""
-    if not accounts:
-        return '<div class="alert alert-info">No accounts available.</div>'
-
-    # Create header row
-    header_row = "<tr>"
-    for col in columns:
-        header_row += f"<th>{col}</th>"
-    header_row += "</tr>"
-
-    # Risk badge mapping
-    risk_badges = {
-        'critical': 'badge-risk-critical',
-        'high': 'badge-risk-high',
-        'medium': 'badge-risk-medium',
-        'low': 'badge-risk-low'
-    }
-
-    # Create data rows
-    rows = ""
-    for acc in accounts:
-        rows += "<tr>"
-        for col in columns:
-            value = acc.get(col, "N/A")
-
-            # Add badge for Risk Level column
-            if col == 'Risk Level' and value != "N/A":
-                risk_class = risk_badges.get(value.lower(), 'bg-secondary')
-                value = f'<span class="badge {risk_class}">{value}</span>'
-
-            rows += f"<td>{value}</td>"
-        rows += "</tr>"
-
-    return f"""
-    <div class="table-responsive">
-        <table class="table table-striped table-hover table-bordered table-sm">
-            <thead class="table-dark">
-                {header_row}
-            </thead>
-            <tbody>
-                {rows}
-            </tbody>
-        </table>
-    </div>
-    """
-
-
-# New Bootstrap 5 Helper Functions
 
 def create_metric_card(title, value, icon=None, bg_class="bg-primary", text_class="text-white", subtitle=None):
     """Create a Bootstrap metric card for displaying statistics."""

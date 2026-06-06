@@ -14,7 +14,7 @@ from report_lib.standalone_html.components import (
     create_user_detail_offcanvas,
     html_head,
 )
-from report_lib.standalone_html.scripts import SEARCH_JS, SEARCH_REDACTED_JS, TABLE_SORT_JS, USER_DETAIL_JS
+from report_lib.standalone_html.scripts import SEARCH_JS, SEARCH_REDACTED_JS, USER_DETAIL_JS
 
 
 def generate_search_html(json_file, logger=None):
@@ -118,7 +118,6 @@ def generate_search_html(json_file, logger=None):
         user_detail_script = USER_DETAIL_JS.replace('{USER_DATA_JSON}', '{}')
 
         content += f"""
-                {TABLE_SORT_JS}
                 {SEARCH_JS}
                 {user_detail_script}
         """
@@ -251,7 +250,6 @@ def generate_search_redacted_html(json_file_with_placeholders, logger=None):
         user_detail_script = USER_DETAIL_JS.replace('{USER_DATA_JSON}', '{}')
 
         content += f"""
-                {TABLE_SORT_JS}
                 {SEARCH_REDACTED_JS}
                 {user_detail_script}
         """

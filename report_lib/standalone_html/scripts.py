@@ -3,43 +3,6 @@
 JavaScript functions for HTML reports with enhanced search and filtering.
 """
 
-# JavaScript for table sorting
-TABLE_SORT_JS = """
-<script>
-function sortTable(table, colIndex, ascending) {
-    const tbody = table.querySelector('tbody');
-    const rows = Array.from(tbody.querySelectorAll('tr'));
-    rows.sort((a, b) => {
-        const aValue = a.cells[colIndex].textContent.trim();
-        const bValue = b.cells[colIndex].textContent.trim();
-        const aNum = parseFloat(aValue);
-        const bNum = parseFloat(bValue);
-        if (!isNaN(aNum) && !isNaN(bNum)) {
-            return ascending ? aNum - bNum : bNum - aNum;
-        }
-        return ascending ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue);
-    });
-    rows.forEach(row => tbody.appendChild(row));
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-    document.querySelectorAll('table.table-sortable').forEach(table => {
-        const headers = table.querySelectorAll('th');
-        headers.forEach((th, index) => {
-            let ascending = true;
-            th.style.cursor = 'pointer';
-            th.addEventListener('click', () => {
-                sortTable(table, index, ascending);
-                ascending = !ascending;
-                headers.forEach(h => h.classList.remove('sorted-asc', 'sorted-desc'));
-                th.classList.add(ascending ? 'sorted-desc' : 'sorted-asc');
-            });
-        });
-    });
-});
-</script>
-"""
-
 # Enhanced JavaScript for search functionality with all filters
 SEARCH_JS = """
 <script>

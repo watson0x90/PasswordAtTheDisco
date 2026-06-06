@@ -183,27 +183,6 @@ body {
     background-color: rgba(255, 255, 255, 0.05);
 }
 
-table.table-sortable thead th {
-    cursor: pointer;
-    user-select: none;
-}
-
-table.table-sortable thead th:hover {
-    background-color: rgba(255, 255, 255, 0.1);
-}
-
-table.table-sortable thead th.sorted-asc::after {
-    content: " ↑";
-    font-weight: bold;
-    color: var(--cui-primary);
-}
-
-table.table-sortable thead th.sorted-desc::after {
-    content: " ↓";
-    font-weight: bold;
-    color: var(--cui-primary);
-}
-
 /* ============================================
    Alerts (dark theme)
    ============================================ */
