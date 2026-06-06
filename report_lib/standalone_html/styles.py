@@ -111,14 +111,16 @@ body {
 /* ============================================
    Risk badges (consistent with Flask UI)
    ============================================ */
+/* Risk badge colours meet WCAG AA: critical keeps white text on a slightly
+   darker red; the lighter high/low colours take dark text (white failed). */
 .badge-risk-critical {
-    background-color: #ef4444;
+    background-color: #c62828;
     color: #fff;
 }
 
 .badge-risk-high {
     background-color: #f97316;
-    color: #fff;
+    color: #1a1d23;
 }
 
 .badge-risk-medium {
@@ -128,7 +130,7 @@ body {
 
 .badge-risk-low {
     background-color: #22c55e;
-    color: #fff;
+    color: #1a1d23;
 }
 
 /* Text colors for risk levels */
@@ -467,7 +469,7 @@ table.table-sortable thead th.sorted-desc::after {
    User Detail Offcanvas Styling
    ============================================ */
 .user-detail-link {
-    color: var(--cui-primary);
+    color: #60a5fa;   /* lighter blue: var(--cui-primary) #3b82f6 failed contrast on row bg */
     text-decoration: none;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -636,6 +638,8 @@ table.table-sortable thead th.sorted-desc::after {
    badge-risk-* classes used for risk levels). */
 .badge.bg-danger { background-color: #b02a37 !important; }
 .badge.bg-success { background-color: #15703a !important; }
+/* White on the amber bg-warning badge was 1.98:1; use dark text. */
+.badge.bg-warning { color: #1a1d23 !important; }
 </style>
 """
 
