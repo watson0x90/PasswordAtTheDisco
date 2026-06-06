@@ -1,0 +1,16 @@
+{# Actionable report body. The domain is autoescaped; breadcrumb, the tabbed
+   sections, offcanvas and scripts are pre-rendered trusted fragments. #}
+{{ breadcrumb_html | safe }}
+
+<div class="mb-4">
+    <h1 class="display-4"><i class="bi bi-clipboard-check me-3"></i>Actionable Report</h1>
+    <p class="lead text-muted">{{ domain }}</p>
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle me-2"></i>
+        Actionable items for cracked passwords with critical issues requiring immediate attention.
+    </div>
+</div>
+{{ sections_html | safe }}
+{{ offcanvas_html | safe }}
+
+{{ scripts_html | safe }}

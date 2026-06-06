@@ -25,6 +25,7 @@ from report_lib.standalone_html.components import (
     html_head,
 )
 from report_lib.standalone_html.scripts import ACTIONABLE_REPORT_JS, render_user_detail_js
+from report_lib.templating import render
 
 
 def generate_html_actionable_report(domain, data, seed, visuals, logger=None):
@@ -45,7 +46,7 @@ def generate_html_actionable_report(domain, data, seed, visuals, logger=None):
 def generate_combined_actionable_report(domain, data, seed, visuals, logger=None):
     """
     Generate a combined actionable and explanatory HTML report.
-    
+
     Args:
         domain (str): Domain name
         data (dict): Domain analysis data
@@ -54,39 +55,21 @@ def generate_combined_actionable_report(domain, data, seed, visuals, logger=None
         logger (Logger, optional): Logger instance
     """
     try:
-        # Get all domains from data for sidebar (for now, just use single domain)
         domains = [domain]
-
-        # Create navbar and sidebar
         navbar = create_navbar(current_page=f'actionable_{domain}', include_search=True, include_export=True)
         sidebar = create_sidebar(current_page=f'actionable_{domain}', domains=domains)
-
-        # Start building content (without body tag - that's in page_wrapper)
-        content = f"""
-                {create_breadcrumb([
-                    ('Main Report', './main.html'),
-                    ('Search', './search.html'),
-                    (f'{domain} Actionable Report', None)
-                ])}
-
-                <div class="mb-4">
-                    <h1 class="display-4"><i class="bi bi-clipboard-check me-3"></i>Actionable Report</h1>
-                    <p class="lead text-muted">{domain}</p>
-                    <div class="alert alert-info">
-                        <i class="bi bi-info-circle me-2"></i>
-                        Actionable items for cracked passwords with critical issues requiring immediate attention.
-                    </div>
-                </div>
-        """
+        breadcrumb_html = create_breadcrumb([
+            ('Main Report', './main.html'),
+            ('Search', './search.html'),
+            (f'{domain} Actionable Report', None)
+        ])
 
         try:
             cracked_rows = [row for row in data['output_rows'] if row.get('Password Length', 'N/A') != 'N/A']
 
-            # DA accounts section with explanation
             da_accounts = [row for row in cracked_rows if row.get('DA Domains', 'None') not in ('None', 'Unknown')]
             da_count = len(da_accounts)
-
-            content += build_section_with_tabs(
+            sections_html = build_section_with_tabs(
                 "Riskiest Cracked Accounts with DA Pathway",
                 f"**Count in this Domain**: {da_count} accounts",
                 DA_EXPLANATION,
@@ -95,7 +78,6 @@ def generate_combined_actionable_report(domain, data, seed, visuals, logger=None
                 "tab-explanation"
             )
 
-            # Controllables section with explanation
             controllables_accounts = sorted(
                 cracked_rows,
                 key=lambda x: (
@@ -104,8 +86,7 @@ def generate_combined_actionable_report(domain, data, seed, visuals, logger=None
                 )
             )[:100]
             controllables_count = len(controllables_accounts)
-
-            content += build_section_with_tabs(
+            sections_html += build_section_with_tabs(
                 "Top 100 Accounts by Controllables",
                 f"**Count in this Domain**: {controllables_count} accounts (top 100 shown)",
                 CONTROLLABLES_EXPLANATION,
@@ -114,11 +95,9 @@ def generate_combined_actionable_report(domain, data, seed, visuals, logger=None
                 "tab-explanation-controllables"
             )
 
-            # Non-expiring passwords section
             non_expiring_accounts = [row for row in cracked_rows if row.get('Password Set to Expire', 'Yes') == 'No']
             non_expiring_count = len(non_expiring_accounts)
-
-            content += build_section_with_tabs(
+            sections_html += build_section_with_tabs(
                 "Accounts with Non-Expiring Passwords",
                 f"**Count in this Domain**: {non_expiring_count} accounts",
                 NONEXPIRING_EXPLANATION,
@@ -127,12 +106,10 @@ def generate_combined_actionable_report(domain, data, seed, visuals, logger=None
                 "tab-explanation-nonexpiring"
             )
 
-            # Out-of-compliance section
             out_of_compliance_accounts = [row for row in cracked_rows
                                         if row.get('Days Out of Compliance', 'N/A') not in ('N/A', 'Unknown')
                                         and int(row.get('Days Out of Compliance', 0)) > 0]
-
-            content += build_section_with_tabs(
+            sections_html += build_section_with_tabs(
                 "Out-of-Compliance Accounts",
                 f"**Count in this Domain**: {len(out_of_compliance_accounts)} accounts",
                 COMPLIANCE_EXPLANATION,
@@ -142,14 +119,13 @@ def generate_combined_actionable_report(domain, data, seed, visuals, logger=None
             )
 
             if not any([da_accounts, controllables_accounts, non_expiring_accounts, out_of_compliance_accounts]):
-                content += "<p><strong>No actionable items identified for this domain.</strong></p>\n"
+                sections_html += "<p><strong>No actionable items identified for this domain.</strong></p>\n"
 
         except Exception as e:
             if logger:
                 logger.error(f"Error processing data for actionable report for domain {domain}: {str(e)}")
-            content += create_error_message(f"Error processing actionable data: {str(e)}")
+            sections_html = create_error_message(f"Error processing actionable data: {str(e)}")
 
-        # Generate user details JSON for offcanvas
         try:
             user_details_json = generate_user_details_json(data['output_rows'])
             user_details_json_str = json.dumps(user_details_json, indent=2)
@@ -158,18 +134,22 @@ def generate_combined_actionable_report(domain, data, seed, visuals, logger=None
                 logger.error(f"Error generating user details JSON: {str(e)}")
             user_details_json_str = '{}'
 
-        # Add offcanvas HTML structure
-        content += create_user_detail_offcanvas()
-
-        # Add JavaScript (table sorting, actionable report, and user detail)
+        offcanvas_html = create_user_detail_offcanvas()
         user_detail_script = render_user_detail_js(user_details_json_str)
-
-        content += f"""
+        scripts_html = f"""
                 {ACTIONABLE_REPORT_JS}
                 {user_detail_script}
         """
 
-        # Wrap content with navbar and sidebar using page wrapper
+        content = render(
+            "partials/actionable_content.html.j2",
+            domain=domain,
+            breadcrumb_html=breadcrumb_html,
+            sections_html=sections_html,
+            offcanvas_html=offcanvas_html,
+            scripts_html=scripts_html,
+        )
+
         html = html_head(f"Actionable Password Security Report - {domain}", enable_sidebar=True)
         html += create_page_wrapper(content, navbar, sidebar)
         html += """
@@ -177,7 +157,6 @@ def generate_combined_actionable_report(domain, data, seed, visuals, logger=None
 </html>
         """
 
-        # Write to file
         from core import config as config_module
         html_dir = getattr(config_module, 'html_reports_folder', Path('output/html_report'))
         output_path = html_dir / f'{domain}_actionable_report.html'
@@ -185,13 +164,13 @@ def generate_combined_actionable_report(domain, data, seed, visuals, logger=None
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(html)
         if logger:
-            logger.info(f"Generated combined actionable HTML report: {output_path}")
-            
+            logger.info(f"Generated actionable HTML report: {output_path}")
+
     except Exception as e:
         if logger:
-            logger.error(f"Error generating combined actionable HTML report for domain {domain}: {str(e)}")
+            logger.error(f"Error generating actionable HTML report for domain {domain}: {str(e)}")
         else:
-            print(f"Error generating combined actionable HTML report for domain {domain}: {str(e)}")
+            print(f"Error generating actionable HTML report for domain {domain}: {str(e)}")
 
 
 def build_score_breakdown_html(account, row_id):
