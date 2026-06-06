@@ -657,6 +657,29 @@ body {
 .badge.bg-success { background-color: #15703a !important; }
 /* White on the amber bg-warning badge was 1.98:1; use dark text. */
 .badge.bg-warning { color: #1a1d23 !important; }
+
+/* ============================================
+   Data tables: compact rows + sticky headers
+   ============================================ */
+/* Tighter, scannable density. */
+.table-responsive > table > :not(caption) > * > * {
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
+    vertical-align: middle;
+}
+/* Keep column headers visible while scrolling a long list. The report tables
+   are sized to fit, so the wrapper need not be a horizontal scroll container;
+   making it overflow-visible lets the sticky headers anchor to the page. */
+.table-responsive {
+    overflow: visible;
+}
+.table-responsive > table > thead > tr > th {
+    position: sticky;
+    top: 88px;            /* sit just below the sticky page header */
+    z-index: 2;
+    background-color: #20242b;
+    box-shadow: inset 0 -1px 0 var(--cui-border-color);
+}
 </style>
 """
 

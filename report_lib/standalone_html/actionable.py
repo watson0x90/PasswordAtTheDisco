@@ -401,14 +401,9 @@ def build_da_accounts_table(accounts, seed):
             <thead class="table-dark">
                 <tr>
                     <th>Username</th>
-                    <th>Type</th>
                     <th>Password Placeholder</th>
                     <th>Risk Level</th>
-                    <th>HIBP Breached</th>
-                    <th>HIBP Count</th>
-                    <th>Shared With</th>
-                    <th>Enabled</th>
-                    <th>Last Logon</th>
+                    <th>HIBP</th>
                     <th>Action</th>
                 </tr>
             </thead>
@@ -420,27 +415,12 @@ def build_da_accounts_table(accounts, seed):
         action = "Reset Immediately" if acc.get('Enabled', 'No') == 'Yes' and acc.get('Risk Level', '') in ('High', 'Critical') else "Review and Secure"
         risk_level = acc.get('Risk Level', 'Unknown')
 
-        # Type badge (all in this table are Cracked)
-        type_badge = '<span class="badge bg-success">Cracked</span>'
-
-        # HIBP data
         hibp_breached = acc.get('HIBP Breached', 'No')
         hibp_count = acc.get('HIBP Breach Count', 0)
-        acc.get('HIBP Risk Level', 'None')
+        hibp_cell = (f'<span class="badge bg-danger">Breached ({hibp_count:,})</span>'
+                     if hibp_breached == 'Yes'
+                     else '<span class="badge bg-secondary">Clean</span>')
 
-        hibp_badge = '<span class="badge bg-danger">Yes</span>' if hibp_breached == 'Yes' else '<span class="badge bg-secondary">No</span>'
-
-        # Determine HIBP count badge color
-        if hibp_count == 0:
-            hibp_count_badge = 'bg-secondary'
-        elif hibp_count < 100:
-            hibp_count_badge = 'bg-warning text-dark'
-        elif hibp_count < 10000:
-            hibp_count_badge = 'bg-danger'
-        else:
-            hibp_count_badge = 'bg-danger'
-
-        # Action badge color
         action_badge = 'bg-danger' if action == "Reset Immediately" else 'bg-warning text-dark'
 
         table_html += f"""
@@ -453,14 +433,9 @@ def build_da_accounts_table(accounts, seed):
                     <code>{escape_html(acc['Username'])}</code>
                 </a>
             </td>
-            <td>{type_badge}</td>
             <td><small class="font-monospace">{placeholder}</small></td>
             <td>{create_risk_badge(risk_level)}</td>
-            <td>{hibp_badge}</td>
-            <td><span class="badge {hibp_count_badge}">{hibp_count:,}</span></td>
-            <td>{escape_html(acc.get('Shared With', 'N/A'))}</td>
-            <td>{'<span class="badge bg-success">Yes</span>' if acc.get('Enabled', 'Unknown') == 'Yes' else '<span class="badge bg-secondary">No</span>'}</td>
-            <td><small>{acc.get('Last Logon', 'Unknown')}</small></td>
+            <td>{hibp_cell}</td>
             <td><span class="badge {action_badge}">{action}</span></td>
         </tr>
         """
@@ -499,12 +474,7 @@ def build_controllables_table(accounts, seed):
                     <th>Username</th>
                     <th>Password Placeholder</th>
                     <th>Risk Level</th>
-                    <th>Risk Vector</th>
-                    <th>Shared With</th>
-                    <th>Enabled</th>
                     <th>Controllables</th>
-                    <th>Last Logon</th>
-                    <th>When Created</th>
                     <th>Action</th>
                 </tr>
             </thead>
@@ -514,11 +484,9 @@ def build_controllables_table(accounts, seed):
     for acc in accounts:
         placeholder = hashlib.md5((seed + acc['Password']).encode()).hexdigest()
         action = "Reset Immediately" if acc.get('Enabled', 'No') == 'Yes' and acc.get('Risk Level', '') in ('High', 'Critical') else "Review and Secure"
-        risk_vector = acc.get('Risk Vector', 'N/A')
         controllables = acc.get('Controlled Object Count', 'Unknown')
         risk_level = acc.get('Risk Level', 'Unknown')
 
-        # Action badge color
         action_badge = 'bg-danger' if action == "Reset Immediately" else 'bg-warning text-dark'
 
         table_html += f"""
@@ -533,12 +501,7 @@ def build_controllables_table(accounts, seed):
             </td>
             <td><small class="font-monospace">{placeholder}</small></td>
             <td>{create_risk_badge(risk_level)}</td>
-            <td><small>{risk_vector}</small></td>
-            <td>{escape_html(acc.get('Shared With', 'N/A'))}</td>
-            <td>{'<span class="badge bg-success">Yes</span>' if acc.get('Enabled', 'Unknown') == 'Yes' else '<span class="badge bg-secondary">No</span>'}</td>
             <td><span class="badge bg-primary">{controllables}</span></td>
-            <td><small>{acc.get('Last Logon', 'Unknown')}</small></td>
-            <td><small>{acc.get('When Created', 'Unknown')}</small></td>
             <td><span class="badge {action_badge}">{action}</span></td>
         </tr>
         """
@@ -580,10 +543,6 @@ def build_nonexpiring_table(accounts, seed):
                     <th>Username</th>
                     <th>Password Placeholder</th>
                     <th>Risk Level</th>
-                    <th>Risk Vector</th>
-                    <th>Enabled</th>
-                    <th>Last Logon</th>
-                    <th>When Created</th>
                     <th>Action</th>
                 </tr>
             </thead>
@@ -593,10 +552,8 @@ def build_nonexpiring_table(accounts, seed):
     for acc in accounts:
         placeholder = hashlib.md5((seed + acc['Password']).encode()).hexdigest()
         action = "Set to Expire and Reset" if acc.get('Enabled', 'No') == 'Yes' else "Review and Update"
-        risk_vector = acc.get('Risk Vector', 'N/A')
         risk_level = acc.get('Risk Level', 'Unknown')
 
-        # Action badge color
         action_badge = 'bg-warning text-dark' if action == "Set to Expire and Reset" else 'bg-info'
 
         table_html += f"""
@@ -611,10 +568,6 @@ def build_nonexpiring_table(accounts, seed):
             </td>
             <td><small class="font-monospace">{placeholder}</small></td>
             <td>{create_risk_badge(risk_level)}</td>
-            <td><small>{risk_vector}</small></td>
-            <td>{'<span class="badge bg-success">Yes</span>' if acc.get('Enabled', 'Unknown') == 'Yes' else '<span class="badge bg-secondary">No</span>'}</td>
-            <td><small>{acc.get('Last Logon', 'Unknown')}</small></td>
-            <td><small>{acc.get('When Created', 'Unknown')}</small></td>
             <td><span class="badge {action_badge}">{action}</span></td>
         </tr>
         """
@@ -660,10 +613,6 @@ def build_compliance_table(accounts):
                     <th>Username</th>
                     <th>Password Length</th>
                     <th>Days Out of Compliance</th>
-                    <th>Risk Vector</th>
-                    <th>Enabled</th>
-                    <th>Last Logon</th>
-                    <th>When Created</th>
                     <th>Risk Level</th>
                     <th>Action</th>
                 </tr>
@@ -673,10 +622,8 @@ def build_compliance_table(accounts):
 
     for acc in accounts:
         action = "Reset Immediately" if acc['Risk Level'] in ('High', 'Critical') and acc.get('Enabled', 'No') == 'Yes' else "Enforce Compliance"
-        risk_vector = acc.get('Risk Vector', 'N/A')
         risk_level = acc.get('Risk Level', 'Unknown')
 
-        # Action badge color
         action_badge = 'bg-danger' if action == "Reset Immediately" else 'bg-warning text-dark'
 
         table_html += f"""
@@ -691,10 +638,6 @@ def build_compliance_table(accounts):
             </td>
             <td><span class="badge bg-secondary">{acc['Password Length']}</span></td>
             <td><span class="badge bg-danger">{acc.get('Days Out of Compliance', 'N/A')}</span></td>
-            <td><small>{risk_vector}</small></td>
-            <td>{'<span class="badge bg-success">Yes</span>' if acc.get('Enabled', 'Unknown') == 'Yes' else '<span class="badge bg-secondary">No</span>'}</td>
-            <td><small>{acc.get('Last Logon', 'Unknown')}</small></td>
-            <td><small>{acc.get('When Created', 'Unknown')}</small></td>
             <td>{create_risk_badge(risk_level)}</td>
             <td><span class="badge {action_badge}">{action}</span></td>
         </tr>
