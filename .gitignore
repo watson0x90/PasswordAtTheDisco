@@ -188,6 +188,9 @@ reports/
 output/
 test_html_output/
 
+# Sample/audit input data -- contains real AD usernames from the lab; never commit
+sample_data/
+
 # Scripts directory (internal development only)
 scripts/
 
