@@ -76,7 +76,8 @@ let currentFilters = {
     passwordStatus: 'all',
     compliance: 'all'
 };
-let currentSort = 'risk-desc';
+let currentSortColumn = 'Risk Level';
+let currentSortDir = 'desc';
 
 // ========================================
 // User Details Data Population
@@ -329,18 +330,8 @@ function setupEventListeners() {
         });
     });
 
-    // Sort options
-    document.querySelectorAll('[data-sort]').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            currentSort = btn.dataset.sort;
-
-            document.querySelectorAll('[data-sort]').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-
-            applyFiltersAndSort();
-        });
-    });
+    // Sortable column headers (click + keyboard) with aria-sort
+    initColumnSort();
 
     // Export buttons
     const exportCsvBtn = document.getElementById('exportCsvBtn');
@@ -494,41 +485,67 @@ function applyFiltersAndSort() {
 
 function applySorting(accounts) {
     const sorted = [...accounts];
+    const col = currentSortColumn;
+    const dir = currentSortDir === 'asc' ? 1 : -1;
+    const riskOrder = {'critical': 4, 'high': 3, 'medium': 2, 'low': 1};
 
-    switch(currentSort) {
-        case 'risk-desc':
-            sorted.sort((a, b) => {
-                const riskOrder = {'critical': 4, 'high': 3, 'medium': 2, 'low': 1};
-                const aRisk = riskOrder[(a['Risk Level'] || '').toLowerCase()] || 0;
-                const bRisk = riskOrder[(b['Risk Level'] || '').toLowerCase()] || 0;
-                return bRisk - aRisk;
-            });
-            break;
-        case 'risk-asc':
-            sorted.sort((a, b) => {
-                const riskOrder = {'critical': 4, 'high': 3, 'medium': 2, 'low': 1};
-                const aRisk = riskOrder[(a['Risk Level'] || '').toLowerCase()] || 0;
-                const bRisk = riskOrder[(b['Risk Level'] || '').toLowerCase()] || 0;
-                return aRisk - bRisk;
-            });
-            break;
-        case 'username':
-            sorted.sort((a, b) => {
-                const aUser = (a.Username || a.username || '').toLowerCase();
-                const bUser = (b.Username || b.username || '').toLowerCase();
-                return aUser.localeCompare(bUser);
-            });
-            break;
-        case 'domain':
-            sorted.sort((a, b) => {
-                const aDomain = (a.Domain || a['Domain Name'] || '').toLowerCase();
-                const bDomain = (b.Domain || b['Domain Name'] || '').toLowerCase();
-                return aDomain.localeCompare(bDomain);
-            });
-            break;
-    }
+    sorted.sort((a, b) => {
+        // Risk Level sorts by severity rank, not alphabetically.
+        if (col === 'Risk Level') {
+            const ar = riskOrder[(a['Risk Level'] || '').toLowerCase()] || 0;
+            const br = riskOrder[(b['Risk Level'] || '').toLowerCase()] || 0;
+            return (ar - br) * dir;
+        }
+        let av = a[col]; if (av === undefined) av = a[col.toLowerCase()];
+        let bv = b[col]; if (bv === undefined) bv = b[col.toLowerCase()];
+        av = (av === undefined || av === null) ? '' : av;
+        bv = (bv === undefined || bv === null) ? '' : bv;
+        const an = parseFloat(av), bn = parseFloat(bv);
+        if (av !== '' && bv !== '' && !isNaN(an) && !isNaN(bn)) {
+            return (an - bn) * dir;
+        }
+        return String(av).toLowerCase().localeCompare(String(bv).toLowerCase()) * dir;
+    });
 
     return sorted;
+}
+
+// Reflect the current sort on the column headers for assistive tech.
+function updateAriaSort() {
+    document.querySelectorAll('#resultsTable thead th[data-column]').forEach(th => {
+        if (th.dataset.column === currentSortColumn) {
+            th.setAttribute('aria-sort', currentSortDir === 'asc' ? 'ascending' : 'descending');
+        } else {
+            th.setAttribute('aria-sort', 'none');
+        }
+    });
+}
+
+// Make the result table's column headers sortable via click and keyboard.
+function initColumnSort() {
+    const headers = document.querySelectorAll('#resultsTable thead th[data-column]');
+    headers.forEach(th => {
+        th.setAttribute('tabindex', '0');
+        th.setAttribute('role', 'columnheader');
+        th.style.cursor = 'pointer';
+        const doSort = () => {
+            const col = th.dataset.column;
+            if (currentSortColumn === col) {
+                currentSortDir = currentSortDir === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSortColumn = col;
+                currentSortDir = 'asc';
+            }
+            currentPage = 1;
+            updateAriaSort();
+            applyFiltersAndSort();
+        };
+        th.addEventListener('click', doSort);
+        th.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); doSort(); }
+        });
+    });
+    updateAriaSort();
 }
 
 // ========================================

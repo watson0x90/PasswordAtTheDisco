@@ -79,20 +79,20 @@ def generate_search_html(json_file, logger=None):
                             <table class="table table-hover table-striped table-bordered mb-0" id="resultsTable">
                                 <thead class="table-dark">
                                     <tr>
-                                        <th data-column="Username">Username</th>
-                                        <th data-column="Domain">Domain</th>
-                                        <th data-column="Password">Password</th>
-                                        <th data-column="Type">Type</th>
-                                        <th data-column="Risk Level">Risk Level</th>
-                                        <th data-column="Enabled">Enabled</th>
-                                        <th data-column="Last Logon Timestamp">Last Logon</th>
-                                        <th data-column="Password Set to Expire">Expires</th>
-                                        <th data-column="Controlled Object Count">Controllables</th>
-                                        <th data-column="DA Domains">DA Pathway</th>
-                                        <th data-column="Shared With">Shared With</th>
-                                        <th data-column="Last Password Set">Last Set</th>
-                                        <th data-column="Days Out of Compliance">Non-Compliant</th>
-                                        <th data-column="Risk Vector">Risk Vector</th>
+                                        <th scope="col" data-column="Username">Username</th>
+                                        <th scope="col" data-column="Domain">Domain</th>
+                                        <th scope="col" data-column="Password">Password</th>
+                                        <th scope="col" data-column="Type">Type</th>
+                                        <th scope="col" data-column="Risk Level">Risk Level</th>
+                                        <th scope="col" data-column="Enabled">Enabled</th>
+                                        <th scope="col" data-column="Last Logon Timestamp">Last Logon</th>
+                                        <th scope="col" data-column="Password Set to Expire">Expires</th>
+                                        <th scope="col" data-column="Controlled Object Count">Controllables</th>
+                                        <th scope="col" data-column="DA Domains">DA Pathway</th>
+                                        <th scope="col" data-column="Shared With">Shared With</th>
+                                        <th scope="col" data-column="Last Password Set">Last Set</th>
+                                        <th scope="col" data-column="Days Out of Compliance">Non-Compliant</th>
+                                        <th scope="col" data-column="Risk Vector">Risk Vector</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -214,20 +214,20 @@ def generate_search_redacted_html(json_file_with_placeholders, logger=None):
                             <table class="table table-hover table-striped table-bordered mb-0" id="resultsTable">
                                 <thead class="table-dark">
                                     <tr>
-                                        <th data-column="Username">Username</th>
-                                        <th data-column="Domain">Domain</th>
-                                        <th data-column="Password Placeholder">Password Placeholder</th>
-                                        <th data-column="Type">Type</th>
-                                        <th data-column="Risk Level">Risk Level</th>
-                                        <th data-column="Enabled">Enabled</th>
-                                        <th data-column="Last Logon Timestamp">Last Logon</th>
-                                        <th data-column="Password Set to Expire">Expires</th>
-                                        <th data-column="Controlled Object Count">Controllables</th>
-                                        <th data-column="DA Domains">DA Pathway</th>
-                                        <th data-column="Shared With">Shared With</th>
-                                        <th data-column="Last Password Set">Last Set</th>
-                                        <th data-column="Days Out of Compliance">Non-Compliant</th>
-                                        <th data-column="Risk Vector">Risk Vector</th>
+                                        <th scope="col" data-column="Username">Username</th>
+                                        <th scope="col" data-column="Domain">Domain</th>
+                                        <th scope="col" data-column="Password Placeholder">Password Placeholder</th>
+                                        <th scope="col" data-column="Type">Type</th>
+                                        <th scope="col" data-column="Risk Level">Risk Level</th>
+                                        <th scope="col" data-column="Enabled">Enabled</th>
+                                        <th scope="col" data-column="Last Logon Timestamp">Last Logon</th>
+                                        <th scope="col" data-column="Password Set to Expire">Expires</th>
+                                        <th scope="col" data-column="Controlled Object Count">Controllables</th>
+                                        <th scope="col" data-column="DA Domains">DA Pathway</th>
+                                        <th scope="col" data-column="Shared With">Shared With</th>
+                                        <th scope="col" data-column="Last Password Set">Last Set</th>
+                                        <th scope="col" data-column="Days Out of Compliance">Non-Compliant</th>
+                                        <th scope="col" data-column="Risk Vector">Risk Vector</th>
                                     </tr>
                                 </thead>
                                 <tbody>
