@@ -25,6 +25,7 @@ from report_lib.standalone_html.modern_components import (
     create_stat_grid,
 )
 from report_lib.standalone_html.scripts import TABLE_SORT_JS, USER_DETAIL_JS
+from report_lib.templating import render_macro
 from utils.visualization_helper import add_visualization_to_html
 
 
@@ -193,18 +194,7 @@ def generate_combined_html_report(combined_rows, global_password_to_users, globa
             content += '<h2 class="mb-3"><i class="bi bi-key-fill me-2"></i>Top Shared Passwords</h2>'
 
             if top_passwords:
-                content += '''
-                <div class="table-responsive">
-                    <table class="table table-hover table-striped table-bordered">
-                        <thead class="table-dark">
-                            <tr>
-                                <th>Password</th>
-                                <th>Total Accounts</th>
-                                <th>Instances per Domain</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                '''
+                xtop_rows = []
                 for pw, _ in top_passwords:
                     domain_counts = Counter()
                     for u in global_password_to_users[pw]:
@@ -213,20 +203,11 @@ def generate_combined_html_report(combined_rows, global_password_to_users, globa
                             domain = u[1]
                         elif isinstance(u, str) and '@' in u:
                             domain = u.split('@')[1]
-
                         if domain:
                             domain_counts[domain] += 1
-
-                    instances = ', '.join(f"<span class='badge bg-info'>{d}: {c}</span>" for d, c in domain_counts.items())
-                    total = sum(domain_counts.values())
-                    content += f'''
-                        <tr>
-                            <td><code>{pw}</code></td>
-                            <td><span class="badge bg-danger">{total}</span></td>
-                            <td>{instances}</td>
-                        </tr>
-                    '''
-                content += "</tbody>\n</table>\n</div>\n"
+                    xtop_rows.append({"password": pw, "total": sum(domain_counts.values()),
+                                      "domain_counts": list(domain_counts.items())})
+                content += render_macro("partials/tables.html.j2", "top_shared_passwords_table", xtop_rows)
             else:
                 content += '<div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>No passwords shared across domains.</div>'
         except Exception as e:
@@ -330,63 +311,25 @@ def build_password_sharing_section(combined_rows, global_password_to_users, glob
                     cracked_by_password[acc['Password']].append(acc)
 
         if cracked_by_password:
-            html += '''
-            <div class="card mb-4 shadow-sm">
-                <div class="card-header bg-danger text-white">
-                    <h4 class="mb-0"><i class="bi bi-exclamation-triangle-fill me-2"></i>Cracked Accounts with DA Pathways</h4>
-                </div>
-                <div class="card-body">
-                    <p class="lead">Cracked accounts with Domain Admin privileges that share passwords across domains:</p>
-                    <div class="table-responsive">
-                        <table class="table table-hover table-striped table-bordered">
-                            <thead class="table-dark">
-                                <tr>
-                                    <th>Username</th>
-                                    <th>Domain</th>
-                                    <th>Password</th>
-                                    <th>DA Domains</th>
-                                    <th>Domains Shared</th>
-                                    <th>Risk Level</th>
-                                    <th>Risk Vector</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-            '''
-
-            for password, accounts in cracked_by_password.items():
-                for acc in accounts:
-                    da_domains = acc.get('DA Domains', 'None')
-                    domains_shared = acc.get('Domains Shared', '')
-                    risk_level = acc.get('Risk Level', 'Unknown')
-                    risk_vector = acc.get('Risk Vector', 'N/A')
-                    domain = acc.get('Domain', 'Unknown')
-
-                    html += f'''
-                    <tr>
-                        <td>
-                            <a href="#" class="user-detail-link text-decoration-none"
-                               data-username="{acc['Username']}"
-                               data-coreui-toggle="offcanvas"
-                               data-coreui-target="#userDetailOffcanvas">
-                                <code>{acc['Username']}</code>
-                            </a>
-                        </td>
-                        <td><span class="badge bg-primary">{domain}</span></td>
-                        <td><code>{password}</code></td>
-                        <td><span class="badge bg-warning text-dark">{da_domains}</span></td>
-                        <td><small>{domains_shared}</small></td>
-                        <td>{create_risk_badge(risk_level)}</td>
-                        <td><small class="font-monospace">{risk_vector}</small></td>
-                    </tr>
-                    '''
-
-            html += '''
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-            '''
+            xdom_columns = [
+                {"header": "Username", "field": "Username", "kind": "user_link"},
+                {"header": "Domain", "field": "Domain", "kind": "badge_primary"},
+                {"header": "Password", "field": "Password", "kind": "code"},
+                {"header": "DA Domains", "field": "DA Domains", "kind": "badge_warn"},
+                {"header": "Domains Shared", "field": "Domains Shared", "kind": "small"},
+                {"header": "Risk Level", "field": "Risk Level", "kind": "risk_badge"},
+                {"header": "Risk Vector", "field": "Risk Vector", "kind": "small_mono"},
+            ]
+            xdom_rows = [acc for accs in cracked_by_password.values() for acc in accs]
+            html += (
+                '<div class="card mb-4 shadow-sm">'
+                '<div class="card-header bg-danger text-white">'
+                '<h4 class="mb-0"><i class="bi bi-exclamation-triangle-fill me-2"></i>Cracked Accounts with DA Pathways</h4>'
+                '</div><div class="card-body">'
+                '<p class="lead">Cracked accounts with Domain Admin privileges that share passwords across domains:</p>'
+                + render_macro("partials/tables.html.j2", "account_table", xdom_columns, xdom_rows)
+                + '</div></div>'
+            )
         else:
             html += '<div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>No cracked accounts with DA pathways found sharing passwords across domains.</div>'
     else:

@@ -7,6 +7,8 @@ import json
 import os
 from pathlib import Path
 
+from markupsafe import escape as escape_html
+
 from report_lib.standalone_html.components import (
     RISK_SCORE_EXPLANATION,
     create_bootstrap_card,
@@ -22,6 +24,7 @@ from report_lib.standalone_html.components import (
     html_head,
 )
 from report_lib.standalone_html.scripts import TABLE_SORT_JS, USER_DETAIL_JS
+from report_lib.templating import render_macro
 from utils.visualization_helper import add_visualization_to_html
 
 
@@ -346,55 +349,20 @@ def generate_html_report(domain, data, visuals, logger=None):
                                   row.get('DA Domains', 'None') not in ('None', 'Unknown')]
 
             if cracked_da_accounts:
-                da_content = f"""
-                <div class="alert alert-danger" role="alert">
-                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                    <strong>{len(cracked_da_accounts)} cracked accounts</strong> have pathways to Domain Admin privileges in {domain}.
-                </div>
-                <div class="table-responsive">
-                    <table class="table table-hover table-striped table-bordered">
-                        <thead class="table-dark">
-                            <tr>
-                                <th>Username</th>
-                                <th>Password</th>
-                                <th>DA Domains</th>
-                                <th>Risk Level</th>
-                                <th>Risk Vector</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                """
-
-                # Create individual rows for each account with clickable usernames
-                for acc in cracked_da_accounts:
-                    username = acc.get('Username', 'Unknown')
-                    password = acc.get('Password', 'N/A')
-                    da_domains = acc.get('DA Domains', 'None')
-                    risk_level = acc.get('Risk Level', 'Unknown')
-                    risk_vector = acc.get('Risk Vector', 'N/A')
-
-                    da_content += f"""
-                        <tr>
-                            <td>
-                                <a href="#" class="user-detail-link text-decoration-none"
-                                   data-username="{username}"
-                                   data-coreui-toggle="offcanvas"
-                                   data-coreui-target="#userDetailOffcanvas">
-                                    <code>{username}</code>
-                                </a>
-                            </td>
-                            <td><code>{password}</code></td>
-                            <td><span class="badge bg-warning text-dark">{da_domains}</span></td>
-                            <td>{create_risk_badge(risk_level)}</td>
-                            <td><small class="font-monospace">{risk_vector}</small></td>
-                        </tr>
-                    """
-
-                da_content += """
-                        </tbody>
-                    </table>
-                </div>
-                """
+                da_columns = [
+                    {"header": "Username", "field": "Username", "kind": "user_link"},
+                    {"header": "Password", "field": "Password", "kind": "code"},
+                    {"header": "DA Domains", "field": "DA Domains", "kind": "badge_warn"},
+                    {"header": "Risk Level", "field": "Risk Level", "kind": "risk_badge"},
+                    {"header": "Risk Vector", "field": "Risk Vector", "kind": "small_mono"},
+                ]
+                da_content = (
+                    '<div class="alert alert-danger" role="alert">'
+                    '<i class="bi bi-exclamation-triangle-fill me-2"></i>'
+                    f'<strong>{len(cracked_da_accounts)} cracked accounts</strong> '
+                    f'have pathways to Domain Admin privileges in {escape_html(str(domain))}.</div>'
+                    + render_macro("partials/tables.html.j2", "account_table", da_columns, cracked_da_accounts)
+                )
 
                 content += create_bootstrap_card(
                     'BloodHound Insights - Domain Admin Pathways',

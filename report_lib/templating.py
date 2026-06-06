@@ -31,3 +31,10 @@ def get_environment() -> Environment:
 def render(template_name: str, **context) -> str:
     """Render a template from report_lib/templates with the given context."""
     return get_environment().get_template(template_name).render(**context)
+
+
+def render_macro(template_name: str, macro_name: str, *args, **kwargs) -> str:
+    """Render a single macro from a template (its values are autoescaped)."""
+    template = get_environment().get_template(template_name)
+    macro = getattr(template.module, macro_name)
+    return str(macro(*args, **kwargs))

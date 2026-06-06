@@ -29,3 +29,27 @@ def test_safe_filter_passes_trusted_html_through():
 def test_base_template_loads():
     # The base layout must be resolvable from the templates dir.
     assert get_environment().get_template("base.html.j2") is not None
+
+
+from report_lib.templating import render_macro  # noqa: E402
+
+
+class TestTableMacros:
+    def test_account_table_escapes_user_data(self):
+        rows = [{"Username": '<img src=x onerror=alert(1)>', "Password": '<script>x</script>',
+                 "DA Domains": "C<b>", "Risk Level": "Critical", "Risk Vector": "V"}]
+        cols = [{"header": "User", "field": "Username", "kind": "user_link"},
+                {"header": "PW", "field": "Password", "kind": "code"},
+                {"header": "DA", "field": "DA Domains", "kind": "badge_warn"},
+                {"header": "Risk", "field": "Risk Level", "kind": "risk_badge"}]
+        out = render_macro("partials/tables.html.j2", "account_table", cols, rows)
+        assert "<img" not in out and "&lt;img" in out
+        assert "<script>x" not in out and "&lt;script&gt;x" in out
+        assert 'data-username="&lt;img' in out          # attribute context escaped
+        assert "badge-risk-critical" in out             # trusted badge still rendered
+
+    def test_top_shared_table_escapes(self):
+        out = render_macro("partials/tables.html.j2", "top_shared_passwords_table",
+                           [{"password": "<svg onload=x>", "total": 2, "domain_counts": [("D<b>", 1)]}])
+        assert "<svg" not in out and "&lt;svg" in out
+        assert "D&lt;b&gt;" in out
