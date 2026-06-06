@@ -1,0 +1,95 @@
+{# Executive dashboard body. Aggregate fragments (callout, stat grid, risk/domain
+   cards) are pre-rendered trusted HTML; the per-domain cards loop autoescapes
+   the domain name. #}
+<div class="mb-4">
+    <h1 class="display-4"><i class="bi bi-shield-lock-fill me-3"></i>Password Security Audit</h1>
+    <p class="lead text-muted">Executive Dashboard - Real-time insights across all domains</p>
+</div>
+{{ critical_callout_html | safe }}
+<h2 class="mb-3"><i class="bi bi-speedometer me-2"></i>Key Metrics</h2>
+{{ stat_grid_html | safe }}
+{{ risk_dist_html | safe }}
+<h2 class="mb-4 mt-5"><i class="bi bi-building me-2"></i>Domain Reports</h2>
+<div class="row g-4 mb-5">
+{% for c in domain_cards %}
+    <div class="col-12 col-md-6 col-xl-4">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-server me-2"></i>{{ c.domain }}</h5>
+                <span class="badge bg-light text-dark">{{ c.crack_pct }}% cracked</span>
+            </div>
+            <div class="card-body">
+                <div class="row text-center mb-3">
+                    <div class="col-6">
+                        <div class="border-start border-start-4 border-start-success px-2">
+                            <div class="fs-5 fw-semibold">{{ "{:,}".format(c.cracked_count) }}</div>
+                            <div class="small text-body-secondary">Cracked</div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="border-start border-start-4 border-start-info px-2">
+                            <div class="fs-5 fw-semibold">{{ "{:,}".format(c.uncracked_count) }}</div>
+                            <div class="small text-body-secondary">Uncracked</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-danger"><i class="bi bi-exclamation-circle"></i> Critical:</span>
+                    <strong>{{ "{:,}".format(c.critical_count) }}</strong>
+                </div>
+                <div class="d-flex justify-content-between mb-3">
+                    <span class="text-warning"><i class="bi bi-shield-exclamation"></i> HIBP Breached:</span>
+                    <strong>{{ "{:,}".format(c.hibp_count) }}</strong>
+                </div>
+                <div class="d-grid gap-2">
+                    <a href="./{{ c.domain }}_report.html" class="btn btn-outline-primary btn-sm">
+                        <i class="bi bi-file-earmark-text me-1"></i>Full Report
+                    </a>
+                    <a href="./{{ c.domain }}_actionable_report.html" class="btn btn-outline-success btn-sm">
+                        <i class="bi bi-list-check me-1"></i>Actionable Items
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endfor %}
+</div>
+<h2 class="mb-4"><i class="bi bi-lightning me-2"></i>Quick Access</h2>
+<div class="row g-4 mb-4">
+    <div class="col-12 col-md-4">
+        <div class="card shadow-sm">
+            <div class="card-body d-flex align-items-center">
+                <i class="bi bi-diagram-3 fs-1 text-warning me-3"></i>
+                <div class="flex-grow-1">
+                    <h6 class="mb-1">Cross-Domain Analysis</h6>
+                    <p class="small text-muted mb-2">Shared credentials & lateral movement risks</p>
+                    <a href="./combined_report.html" class="btn btn-sm btn-warning">View Report</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-md-4">
+        <div class="card shadow-sm">
+            <div class="card-body d-flex align-items-center">
+                <i class="bi bi-search fs-1 text-info me-3"></i>
+                <div class="flex-grow-1">
+                    <h6 class="mb-1">Search Interface</h6>
+                    <p class="small text-muted mb-2">Filter & export account data</p>
+                    <a href="./search.html" class="btn btn-sm btn-info">Search Accounts</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-md-4">
+        <div class="card shadow-sm">
+            <div class="card-body d-flex align-items-center">
+                <i class="bi bi-eye-slash fs-1 text-secondary me-3"></i>
+                <div class="flex-grow-1">
+                    <h6 class="mb-1">Redacted Search</h6>
+                    <p class="small text-muted mb-2">Search without password visibility</p>
+                    <a href="./search_redacted.html" class="btn btn-sm btn-outline-secondary">Search Redacted</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

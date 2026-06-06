@@ -25,7 +25,7 @@ from report_lib.standalone_html.modern_components import (
     create_stat_grid,
 )
 from report_lib.standalone_html.scripts import render_user_detail_js
-from report_lib.templating import render_macro
+from report_lib.templating import render, render_macro
 from utils.visualization_helper import add_visualization_to_html
 
 
@@ -127,27 +127,16 @@ def generate_combined_html_report(combined_rows, global_password_to_users, globa
         logger (Logger, optional): Logger instance
     """
     try:
-        # Get list of unique domains from combined rows for sidebar
         domains = list(set(row.get('Domain', 'Unknown') for row in combined_rows if row.get('Domain')))
-
-        # Create navbar and sidebar
         navbar = create_navbar(current_page='cross-domain', include_search=True, include_export=True)
         sidebar = create_sidebar(current_page='cross-domain', domains=domains)
+        breadcrumb_html = create_breadcrumb([
+            ('Main Report', './main.html'),
+            ('Search', './search.html'),
+            ('Cross-Domain Analysis', None)
+        ])
 
-        # Start building content (without body tag - that's in page_wrapper)
-        content = f"""
-                {create_breadcrumb([
-                    ('Main Report', './main.html'),
-                    ('Search', './search.html'),
-                    ('Cross-Domain Analysis', None)
-                ])}
-
-                <div class="mb-4">
-                    <h1 class="display-4"><i class="bi bi-diagram-3 me-3"></i>Cross-Domain Analysis</h1>
-                    <p class="lead text-muted">Shared credentials and lateral movement risks</p>
-                </div>
-        """
-
+        metrics_error_html = ''
         try:
             total_shared = len(combined_rows)
             shared_da = sum(1 for row in combined_rows if row.get('DA Domains', 'None') not in ('None', 'Unknown') and row['Shared With'] > 0)
@@ -156,42 +145,29 @@ def generate_combined_html_report(combined_rows, global_password_to_users, globa
                 logger.error(f"Error computing basic metrics for combined report: {str(e)}")
             total_shared = 0
             shared_da = 0
-            content += create_error_message(f"Error computing basic metrics: {str(e)}")
+            metrics_error_html = create_error_message(f"Error computing basic metrics: {str(e)}")
 
-        # Overview section with metric cards
-        content += '<h2 class="mb-4"><i class="bi bi-bar-chart me-2"></i>Overview</h2>'
-        content += '<div class="row g-4 mb-4">'
-        content += f'''
-            <div class="col-12 col-md-6">
-                {create_metric_card(
-                    "Shared Credentials",
-                    total_shared,
-                    icon="share-fill",
-                    bg_class="bg-warning" if total_shared > 0 else "bg-success",
-                    text_class="text-dark" if total_shared > 0 else "text-white",
-                    subtitle="Accounts sharing across domains"
-                )}
-            </div>
-            <div class="col-12 col-md-6">
-                {create_metric_card(
-                    "DA Pathway Risks",
-                    shared_da,
-                    icon="exclamation-triangle-fill",
-                    bg_class="bg-danger" if shared_da > 0 else "bg-success",
-                    subtitle="Shared accounts with DA paths"
-                )}
-            </div>
-        '''
-        content += '</div>'
+        card1_html = create_metric_card(
+            "Shared Credentials",
+            total_shared,
+            icon="share-fill",
+            bg_class="bg-warning" if total_shared > 0 else "bg-success",
+            text_class="text-dark" if total_shared > 0 else "text-white",
+            subtitle="Accounts sharing across domains"
+        )
+        card2_html = create_metric_card(
+            "DA Pathway Risks",
+            shared_da,
+            icon="exclamation-triangle-fill",
+            bg_class="bg-danger" if shared_da > 0 else "bg-success",
+            subtitle="Shared accounts with DA paths"
+        )
 
-        if total_shared == 0:
-            content += '<div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>No cross-domain sharing detected.</div>'
-
-        # Top shared passwords section with error handling
+        top_shared_html = ''
         try:
             password_counts = Counter({pw: len(users) for pw, users in global_password_to_users.items() if len(users) > 1})
             top_passwords = password_counts.most_common(5)
-            content += '<h2 class="mb-3"><i class="bi bi-key-fill me-2"></i>Top Shared Passwords</h2>'
+            top_shared_html += '<h2 class="mb-3"><i class="bi bi-key-fill me-2"></i>Top Shared Passwords</h2>'
 
             if top_passwords:
                 xtop_rows = []
@@ -207,34 +183,32 @@ def generate_combined_html_report(combined_rows, global_password_to_users, globa
                             domain_counts[domain] += 1
                     xtop_rows.append({"password": pw, "total": sum(domain_counts.values()),
                                       "domain_counts": list(domain_counts.items())})
-                content += render_macro("partials/tables.html.j2", "top_shared_passwords_table", xtop_rows)
+                top_shared_html += render_macro("partials/tables.html.j2", "top_shared_passwords_table", xtop_rows)
             else:
-                content += '<div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>No passwords shared across domains.</div>'
+                top_shared_html += '<div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>No passwords shared across domains.</div>'
         except Exception as e:
             if logger:
                 logger.error(f"Error processing top shared passwords: {str(e)}")
-            content += create_error_message(f"Error processing top shared passwords: {str(e)}")
+            top_shared_html += create_error_message(f"Error processing top shared passwords: {str(e)}")
 
-        # Add cross-domain visualizations
+        viz_html = ''
         for vis_type, title in [
             ('combined_sharing', 'Cross-Domain Sharing'),
             ('sharing_heatmap', 'Sharing Heatmap'),
             ('da_exposure', 'DA Exposure by Domain'),
             ('shared_network', 'Password Sharing Network')
         ]:
-            vis_html = add_visualization_to_html(visuals, vis_type, title)
-            if vis_html:
-                content += vis_html
+            vh = add_visualization_to_html(visuals, vis_type, title)
+            if vh:
+                viz_html += vh
 
-        # Generate password sharing details table
         try:
-            content += build_password_sharing_section(combined_rows, global_password_to_users, global_hash_to_users)
+            sharing_section_html = build_password_sharing_section(combined_rows, global_password_to_users, global_hash_to_users)
         except Exception as e:
             if logger:
                 logger.error(f"Error generating password sharing details: {str(e)}")
-            content += create_error_message(f"Error generating password sharing details: {str(e)}")
+            sharing_section_html = create_error_message(f"Error generating password sharing details: {str(e)}")
 
-        # Generate user details JSON for offcanvas
         try:
             user_details_json = generate_user_details_json_combined(combined_rows)
             user_details_json_str = json.dumps(user_details_json, indent=2)
@@ -243,17 +217,26 @@ def generate_combined_html_report(combined_rows, global_password_to_users, globa
                 logger.error(f"Error generating user details JSON: {str(e)}")
             user_details_json_str = '{}'
 
-        # Add offcanvas HTML structure
-        content += create_user_detail_offcanvas()
-
-        # Add JavaScript (table sorting and user detail)
+        offcanvas_html = create_user_detail_offcanvas()
         user_detail_script = render_user_detail_js(user_details_json_str)
-
-        content += f"""
+        scripts_html = f"""
                 {user_detail_script}
         """
 
-        # Wrap content with navbar and sidebar using page wrapper
+        content = render(
+            "partials/combined_content.html.j2",
+            breadcrumb_html=breadcrumb_html,
+            metrics_error_html=metrics_error_html,
+            total_shared=total_shared,
+            card1_html=card1_html,
+            card2_html=card2_html,
+            top_shared_html=top_shared_html,
+            viz_html=viz_html,
+            sharing_section_html=sharing_section_html,
+            offcanvas_html=offcanvas_html,
+            scripts_html=scripts_html,
+        )
+
         html = html_head("Cross-Domain Password Security Report", enable_sidebar=True)
         html += create_page_wrapper(content, navbar, sidebar)
         html += """
@@ -261,7 +244,6 @@ def generate_combined_html_report(combined_rows, global_password_to_users, globa
 </html>
         """
 
-        # Write to file
         from core import config as config_module
         html_dir = getattr(config_module, 'html_reports_folder', Path('output/html_report'))
         output_path = html_dir / 'combined_report.html'
@@ -270,7 +252,7 @@ def generate_combined_html_report(combined_rows, global_password_to_users, globa
             f.write(html)
         if logger:
             logger.info(f"Generated combined HTML report: {output_path}")
-            
+
     except Exception as e:
         if logger:
             logger.error(f"Error generating combined HTML report: {str(e)}")
@@ -429,23 +411,14 @@ def generate_main_html(domains, domain_data, logger=None):
                 total_accounts += len(rows)
 
                 for row in rows:
-                    # Count cracked
                     if row.get('Password Length', 'N/A') != 'N/A':
                         total_cracked += 1
-
-                    # Count critical risks
                     if row.get('Risk Level') == 'Critical':
                         total_critical_risk += 1
-
-                    # Count DA pathways
                     if row.get('DA Domains', 'None') not in ('None', 'Unknown'):
                         total_da_pathways += 1
-
-                    # Count HIBP breached
                     if row.get('HIBP Breached') == 'Yes':
                         total_hibp_breached += 1
-
-                    # Risk distribution
                     risk_level = row.get('Risk Level', 'Unknown')
                     if risk_level in risk_distribution:
                         risk_distribution[risk_level] += 1
@@ -455,19 +428,10 @@ def generate_main_html(domains, domain_data, logger=None):
         critical_rate = round((total_critical_risk / total_cracked * 100), 1) if total_cracked > 0 else 0
         hibp_rate = round((total_hibp_breached / total_accounts * 100), 1) if total_accounts > 0 else 0
 
-        # Create navbar and sidebar
         navbar = create_navbar(current_page='dashboard', include_search=True, include_export=False)
         sidebar = create_sidebar(current_page='dashboard', domains=domains)
 
-        # Start building content (without body tag - that's in page_wrapper)
-        content = """
-                <div class="mb-4">
-                    <h1 class="display-4"><i class="bi bi-shield-lock-fill me-3"></i>Password Security Audit</h1>
-                    <p class="lead text-muted">Executive Dashboard - Real-time insights across all domains</p>
-                </div>
-        """
-
-        # Critical alerts callout
+        critical_callout_html = ''
         if total_critical_risk > 0 or total_da_pathways > 0:
             critical_message = f"""
             <ul class="mb-2">
@@ -477,8 +441,7 @@ def generate_main_html(domains, domain_data, logger=None):
             </ul>
             <p class="mb-0"><strong>Action Required:</strong> Review actionable reports for immediate remediation steps.</p>
             """
-
-            content += create_callout(
+            critical_callout_html = create_callout(
                 title="Critical Security Findings",
                 message=critical_message,
                 color="danger",
@@ -486,7 +449,6 @@ def generate_main_html(domains, domain_data, logger=None):
                 dismissible=False
             )
 
-        # Key Metrics - Stat Widget Grid
         stats = [
             {
                 'value': f'{total_accounts:,}',
@@ -520,11 +482,9 @@ def generate_main_html(domains, domain_data, logger=None):
                 'subtitle': 'Cracked accounts with DA access'
             }
         ]
+        stat_grid_html = create_stat_grid(stats, cols=4)
 
-        content += '<h2 class="mb-3"><i class="bi bi-speedometer me-2"></i>Key Metrics</h2>'
-        content += create_stat_grid(stats, cols=4)
-
-        # Risk Distribution Progress Card
+        risk_dist_html = ''
         if total_cracked > 0:
             risk_items = []
             for level, count in [('Critical', risk_distribution['Critical']),
@@ -541,11 +501,6 @@ def generate_main_html(domains, domain_data, logger=None):
                         'count': count
                     })
 
-            content += '<div class="row g-4 mb-4"><div class="col-12 col-lg-6">'
-            content += create_progress_card('Risk Distribution', risk_items, icon='speedometer2')
-            content += '</div>'
-
-            # Domain Breakdown Card
             domain_metrics = []
             for domain in domains:
                 if domain in domain_data:
@@ -565,14 +520,16 @@ def generate_main_html(domains, domain_data, logger=None):
                     'color': 'primary'
                 })
 
-            content += '<div class="col-12 col-lg-6">'
-            content += create_metric_border_card(metrics_for_border_card)
-            content += '</div></div>'
+            risk_dist_html = (
+                '<div class="row g-4 mb-4"><div class="col-12 col-lg-6">'
+                + create_progress_card('Risk Distribution', risk_items, icon='speedometer2')
+                + '</div>'
+                + '<div class="col-12 col-lg-6">'
+                + create_metric_border_card(metrics_for_border_card)
+                + '</div></div>'
+            )
 
-        # Domain Cards Grid
-        content += '<h2 class="mb-4 mt-5"><i class="bi bi-building me-2"></i>Domain Reports</h2>'
-        content += '<div class="row g-4 mb-5">'
-
+        domain_cards = []
         for domain in domains:
             account_count = 0
             cracked_count = 0
@@ -588,96 +545,23 @@ def generate_main_html(domains, domain_data, logger=None):
                 hibp_count = sum(1 for row in rows if row.get('HIBP Breached') == 'Yes')
 
             crack_pct = round((cracked_count / account_count * 100), 1) if account_count > 0 else 0
+            domain_cards.append({
+                'domain': domain,
+                'crack_pct': crack_pct,
+                'cracked_count': cracked_count,
+                'uncracked_count': account_count - cracked_count,
+                'critical_count': critical_count,
+                'hibp_count': hibp_count,
+            })
 
-            content += f"""
-                <div class="col-12 col-md-6 col-xl-4">
-                    <div class="card shadow-sm h-100">
-                        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                            <h5 class="mb-0"><i class="bi bi-server me-2"></i>{domain}</h5>
-                            <span class="badge bg-light text-dark">{crack_pct}% cracked</span>
-                        </div>
-                        <div class="card-body">
-                            <div class="row text-center mb-3">
-                                <div class="col-6">
-                                    <div class="border-start border-start-4 border-start-success px-2">
-                                        <div class="fs-5 fw-semibold">{cracked_count:,}</div>
-                                        <div class="small text-body-secondary">Cracked</div>
-                                    </div>
-                                </div>
-                                <div class="col-6">
-                                    <div class="border-start border-start-4 border-start-info px-2">
-                                        <div class="fs-5 fw-semibold">{account_count - cracked_count:,}</div>
-                                        <div class="small text-body-secondary">Uncracked</div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="d-flex justify-content-between mb-2">
-                                <span class="text-danger"><i class="bi bi-exclamation-circle"></i> Critical:</span>
-                                <strong>{critical_count:,}</strong>
-                            </div>
-                            <div class="d-flex justify-content-between mb-3">
-                                <span class="text-warning"><i class="bi bi-shield-exclamation"></i> HIBP Breached:</span>
-                                <strong>{hibp_count:,}</strong>
-                            </div>
-                            <div class="d-grid gap-2">
-                                <a href="./{domain}_report.html" class="btn btn-outline-primary btn-sm">
-                                    <i class="bi bi-file-earmark-text me-1"></i>Full Report
-                                </a>
-                                <a href="./{domain}_actionable_report.html" class="btn btn-outline-success btn-sm">
-                                    <i class="bi bi-list-check me-1"></i>Actionable Items
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            """
+        content = render(
+            "partials/main_content.html.j2",
+            critical_callout_html=critical_callout_html,
+            stat_grid_html=stat_grid_html,
+            risk_dist_html=risk_dist_html,
+            domain_cards=domain_cards,
+        )
 
-        content += '</div>'
-
-        # Quick Links Section
-        content += """
-                <h2 class="mb-4"><i class="bi bi-lightning me-2"></i>Quick Access</h2>
-                <div class="row g-4 mb-4">
-                    <div class="col-12 col-md-4">
-                        <div class="card shadow-sm">
-                            <div class="card-body d-flex align-items-center">
-                                <i class="bi bi-diagram-3 fs-1 text-warning me-3"></i>
-                                <div class="flex-grow-1">
-                                    <h6 class="mb-1">Cross-Domain Analysis</h6>
-                                    <p class="small text-muted mb-2">Shared credentials & lateral movement risks</p>
-                                    <a href="./combined_report.html" class="btn btn-sm btn-warning">View Report</a>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-12 col-md-4">
-                        <div class="card shadow-sm">
-                            <div class="card-body d-flex align-items-center">
-                                <i class="bi bi-search fs-1 text-info me-3"></i>
-                                <div class="flex-grow-1">
-                                    <h6 class="mb-1">Search Interface</h6>
-                                    <p class="small text-muted mb-2">Filter & export account data</p>
-                                    <a href="./search.html" class="btn btn-sm btn-info">Search Accounts</a>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-12 col-md-4">
-                        <div class="card shadow-sm">
-                            <div class="card-body d-flex align-items-center">
-                                <i class="bi bi-eye-slash fs-1 text-secondary me-3"></i>
-                                <div class="flex-grow-1">
-                                    <h6 class="mb-1">Redacted Search</h6>
-                                    <p class="small text-muted mb-2">Search without password visibility</p>
-                                    <a href="./search_redacted.html" class="btn btn-sm btn-outline-secondary">Search Redacted</a>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-        """
-
-        # Wrap content with navbar and sidebar using page wrapper
         html = html_head("Password Security Audit - Executive Dashboard", enable_sidebar=True)
         html += create_page_wrapper(content, navbar, sidebar)
         html += """
@@ -685,7 +569,6 @@ def generate_main_html(domains, domain_data, logger=None):
 </html>
         """
 
-        # Write to file
         from core import config as config_module
         html_dir = getattr(config_module, 'html_reports_folder', Path('output/html_report'))
         output_path = html_dir / 'main.html'
