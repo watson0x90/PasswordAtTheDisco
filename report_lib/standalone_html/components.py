@@ -918,223 +918,28 @@ def create_page_wrapper(content, navbar, sidebar):
 
 
 def create_about_content(report_metadata=None):
-    """
-    Create comprehensive About page content with Risk Vector info, scoring docs, metadata, and methodology.
+    """Render the About page content from the Jinja template.
 
     Args:
-        report_metadata (dict): {
-            'timestamp': 'YYYY-MM-DD HH:MM:SS',
-            'domains': ['DOMAIN1.COM', 'DOMAIN2.COM'],
-            'version': '1.0.0',
-            'total_accounts': 1234,
-            'cracked_accounts': 567,
-            'uncracked_accounts': 667,
-            'tool_name': 'Password!AtTheDisco'
-        }
+        report_metadata (dict): timestamp, domains, version, total_accounts,
+            cracked_accounts, uncracked_accounts, tool_name.
 
     Returns:
-        HTML string for about page content
+        HTML string for the about page content (metadata autoescaped).
     """
-    if report_metadata is None:
-        report_metadata = {
-            'timestamp': 'Unknown',
-            'domains': [],
-            'version': '1.0.0',
-            'total_accounts': 0,
-            'cracked_accounts': 0,
-            'uncracked_accounts': 0,
-            'tool_name': 'Password!AtTheDisco'
-        }
-
-    # Build domain list
-    domain_list = ''
-    if report_metadata.get('domains'):
-        for domain in report_metadata['domains']:
-            domain_list += f'<li><code>{domain}</code></li>'
-    else:
-        domain_list = '<li><em>No domains analyzed</em></li>'
-
-    # Calculate crack percentage
-    total = report_metadata.get('total_accounts', 0)
-    cracked = report_metadata.get('cracked_accounts', 0)
+    from report_lib.templating import render
+    report_metadata = report_metadata or {}
+    total = report_metadata.get("total_accounts", 0) or 0
+    cracked = report_metadata.get("cracked_accounts", 0) or 0
     crack_pct = (cracked / total * 100) if total > 0 else 0
-
-    return f'''
-    <div class="mb-4">
-        <h1 class="display-4"><i class="bi bi-info-circle me-3"></i>About Password!AtTheDisco</h1>
-        <p class="lead text-muted">Comprehensive password security auditing and risk assessment tool</p>
-    </div>
-
-    <!-- Report Metadata Card -->
-    <div class="card shadow-sm mb-4">
-        <div class="card-header bg-primary text-white">
-            <h5 class="mb-0"><i class="bi bi-file-earmark-bar-graph me-2"></i>Report Metadata</h5>
-        </div>
-        <div class="card-body">
-            <div class="row g-3">
-                <div class="col-md-6">
-                    <dl class="row mb-0">
-                        <dt class="col-sm-5">Report Generated:</dt>
-                        <dd class="col-sm-7"><code>{report_metadata.get('timestamp', 'Unknown')}</code></dd>
-
-                        <dt class="col-sm-5">Tool Version:</dt>
-                        <dd class="col-sm-7"><code>{report_metadata.get('version', '1.0.0')}</code></dd>
-
-                        <dt class="col-sm-5">Domains Analyzed:</dt>
-                        <dd class="col-sm-7"><span class="badge bg-info">{len(report_metadata.get('domains', []))}</span></dd>
-                    </dl>
-                </div>
-                <div class="col-md-6">
-                    <dl class="row mb-0">
-                        <dt class="col-sm-5">Total Accounts:</dt>
-                        <dd class="col-sm-7"><span class="badge bg-secondary">{total:,}</span></dd>
-
-                        <dt class="col-sm-5">Cracked Passwords:</dt>
-                        <dd class="col-sm-7">
-                            <span class="badge bg-danger">{cracked:,}</span>
-                            <small class="text-muted ms-2">({crack_pct:.1f}%)</small>
-                        </dd>
-
-                        <dt class="col-sm-5">Uncracked Hashes:</dt>
-                        <dd class="col-sm-7"><span class="badge bg-success">{report_metadata.get('uncracked_accounts', 0):,}</span></dd>
-                    </dl>
-                </div>
-            </div>
-
-            <h6 class="mt-4 mb-2">Analyzed Domains:</h6>
-            <ul class="mb-0">
-                {domain_list}
-            </ul>
-        </div>
-    </div>
-
-    <!-- Risk Vector Explanation -->
-    {RISK_VECTOR_EXPLANATION}
-
-    <!-- Scoring System Documentation -->
-    <div class="card shadow-sm mb-4">
-        <div class="card-header bg-info text-dark">
-            <h5 class="mb-0"><i class="bi bi-calculator me-2"></i>Scoring System Documentation</h5>
-        </div>
-        <div class="card-body">
-            <p class="lead">Password!AtTheDisco uses a comprehensive CVSS-style three-component risk scoring system (0-10 scale).</p>
-
-            <div class="row g-3 mb-4">
-                <div class="col-md-4">
-                    <div class="card h-100 bg-light">
-                        <div class="card-body text-center">
-                            <i class="bi bi-shield-check" style="font-size: 2.5rem; color: var(--cui-primary);"></i>
-                            <h5 class="mt-3">Base Score</h5>
-                            <p class="small text-muted mb-0">Password intrinsic qualities: complexity, length, dictionary checks, HIBP exposure</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="card h-100 bg-light">
-                        <div class="card-body text-center">
-                            <i class="bi bi-clock-history" style="font-size: 2.5rem; color: var(--cui-warning);"></i>
-                            <h5 class="mt-3">Temporal Score</h5>
-                            <p class="small text-muted mb-0">Time-based factors: password age, compliance, expiration settings</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="card h-100 bg-light">
-                        <div class="card-body text-center">
-                            <i class="bi bi-diagram-3" style="font-size: 2.5rem; color: var(--cui-danger);"></i>
-                            <h5 class="mt-3">Environmental Score</h5>
-                            <p class="small text-muted mb-0">Organizational context: privileges, sharing, domain risk, breach impact</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="alert alert-success" role="alert">
-                <h6 class="alert-heading"><i class="bi bi-book me-2"></i>Comprehensive Documentation Available</h6>
-                <p class="mb-0">For detailed information about the scoring methodology, formulas, evidence-based HIBP tiers, and practical examples, see:</p>
-                <p class="mb-0 mt-2">
-                    <strong><i class="bi bi-file-earmark-text me-1"></i>docs/SCORING_SYSTEM.md</strong> - Complete technical reference
-                </p>
-            </div>
-
-            <h6 class="mt-4">Risk Level Categories:</h6>
-            <ul class="list-unstyled">
-                <li class="mb-2">
-                    <span class="badge bg-danger me-2">Critical</span>
-                    <strong>8.0-10.0</strong> - Severe security threat requiring immediate action
-                </li>
-                <li class="mb-2">
-                    <span class="badge bg-warning text-dark me-2">High</span>
-                    <strong>6.0-7.9</strong> - Significant vulnerability requiring prompt attention
-                </li>
-                <li class="mb-2">
-                    <span class="badge bg-info text-dark me-2">Medium</span>
-                    <strong>4.0-5.9</strong> - Moderate vulnerability for regular security maintenance
-                </li>
-                <li class="mb-2">
-                    <span class="badge bg-success me-2">Low</span>
-                    <strong>0.0-3.9</strong> - Minor issue with limited security impact
-                </li>
-            </ul>
-        </div>
-    </div>
-
-    <!-- Methodology Card -->
-    <div class="card shadow-sm mb-4">
-        <div class="card-header bg-warning text-dark">
-            <h5 class="mb-0"><i class="bi bi-gear me-2"></i>Analysis Methodology</h5>
-        </div>
-        <div class="card-body">
-            <h6><i class="bi bi-hash me-2"></i>Password Cracking with Hashcat</h6>
-            <p>Passwords are cracked using <strong>Hashcat</strong>, a industry-standard password recovery tool:</p>
-            <ul>
-                <li>NTLM hash extraction from Active Directory</li>
-                <li>Dictionary attacks, rule-based mutations, brute-force</li>
-                <li>GPU-accelerated cracking for performance</li>
-                <li>Cracked and uncracked hashes analyzed separately</li>
-            </ul>
-
-            <h6 class="mt-4"><i class="bi bi-diagram-3-fill me-2"></i>BloodHound Integration</h6>
-            <p>Privilege escalation analysis via <strong>BloodHound Enterprise API</strong>:</p>
-            <ul>
-                <li><strong>Domain Admin Pathways</strong>: Identifies accounts with paths to DA privileges</li>
-                <li><strong>Controlled Objects</strong>: Counts users, groups, computers controlled by each account</li>
-                <li><strong>Account Properties</strong>: Enabled status, last logon, password expiration</li>
-                <li><strong>Risk Amplification</strong>: Weak passwords + high privileges = Critical risk</li>
-            </ul>
-
-            <h6 class="mt-4"><i class="bi bi-database-exclamation me-2"></i>Have I Been Pwned (HIBP) Correlation</h6>
-            <p>Breach exposure detection using <strong>HIBP NTLM hash database</strong>:</p>
-            <ul>
-                <li><strong>1.3 Billion Hashes</strong>: Comprehensive breach database (42GB dataset)</li>
-                <li><strong>Evidence-Based Tiers</strong>: 8-tier risk system based on actual occurrence distribution</li>
-                <li><strong>Dual Impact</strong>: Base score floor + environmental risk multiplier</li>
-                <li><strong>Binary Search with Index</strong>: Efficient lookup even for large databases</li>
-                <li><strong>Cache Optimization</strong>: Top 1M most common hashes cached in memory</li>
-            </ul>
-
-            <h6 class="mt-4"><i class="bi bi-calculator-fill me-2"></i>CVSS-Style Scoring</h6>
-            <p>Risk scores calculated using three-component methodology:</p>
-            <ul>
-                <li><strong>Base Score</strong>: Complexity, length, dictionary/HIBP checks, similarity</li>
-                <li><strong>Temporal Score</strong>: Compliance age, expiration policy enforcement</li>
-                <li><strong>Environmental Score</strong>: Privileges, sharing, domain context, breach impact</li>
-                <li><strong>Cracked = Risk</strong>: All cracked passwords receive minimum base scores</li>
-            </ul>
-
-            <h6 class="mt-4"><i class="bi bi-code-square me-2"></i>Risk Vector System</h6>
-            <p>Compact machine-readable risk representation (see Risk Vector Format above):</p>
-            <ul>
-                <li>11 components covering all risk dimensions</li>
-                <li>Reproducible, auditable risk assessment</li>
-                <li>Easy filtering and sorting by specific factors</li>
-                <li>Format: <code>C:X/L:Y/D:Z/SM:A/CM:B/EX:C/DA:D/CO:E/S:F/DR:G/HIBP:H</code></li>
-            </ul>
-
-            <div class="alert alert-info mt-4 mb-0" role="alert">
-                <h6 class="alert-heading"><i class="bi bi-github me-2"></i>Open Source</h6>
-                <p class="mb-0">Password!AtTheDisco is open source software. For source code, documentation, and contribution guidelines, visit the project repository.</p>
-            </div>
-        </div>
-    </div>
-    '''
+    return render(
+        "partials/about_content.html.j2",
+        timestamp=report_metadata.get("timestamp", "Unknown"),
+        version=report_metadata.get("version", "1.0.0"),
+        domains=report_metadata.get("domains", []) or [],
+        total=total,
+        cracked=cracked,
+        uncracked=report_metadata.get("uncracked_accounts", 0) or 0,
+        crack_pct=crack_pct,
+        risk_vector_explanation=RISK_VECTOR_EXPLANATION,
+    )
