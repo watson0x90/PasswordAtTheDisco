@@ -563,7 +563,7 @@ def html_head(title, include_pdf_export=False, include_search=False, include_red
 
         /* Navbar brand */
         .navbar-brand {
-            font-family: 'Iceland', sans-serif;
+            font-family: var(--pd-mono);
             font-size: 1.25rem;
             font-weight: 400;
             white-space: nowrap;

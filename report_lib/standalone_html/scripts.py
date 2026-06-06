@@ -570,7 +570,7 @@ function renderResults() {
                 </a>
             </td>
             <td>${escapeHtml(account.Domain || account['Domain Name'] || 'N/A')}</td>
-            <td>${account.Type === 'Cracked' ? escapeHtml(account.Password) : '<span class="text-muted">Hash: ' + escapeHtml(account.Password) + '</span>'}</td>
+            <td class="font-monospace">${account.Type === 'Cracked' ? escapeHtml(account.Password) : '<span class="text-muted">Hash: ' + escapeHtml(account.Password) + '</span>'}</td>
             <td>${typeBadge}</td>
             <td>${riskBadge}</td>
             <td>${enabledBadge}</td>
@@ -831,8 +831,8 @@ function showError(message) {
 
 # Redacted search JavaScript (hides actual passwords)
 SEARCH_REDACTED_JS = SEARCH_JS.replace(
-    "<td>${account.Type === 'Cracked' ? escapeHtml(account.Password) : '<span class=\"text-muted\">Hash: ' + escapeHtml(account.Password) + '</span>'}</td>",
-    "<td>${account.Type === 'Cracked' ? '********' : '<span class=\"text-muted\">Hash: ' + escapeHtml(account.Password) + '</span>'}</td>"
+    "<td class=\"font-monospace\">${account.Type === 'Cracked' ? escapeHtml(account.Password) : '<span class=\"text-muted\">Hash: ' + escapeHtml(account.Password) + '</span>'}</td>",
+    "<td class=\"font-monospace\">${account.Type === 'Cracked' ? '********' : '<span class=\"text-muted\">Hash: ' + escapeHtml(account.Password) + '</span>'}</td>"
 )
 assert SEARCH_REDACTED_JS != SEARCH_JS, "Redacted search replacement failed to match -- passwords would be exposed"
 

@@ -67,6 +67,44 @@ document.addEventListener('DOMContentLoaded', function() {
 CUSTOM_DARK_CSS = """
 <style>
 /* ============================================
+   Typography: vendored Inter (UI) + JetBrains Mono (data/metrics)
+   Self-hosted woff2 in vendor/fonts so reports stay offline.
+   ============================================ */
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 400; font-display: swap; src: url('vendor/fonts/inter/inter-400.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 500; font-display: swap; src: url('vendor/fonts/inter/inter-500.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 600; font-display: swap; src: url('vendor/fonts/inter/inter-600.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 700; font-display: swap; src: url('vendor/fonts/inter/inter-700.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url('vendor/fonts/jetbrains-mono/jetbrains-mono-400.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 500; font-display: swap; src: url('vendor/fonts/jetbrains-mono/jetbrains-mono-500.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 700; font-display: swap; src: url('vendor/fonts/jetbrains-mono/jetbrains-mono-700.woff2') format('woff2'); }
+
+:root {
+    --pd-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --pd-mono: 'JetBrains Mono', 'SFMono-Regular', Menlo, Monaco, Consolas, monospace;
+}
+body {
+    font-family: var(--pd-sans);
+    --cui-body-font-family: var(--pd-sans);
+    --cui-font-sans-serif: var(--pd-sans);
+    --cui-font-monospace: var(--pd-mono);
+    letter-spacing: -0.011em;   /* Inter reads a touch tighter */
+}
+h1, h2, h3, h4, h5, h6, .navbar-brand, .display-1, .display-2, .display-3, .display-4 {
+    font-family: var(--pd-sans);
+}
+/* All account data (usernames, passwords, hashes, risk vectors) in monospace */
+code, kbd, pre, samp, .font-monospace {
+    font-family: var(--pd-mono) !important;
+}
+/* Prominent metric numbers in monospace for a data/SOC feel */
+.display-5, .display-6,
+.card[class*="-gradient"] .fs-4,
+.border-start .fs-5,
+#userDetailOffcanvas .fw-bold {
+    font-family: var(--pd-mono);
+}
+
+/* ============================================
    Dark theme color variables (from Flask app)
    ============================================ */
 [data-coreui-theme="dark"] {
@@ -308,7 +346,7 @@ body {
 }
 
 .report-title {
-    font-family: 'Iceland', sans-serif;
+    font-family: var(--pd-sans);
     font-size: 2.5rem;
     color: #fff;
     letter-spacing: 0.1em;

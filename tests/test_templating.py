@@ -71,7 +71,9 @@ class TestOfflineAssets:
         for rel in ("coreui/coreui.min.css", "coreui/coreui.bundle.min.js",
                     "bootstrap-icons/bootstrap-icons.min.css",
                     "bootstrap-icons/fonts/bootstrap-icons.woff2",
-                    "plotly/plotly.min.js"):
+                    "plotly/plotly.min.js",
+                    "fonts/inter/inter-400.woff2",
+                    "fonts/jetbrains-mono/jetbrains-mono-400.woff2"):
             assert (v / rel).exists(), f"missing vendored asset: {rel}"
         copy_vendor_assets(tmp_path)  # idempotent, no error
 
