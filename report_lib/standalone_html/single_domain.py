@@ -7,11 +7,8 @@ import json
 import os
 from pathlib import Path
 
-from markupsafe import escape as escape_html
-
 from report_lib.standalone_html.components import (
     RISK_SCORE_EXPLANATION,
-    create_bootstrap_card,
     create_breadcrumb,
     create_error_message,
     create_navbar,
@@ -24,7 +21,7 @@ from report_lib.standalone_html.components import (
     html_head,
 )
 from report_lib.standalone_html.scripts import USER_DETAIL_JS
-from report_lib.templating import render_macro
+from report_lib.templating import render, render_macro
 from utils.visualization_helper import add_visualization_to_html
 
 
@@ -116,7 +113,7 @@ def generate_user_details_json_single(output_rows):
 def generate_html_report(domain, data, visuals, logger=None):
     """
     Generate HTML report for a domain with improved error handling and visualizations.
-    
+
     Args:
         domain (str): Domain name
         data (dict): Domain analysis data
@@ -124,43 +121,26 @@ def generate_html_report(domain, data, visuals, logger=None):
         logger (Logger, optional): Logger instance
     """
     try:
-        # Get all domains from data for sidebar (for now, just use single domain)
         domains = [domain]
-
-        # Create navbar and sidebar
         navbar = create_navbar(current_page=f'domain_{domain}', include_search=True, include_export=True)
         sidebar = create_sidebar(current_page=f'domain_{domain}', domains=domains)
+        breadcrumb_html = create_breadcrumb([
+            ('Main Report', './main.html'),
+            ('Search', './search.html'),
+            (f'{domain} Report', None)
+        ])
 
-        # Start building content (without body tag - that's in page_wrapper)
-        content = f"""
-                {create_breadcrumb([
-                    ('Main Report', './main.html'),
-                    ('Search', './search.html'),
-                    (f'{domain} Report', None)
-                ])}
-
-                <div class="mb-4">
-                    <h1 class="display-4"><i class="bi bi-shield-lock me-3"></i>Password Security Report</h1>
-                    <p class="lead text-muted">{domain}</p>
-                </div>
-        """
-
+        counts_error_html = ''
         try:
-            # Get consistent data counts
             cracked_rows = [row for row in data['output_rows'] if row.get('Password Length', 'N/A') != 'N/A']
             total_accounts = len(data['output_rows'])
             cracked = len(cracked_rows)
             uncracked = total_accounts - cracked
-            
-            # Calculate compliance and expiration stats
             out_of_compliance = sum(1 for row in data['output_rows']
                                    if row.get('Days Out of Compliance', 'Unknown') not in ('Unknown', 'N/A')
                                    and int(row.get('Days Out of Compliance', 0)) > 0)
-
             non_expiring = sum(1 for row in data['output_rows']
                               if row.get('Password Set to Expire', 'Unknown') == 'No')
-
-            # Calculate HIBP breach statistics
             hibp_breached = sum(1 for row in data['output_rows']
                                if row.get('HIBP Breached', 'No') == 'Yes')
             hibp_total_exposures = sum(int(row.get('HIBP Breach Count', 0))
@@ -169,7 +149,7 @@ def generate_html_report(domain, data, visuals, logger=None):
         except (KeyError, TypeError) as e:
             if logger:
                 logger.error(f"Error processing data for domain {domain}: {str(e)}")
-            content += create_error_message("Error processing data. Some metrics may be unavailable.")
+            counts_error_html = create_error_message("Error processing data. Some metrics may be unavailable.")
             total_accounts = 0
             cracked = 0
             uncracked = 0
@@ -177,6 +157,7 @@ def generate_html_report(domain, data, visuals, logger=None):
             non_expiring = 0
             hibp_breached = 0
             hibp_total_exposures = 0
+            cracked_rows = []
 
         if total_accounts > 0:
             percent_cracked = round(cracked/total_accounts*100, 1)
@@ -190,53 +171,19 @@ def generate_html_report(domain, data, visuals, logger=None):
             percent_nonexpiring = 0
             percent_hibp = 0
 
-        # Overview section with Bootstrap metric cards
-        content += '<h2 class="mb-4"><i class="bi bi-bar-chart me-2"></i>Overview</h2>'
-
-        content += create_overview_section({
-            'Total Accounts': {
-                'value': total_accounts,
-                'icon': 'people-fill',
-                'bg_class': 'bg-primary',
-                'subtitle': f'{domain}'
-            },
-            'Cracked Passwords': {
-                'value': f'{cracked} ({percent_cracked}%)',
-                'icon': 'key-fill',
-                'bg_class': 'bg-danger',
-                'subtitle': f'{uncracked} uncracked'
-            },
-            'Out of Compliance': {
-                'value': f'{out_of_compliance} ({percent_compliance}%)',
-                'icon': 'shield-exclamation',
-                'bg_class': 'bg-warning',
-                'text_class': 'text-dark',
-                'subtitle': 'Policy violations'
-            },
-            'Non-Expiring': {
-                'value': f'{non_expiring} ({percent_nonexpiring}%)',
-                'icon': 'clock-history',
-                'bg_class': 'bg-info',
-                'text_class': 'text-dark',
-                'subtitle': 'Never expires'
-            }
+        overview_html = create_overview_section({
+            'Total Accounts': {'value': total_accounts, 'icon': 'people-fill', 'bg_class': 'bg-primary', 'subtitle': f'{domain}'},
+            'Cracked Passwords': {'value': f'{cracked} ({percent_cracked}%)', 'icon': 'key-fill', 'bg_class': 'bg-danger', 'subtitle': f'{uncracked} uncracked'},
+            'Out of Compliance': {'value': f'{out_of_compliance} ({percent_compliance}%)', 'icon': 'shield-exclamation', 'bg_class': 'bg-warning', 'text_class': 'text-dark', 'subtitle': 'Policy violations'},
+            'Non-Expiring': {'value': f'{non_expiring} ({percent_nonexpiring}%)', 'icon': 'clock-history', 'bg_class': 'bg-info', 'text_class': 'text-dark', 'subtitle': 'Never expires'}
         })
 
-        # HIBP stats card
-        if hibp_breached > 0:
-            content += f"""
-            <div class="alert alert-danger" role="alert">
-                <h5 class="alert-heading"><i class="bi bi-exclamation-triangle-fill me-2"></i>Have I Been Pwned (HIBP) Breach Exposure</h5>
-                <p class="mb-0"><strong>{hibp_breached} accounts ({percent_hibp}%)</strong> have passwords found in <strong>{hibp_total_exposures:,}</strong> data breaches.</p>
-            </div>
-            """
-
-        # Add risk score explanation
-        content += RISK_SCORE_EXPLANATION
-
-        # Domain risk information - Ensure consistent data source
+        risk_error = False
+        risk_error_html = ''
+        risk_distribution_list_html = ''
+        overall_risk_badge = ''
+        risk_score_disp = avg_score_disp = max_score_disp = 'N/A'
         try:
-            # Find most accurate risk distribution source
             if 'domain_risk' in data and 'risk_distribution' in data['domain_risk']:
                 risk_distribution = data['domain_risk']['risk_distribution']
                 domain_risk = data['domain_risk']
@@ -249,20 +196,15 @@ def generate_html_report(domain, data, visuals, logger=None):
                     'max_score': data.get('domain_risk', {}).get('max_score', 'N/A')
                 }
             else:
-                # Calculate from output rows as last resort
                 risk_distribution = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
                 for row in cracked_rows:
                     risk_level = row.get('Risk Level', 'Unknown')
                     if risk_level in risk_distribution:
                         risk_distribution[risk_level] += 1
-                
-                # Simple domain risk approximation
                 if cracked > 0:
                     scores = [row.get('Score', 0) for row in cracked_rows if 'Score' in row]
                     avg_score = sum(scores) / len(scores) if scores else 0
                     max_score = max(scores) if scores else 0
-                    
-                    # Determine risk level based on average score
                     if avg_score >= 8.0:
                         overall_level = "Critical"
                     elif avg_score >= 6.0:
@@ -271,84 +213,36 @@ def generate_html_report(domain, data, visuals, logger=None):
                         overall_level = "Medium"
                     else:
                         overall_level = "Low"
-                    
-                    domain_risk = {
-                        'risk_score': round(avg_score, 1),
-                        'overall_risk_level': overall_level,
-                        'avg_score': round(avg_score, 1),
-                        'max_score': round(max_score, 1)
-                    }
+                    domain_risk = {'risk_score': round(avg_score, 1), 'overall_risk_level': overall_level, 'avg_score': round(avg_score, 1), 'max_score': round(max_score, 1)}
                 else:
-                    domain_risk = {
-                        'risk_score': 'N/A',
-                        'overall_risk_level': 'Unknown',
-                        'avg_score': 'N/A',
-                        'max_score': 'N/A'
-                    }
-            
-            # Calculate total for percentages
+                    domain_risk = {'risk_score': 'N/A', 'overall_risk_level': 'Unknown', 'avg_score': 'N/A', 'max_score': 'N/A'}
+
             total_risk_accounts = sum(risk_distribution.values())
-
-            # Risk Distribution Card
-            risk_content = f"""
-            <p class="lead">Risk levels of the {cracked} cracked passwords in {domain}, assessed by length, complexity, and privilege.</p>
-
-            <div class="row g-3 mb-4">
-                <div class="col-md-4">
-                    <div class="card">
-                        <div class="card-body text-center">
-                            <h6 class="text-muted">Overall Risk</h6>
-                            <p class="display-6 mb-0">{domain_risk.get('risk_score', 'N/A')}<small>/10.0</small></p>
-                            <p class="mb-0">{create_risk_badge(domain_risk.get('overall_risk_level', 'Unknown'))}</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="card">
-                        <div class="card-body text-center">
-                            <h6 class="text-muted">Average Score</h6>
-                            <p class="display-6 mb-0">{domain_risk.get('avg_score', 'N/A')}<small>/10.0</small></p>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="card">
-                        <div class="card-body text-center">
-                            <h6 class="text-muted">Maximum Score</h6>
-                            <p class="display-6 mb-0">{domain_risk.get('max_score', 'N/A')}<small>/10.0</small></p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <h5 class="mb-3">Distribution by Risk Level</h5>
-            {get_risk_distribution_html(risk_distribution, total_risk_accounts)}
-            """
-
-            content += create_bootstrap_card('Risk Distribution', risk_content, icon='speedometer')
-
+            risk_score_disp = domain_risk.get('risk_score', 'N/A')
+            avg_score_disp = domain_risk.get('avg_score', 'N/A')
+            max_score_disp = domain_risk.get('max_score', 'N/A')
+            overall_risk_badge = create_risk_badge(domain_risk.get('overall_risk_level', 'Unknown'))
+            risk_distribution_list_html = get_risk_distribution_html(risk_distribution, total_risk_accounts)
         except Exception as e:
             if logger:
                 logger.error(f"Error processing risk distribution for domain {domain}: {str(e)}")
-            content += create_bootstrap_card(
-                'Risk Distribution',
-                create_error_message("Error processing risk distribution data."),
-                header_bg='bg-danger',
-                icon='exclamation-triangle'
-            )
+            risk_error = True
+            risk_error_html = create_error_message("Error processing risk distribution data.")
 
-        # Add risk level visualization if available
-        vis_html = add_visualization_to_html(visuals, 'risk_levels', 'Risk Levels Chart')
-        if vis_html:
-            content += vis_html
+        risk_viz_html = add_visualization_to_html(visuals, 'risk_levels', 'Risk Levels Chart') or ''
 
-        # BloodHound insights section
+        da_error = False
+        da_present = False
+        da_error_html = ''
+        da_table_html = ''
+        da_count = 0
         try:
             cracked_da_accounts = [row for row in data['output_rows']
                                   if row['Password Length'] != 'N/A' and
                                   row.get('DA Domains', 'None') not in ('None', 'Unknown')]
-
             if cracked_da_accounts:
+                da_present = True
+                da_count = len(cracked_da_accounts)
                 da_columns = [
                     {"header": "Username", "field": "Username", "kind": "user_link"},
                     {"header": "Password", "field": "Password", "kind": "code"},
@@ -356,41 +250,15 @@ def generate_html_report(domain, data, visuals, logger=None):
                     {"header": "Risk Level", "field": "Risk Level", "kind": "risk_badge"},
                     {"header": "Risk Vector", "field": "Risk Vector", "kind": "small_mono"},
                 ]
-                da_content = (
-                    '<div class="alert alert-danger" role="alert">'
-                    '<i class="bi bi-exclamation-triangle-fill me-2"></i>'
-                    f'<strong>{len(cracked_da_accounts)} cracked accounts</strong> '
-                    f'have pathways to Domain Admin privileges in {escape_html(str(domain))}.</div>'
-                    + render_macro("partials/tables.html.j2", "account_table", da_columns, cracked_da_accounts)
-                )
-
-                content += create_bootstrap_card(
-                    'BloodHound Insights - Domain Admin Pathways',
-                    da_content,
-                    header_bg='bg-danger',
-                    icon='diagram-3'
-                )
-            else:
-                content += create_bootstrap_card(
-                    'BloodHound Insights - Domain Admin Pathways',
-                    '<div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>No cracked accounts with DA pathways found.</div>',
-                    header_bg='bg-success',
-                    icon='shield-check'
-                )
+                da_table_html = render_macro("partials/tables.html.j2", "account_table", da_columns, cracked_da_accounts)
         except Exception as e:
             if logger:
                 logger.error(f"Error processing DA accounts for domain {domain}: {str(e)}")
-            content += create_bootstrap_card(
-                'BloodHound Insights',
-                create_error_message("Error processing DA accounts data."),
-                header_bg='bg-danger',
-                icon='exclamation-triangle'
-            )
+            da_error = True
+            da_error_html = create_error_message("Error processing DA accounts data.")
 
-        # Add all standard visualizations
-        content += add_standard_visualizations_html(visuals, domain)
+        standard_viz_html = add_standard_visualizations_html(visuals, domain)
 
-        # Generate user details JSON for offcanvas
         try:
             user_details_json = generate_user_details_json_single(data['output_rows'])
             user_details_json_str = json.dumps(user_details_json, indent=2)
@@ -399,17 +267,23 @@ def generate_html_report(domain, data, visuals, logger=None):
                 logger.error(f"Error generating user details JSON: {str(e)}")
             user_details_json_str = '{}'
 
-        # Add offcanvas HTML structure
-        content += create_user_detail_offcanvas()
-
-        # Add JavaScript (table sorting and user detail)
+        offcanvas_html = create_user_detail_offcanvas()
         user_detail_script = USER_DETAIL_JS.replace('{USER_DATA_JSON}', user_details_json_str)
 
-        content += f"""
-                {user_detail_script}
-        """
+        content = render(
+            "partials/single_domain_content.html.j2",
+            domain=domain, breadcrumb_html=breadcrumb_html, counts_error_html=counts_error_html,
+            overview_html=overview_html, has_hibp=hibp_breached > 0, hibp_breached=hibp_breached,
+            percent_hibp=percent_hibp, hibp_total_exposures=hibp_total_exposures,
+            risk_explanation=RISK_SCORE_EXPLANATION, risk_error=risk_error, risk_error_html=risk_error_html,
+            cracked=cracked, risk_score_disp=risk_score_disp, avg_score_disp=avg_score_disp,
+            max_score_disp=max_score_disp, overall_risk_badge=overall_risk_badge,
+            risk_distribution_list_html=risk_distribution_list_html, risk_viz_html=risk_viz_html,
+            da_error=da_error, da_present=da_present, da_count=da_count, da_error_html=da_error_html,
+            da_table_html=da_table_html, standard_viz_html=standard_viz_html,
+            offcanvas_html=offcanvas_html, user_detail_script=user_detail_script,
+        )
 
-        # Wrap content with navbar and sidebar using page wrapper
         html = html_head(f"Password Security Report - {domain}", enable_sidebar=True)
         html += create_page_wrapper(content, navbar, sidebar)
         html += """
@@ -417,7 +291,6 @@ def generate_html_report(domain, data, visuals, logger=None):
 </html>
         """
 
-        # Write to file
         from core import config as config_module
         html_dir = getattr(config_module, 'html_reports_folder', Path('output/html_report'))
         output_path = html_dir / f'{domain}_report.html'
@@ -426,12 +299,13 @@ def generate_html_report(domain, data, visuals, logger=None):
             f.write(html)
         if logger:
             logger.info(f"Generated HTML report: {output_path}")
-            
+
     except Exception as e:
         if logger:
             logger.error(f"Error generating HTML report for domain {domain}: {str(e)}")
         else:
             print(f"Error generating HTML report for domain {domain}: {str(e)}")
+
 
 def add_standard_visualizations_html(visuals, domain):
     """Add standard set of visualizations to HTML report using Bootstrap cards."""
