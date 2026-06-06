@@ -74,3 +74,28 @@ class TestOfflineAssets:
                     "plotly/plotly.min.js"):
             assert (v / rel).exists(), f"missing vendored asset: {rel}"
         copy_vendor_assets(tmp_path)  # idempotent, no error
+
+
+class TestChromePartials:
+    def test_sidebar_escapes_domain_names(self):
+        from report_lib.standalone_html.components import create_sidebar
+        sb = create_sidebar(current_page='about', domains=['EVIL<img src=x onerror=alert(1)>'])
+        assert '<img src=x onerror' not in sb      # not raw markup
+        assert '&lt;img' in sb                     # escaped
+
+    def test_sidebar_active_state_and_fallback(self):
+        from report_lib.standalone_html.components import create_sidebar
+        assert 'nav-link active" href="about.html"' in create_sidebar(current_page='about')
+        assert 'No domains loaded' in create_sidebar(domains=[])
+
+    def test_navbar_conditionals(self):
+        from report_lib.standalone_html.components import create_navbar
+        assert 'id="navbarSearch"' in create_navbar(include_search=True)
+        assert 'id="navbarSearch"' not in create_navbar(include_search=False)
+        assert 'exportPDF()' in create_navbar(include_export=True)
+        assert 'exportPDF()' not in create_navbar(include_export=False)
+
+    def test_offcanvas_shell(self):
+        from report_lib.standalone_html.components import create_user_detail_offcanvas
+        oc = create_user_detail_offcanvas()
+        assert 'id="userDetailOffcanvas"' in oc and 'id="riskBreakdownContent"' in oc

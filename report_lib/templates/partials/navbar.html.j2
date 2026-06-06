@@ -1,0 +1,47 @@
+{# Sticky header / navbar. Context: include_search (bool), include_export (bool).
+   All static markup -- no untrusted data. #}
+<!-- CoreUI Header -->
+<header class="header header-sticky">
+    <div class="container-fluid d-flex align-items-center justify-content-between px-3">
+        <!-- Left: Brand -->
+        <a href="main.html" class="navbar-brand text-decoration-none m-0">
+            <i class="bi bi-shield-lock-fill me-2" style="color: #60a5fa;"></i>
+            <span style="font-family: 'Iceland', sans-serif; font-size: 1.25rem; font-weight: 600; color: #fff;">Password!AtTheDisco</span>
+        </a>
+
+        <!-- Center: Search Form -->
+        {% if include_search %}
+        <form class="d-flex mx-auto" role="search" style="width: 600px; max-width: 50vw;"
+              onsubmit="event.preventDefault(); const q = document.getElementById('navbarSearch').value.trim(); if(q) window.location.href='search.html?q=' + encodeURIComponent(q); else window.location.href='search.html';">
+            <input class="form-control form-control-sm me-2" type="search"
+                   placeholder="Search accounts..." aria-label="Search" id="navbarSearch">
+            <button class="btn btn-sm btn-outline-primary" type="submit">
+                <i class="bi bi-search"></i>
+            </button>
+        </form>
+        {% endif %}
+
+        <!-- Right: Export menu (empty spacer when not included) -->
+        <ul class="navbar-nav" style="min-width: 200px; justify-content: flex-end;">
+            {% if include_export %}
+            <li class="nav-item dropdown">
+                <a class="nav-link dropdown-toggle" href="#" role="button"
+                   data-coreui-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-download me-1"></i>Export
+                </a>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><a class="dropdown-item" href="#" onclick="exportPDF(); return false;">
+                        <i class="bi bi-file-pdf me-2"></i>Export to PDF
+                    </a></li>
+                    <li><a class="dropdown-item" href="#" onclick="exportCSV(); return false;">
+                        <i class="bi bi-file-earmark-spreadsheet me-2"></i>Export to CSV
+                    </a></li>
+                    <li><a class="dropdown-item" href="#" onclick="exportJSON(); return false;">
+                        <i class="bi bi-filetype-json me-2"></i>Export to JSON
+                    </a></li>
+                </ul>
+            </li>
+            {% endif %}
+        </ul>
+    </div>
+</header>

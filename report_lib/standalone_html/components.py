@@ -910,337 +910,48 @@ def create_overview_section(stats_dict):
 
 
 def create_user_detail_offcanvas():
-    """
-    Create offcanvas panel shell for user detail display.
-    Content will be populated dynamically by JavaScript.
+    """Create the user-detail offcanvas shell (rendered from the Jinja partial).
 
     Returns:
-        HTML string for the offcanvas panel structure
+        HTML string for the offcanvas panel structure.
     """
-    return """
-    <!-- User Detail Offcanvas Panel -->
-    <div class="offcanvas offcanvas-end" tabindex="-1" id="userDetailOffcanvas"
-         aria-labelledby="userDetailOffcanvasLabel" style="width: 800px; max-width: 90vw;">
-        <div class="offcanvas-header bg-primary text-white">
-            <h5 class="offcanvas-title" id="userDetailOffcanvasLabel">
-                <i class="bi bi-person-circle me-2"></i>
-                <span id="userDetailTitle">User Details</span>
-            </h5>
-            <button type="button" class="btn-close btn-close-white"
-                    data-coreui-dismiss="offcanvas" aria-label="Close"></button>
-        </div>
-        <div class="offcanvas-body p-0">
-            <!-- Summary Cards -->
-            <div class="p-3 bg-body-secondary">
-                <div class="row g-2" id="userSummaryCards">
-                    <!-- Cards populated by JavaScript -->
-                    <div class="col-6">
-                        <div class="card text-center h-100" id="riskLevelCard">
-                            <div class="card-body py-2">
-                                <i class="bi bi-shield-exclamation" style="font-size: 1.5rem;"></i>
-                                <h6 class="mt-1 mb-0 small">Risk Level</h6>
-                                <p class="mb-0 fw-bold" id="riskLevelValue">-</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-6">
-                        <div class="card text-center h-100">
-                            <div class="card-body py-2">
-                                <i class="bi bi-diagram-3" style="font-size: 1.5rem;"></i>
-                                <h6 class="mt-1 mb-0 small">Controlled Objects</h6>
-                                <p class="mb-0 fw-bold" id="controlledObjectsValue">-</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-6">
-                        <div class="card text-center h-100">
-                            <div class="card-body py-2">
-                                <i class="bi bi-database-exclamation" style="font-size: 1.5rem;"></i>
-                                <h6 class="mt-1 mb-0 small">HIBP Breaches</h6>
-                                <p class="mb-0 fw-bold" id="hibpBreachesValue">-</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-6">
-                        <div class="card text-center h-100">
-                            <div class="card-body py-2">
-                                <i class="bi bi-check-circle" style="font-size: 1.5rem;"></i>
-                                <h6 class="mt-1 mb-0 small">Account Status</h6>
-                                <p class="mb-0 fw-bold" id="accountStatusValue">-</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+    from report_lib.templating import render
+    return render("partials/offcanvas.html.j2")
 
-            <!-- Tabbed Content -->
-            <div class="card border-0 rounded-0">
-                <div class="card-header bg-transparent border-bottom">
-                    <ul class="nav nav-tabs card-header-tabs" role="tablist">
-                        <li class="nav-item">
-                            <button class="nav-link active" data-coreui-toggle="tab"
-                                    data-coreui-target="#riskBreakdownTab" type="button">
-                                <i class="bi bi-exclamation-triangle me-1"></i>Risk Breakdown
-                            </button>
-                        </li>
-                        <li class="nav-item">
-                            <button class="nav-link" data-coreui-toggle="tab"
-                                    data-coreui-target="#accountPropsTab" type="button">
-                                <i class="bi bi-person-badge me-1"></i>Account Info
-                            </button>
-                        </li>
-                        <li class="nav-item">
-                            <button class="nav-link" data-coreui-toggle="tab"
-                                    data-coreui-target="#privilegesTab" type="button">
-                                <i class="bi bi-shield-lock me-1"></i>Privileges
-                            </button>
-                        </li>
-                    </ul>
-                </div>
-                <div class="card-body">
-                    <div class="tab-content">
-                        <!-- Risk Breakdown Tab -->
-                        <div class="tab-pane fade show active" id="riskBreakdownTab">
-                            <h6 class="mb-3">Why This User Has This Risk Score</h6>
-                            <div id="riskBreakdownContent">
-                                <!-- Populated by JavaScript -->
-                            </div>
-                        </div>
-
-                        <!-- Account Properties Tab -->
-                        <div class="tab-pane fade" id="accountPropsTab">
-                            <dl class="row mb-0" id="accountPropsContent">
-                                <!-- Populated by JavaScript -->
-                            </dl>
-                        </div>
-
-                        <!-- Privileges Tab -->
-                        <div class="tab-pane fade" id="privilegesTab">
-                            <div id="privilegesContent">
-                                <!-- Populated by JavaScript -->
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    """
 
 
 def create_navbar(current_page='dashboard', include_search=True, include_export=False):
-    """
-    Create CoreUI navbar with hamburger toggle, search, and export menu.
+    """Create the CoreUI navbar (rendered from the Jinja partial).
 
     Args:
-        current_page (str): Current page identifier for highlighting
-        include_search (bool): Show quick search box
-        include_export (bool): Show export dropdown menu
+        current_page (str): Current page identifier (kept for API compatibility).
+        include_search (bool): Show the quick-search box.
+        include_export (bool): Show the export dropdown menu.
 
     Returns:
-        HTML string for navbar
+        HTML string for the navbar.
     """
-    # Search form - in header
-    search_html = ''
-    if include_search:
-        search_html = '''
-            <form class="d-flex mx-auto" role="search" style="width: 600px; max-width: 50vw;"
-                  onsubmit="event.preventDefault(); const q = document.getElementById('navbarSearch').value.trim(); if(q) window.location.href='search.html?q=' + encodeURIComponent(q); else window.location.href='search.html';">
-                <input class="form-control form-control-sm me-2" type="search"
-                       placeholder="Search accounts..." aria-label="Search" id="navbarSearch">
-                <button class="btn btn-sm btn-outline-primary" type="submit">
-                    <i class="bi bi-search"></i>
-                </button>
-            </form>
-        '''
+    from report_lib.templating import render
+    return render("partials/navbar.html.j2", current_page=current_page,
+                  include_search=include_search, include_export=include_export)
 
-    # Export dropdown (right side)
-    export_html = ''
-    if include_export:
-        export_html = '''
-                <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle" href="#" role="button"
-                       data-coreui-toggle="dropdown" aria-expanded="false">
-                        <i class="bi bi-download me-1"></i>Export
-                    </a>
-                    <ul class="dropdown-menu dropdown-menu-end">
-                        <li><a class="dropdown-item" href="#" onclick="exportPDF(); return false;">
-                            <i class="bi bi-file-pdf me-2"></i>Export to PDF
-                        </a></li>
-                        <li><a class="dropdown-item" href="#" onclick="exportCSV(); return false;">
-                            <i class="bi bi-file-earmark-spreadsheet me-2"></i>Export to CSV
-                        </a></li>
-                        <li><a class="dropdown-item" href="#" onclick="exportJSON(); return false;">
-                            <i class="bi bi-filetype-json me-2"></i>Export to JSON
-                        </a></li>
-                    </ul>
-                </li>
-        '''
-
-    return f'''
-    <!-- CoreUI Header -->
-    <header class="header header-sticky">
-        <div class="container-fluid d-flex align-items-center justify-content-between px-3">
-            <!-- Left: Brand -->
-            <a href="main.html" class="navbar-brand text-decoration-none m-0">
-                <i class="bi bi-shield-lock-fill me-2" style="color: #60a5fa;"></i>
-                <span style="font-family: 'Iceland', sans-serif; font-size: 1.25rem; font-weight: 600; color: #fff;">Password!AtTheDisco</span>
-            </a>
-
-            <!-- Center: Search Form -->
-            {search_html}
-
-            <!-- Right: Export menu (empty spacer when not included) -->
-            <ul class="navbar-nav" style="min-width: 200px; justify-content: flex-end;">
-                {export_html}
-            </ul>
-        </div>
-    </header>
-    '''
 
 
 def create_sidebar(current_page='dashboard', domains=None):
-    """
-    Create CoreUI collapsible sidebar with navigation menu.
+    """Create the collapsible sidebar navigation (rendered from the Jinja
+    partial; domain names are autoescaped).
 
     Args:
-        current_page (str): Current page identifier for highlighting active item
-        domains (list): List of domain names for domain submenu
+        current_page (str): Current page identifier for the active item.
+        domains (list): Domain names for the per-domain submenus.
 
     Returns:
-        HTML string for sidebar
+        HTML string for the sidebar.
     """
-    if domains is None:
-        domains = []
+    from report_lib.templating import render
+    return render("partials/sidebar.html.j2", current_page=current_page,
+                  domains=domains or [])
 
-    # Helper function to check if page is active
-    def is_active(page_id):
-        return 'active' if page_id == current_page else ''
-
-    # Build domain submenu
-    domain_submenu = ''
-    if domains:
-        for domain in domains:
-            # Don't replace dots - file names preserve the domain as-is
-            domain_slug = domain
-            domain_submenu += f'''
-                <li class="nav-group">
-                    <a class="nav-link nav-group-toggle" href="#">
-                        <i class="bi bi-building nav-icon"></i><span>{domain}</span>
-                    </a>
-                    <ul class="nav-group-items compact">
-                        <li class="nav-item">
-                            <a class="nav-link" href="{domain_slug}_actionable_report.html">
-                                <i class="bi bi-clipboard-check me-2"></i>Actionable Report
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="{domain_slug}_report.html">
-                                <i class="bi bi-file-earmark-text me-2"></i>Full Report
-                            </a>
-                        </li>
-                        <li class="nav-group">
-                            <a class="nav-link nav-group-toggle" href="#">
-                                <i class="bi bi-bar-chart me-2"></i>Visualizations
-                            </a>
-                            <ul class="nav-group-items compact">
-                                <li class="nav-item"><a class="nav-link" href="{domain_slug}_risk_levels.html">Risk Distribution</a></li>
-                                <li class="nav-item"><a class="nav-link" href="{domain_slug}_complexity_distribution.html">Complexity Analysis</a></li>
-                                <li class="nav-item"><a class="nav-link" href="{domain_slug}_hibp_breach_distribution.html">HIBP Correlation</a></li>
-                                <li class="nav-item"><a class="nav-link" href="{domain_slug}_score_breakdown.html">Score Breakdown</a></li>
-                                <li class="nav-item"><a class="nav-link" href="{domain_slug}_da_risk.html">DA Pathways</a></li>
-                            </ul>
-                        </li>
-                    </ul>
-                </li>
-            '''
-
-    return f'''
-    <!-- Collapsible Sidebar -->
-    <div class="sidebar sidebar-fixed" id="sidebar">
-        <ul class="sidebar-nav" data-coreui="navigation" data-simplebar>
-
-            <!-- Dashboard -->
-            <li class="nav-item">
-                <a class="nav-link {is_active('dashboard')}" href="main.html">
-                    <i class="bi bi-house-door nav-icon"></i><span>Dashboard</span>
-                </a>
-            </li>
-
-            <!-- Executive Summary -->
-            <li class="nav-item">
-                <a class="nav-link {is_active('executive')}" href="executive_summary.html">
-                    <i class="bi bi-clipboard-data nav-icon"></i><span>Executive Summary</span>
-                </a>
-            </li>
-
-            <li class="nav-divider"></li>
-
-            <!-- Domains Section -->
-            <li class="nav-title">Analysis</li>
-
-            {domain_submenu if domain_submenu else '<li class="nav-item"><span class="nav-link text-muted"><i>No domains loaded</i></span></li>'}
-
-            <li class="nav-divider"></li>
-
-            <!-- Search -->
-            <li class="nav-title">Tools</li>
-            <li class="nav-group">
-                <a class="nav-link nav-group-toggle {is_active('search')}" href="#">
-                    <i class="bi bi-search nav-icon"></i>
-                    Search
-                </a>
-                <ul class="nav-group-items compact">
-                    <li class="nav-item">
-                        <a class="nav-link" href="search.html">
-                            <i class="bi bi-search me-2"></i>Account Search
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="search_redacted.html">
-                            <i class="bi bi-eye-slash me-2"></i>Redacted Search
-                        </a>
-                    </li>
-                </ul>
-            </li>
-
-            <!-- Cross-Domain Analysis -->
-            <li class="nav-group">
-                <a class="nav-link nav-group-toggle {is_active('cross-domain')}" href="#">
-                    <i class="bi bi-diagram-3 nav-icon"></i>
-                    Cross-Domain
-                </a>
-                <ul class="nav-group-items compact">
-                    <li class="nav-item">
-                        <a class="nav-link" href="combined_report.html">
-                            <i class="bi bi-file-earmark-bar-graph me-2"></i>Combined Report
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="combined_shared_network.html">
-                            <i class="bi bi-share me-2"></i>Password Sharing
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="combined_top_shared_hashes.html">
-                            <i class="bi bi-hash me-2"></i>Hash Sharing
-                        </a>
-                    </li>
-                </ul>
-            </li>
-
-            <li class="nav-divider"></li>
-
-            <!-- About -->
-            <li class="nav-item">
-                <a class="nav-link {is_active('about')}" href="about.html">
-                    <i class="bi bi-info-circle nav-icon"></i><span>About</span>
-                </a>
-            </li>
-
-        </ul>
-    </div>
-    '''
 
 
 def create_page_wrapper(content, navbar, sidebar):

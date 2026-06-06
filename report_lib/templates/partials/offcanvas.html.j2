@@ -1,0 +1,109 @@
+{# User-detail offcanvas shell. Static; content populated by USER_DETAIL_JS
+   (which HTML-escapes the account data it injects). #}
+<!-- User Detail Offcanvas Panel -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="userDetailOffcanvas"
+     aria-labelledby="userDetailOffcanvasLabel" style="width: 800px; max-width: 90vw;">
+    <div class="offcanvas-header bg-primary text-white">
+        <h5 class="offcanvas-title" id="userDetailOffcanvasLabel">
+            <i class="bi bi-person-circle me-2"></i>
+            <span id="userDetailTitle">User Details</span>
+        </h5>
+        <button type="button" class="btn-close btn-close-white"
+                data-coreui-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <div class="offcanvas-body p-0">
+        <!-- Summary Cards -->
+        <div class="p-3 bg-body-secondary">
+            <div class="row g-2" id="userSummaryCards">
+                <!-- Cards populated by JavaScript -->
+                <div class="col-6">
+                    <div class="card text-center h-100" id="riskLevelCard">
+                        <div class="card-body py-2">
+                            <i class="bi bi-shield-exclamation" style="font-size: 1.5rem;"></i>
+                            <h6 class="mt-1 mb-0 small">Risk Level</h6>
+                            <p class="mb-0 fw-bold" id="riskLevelValue">-</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="card text-center h-100">
+                        <div class="card-body py-2">
+                            <i class="bi bi-diagram-3" style="font-size: 1.5rem;"></i>
+                            <h6 class="mt-1 mb-0 small">Controlled Objects</h6>
+                            <p class="mb-0 fw-bold" id="controlledObjectsValue">-</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="card text-center h-100">
+                        <div class="card-body py-2">
+                            <i class="bi bi-database-exclamation" style="font-size: 1.5rem;"></i>
+                            <h6 class="mt-1 mb-0 small">HIBP Breaches</h6>
+                            <p class="mb-0 fw-bold" id="hibpBreachesValue">-</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="card text-center h-100">
+                        <div class="card-body py-2">
+                            <i class="bi bi-check-circle" style="font-size: 1.5rem;"></i>
+                            <h6 class="mt-1 mb-0 small">Account Status</h6>
+                            <p class="mb-0 fw-bold" id="accountStatusValue">-</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabbed Content -->
+        <div class="card border-0 rounded-0">
+            <div class="card-header bg-transparent border-bottom">
+                <ul class="nav nav-tabs card-header-tabs" role="tablist">
+                    <li class="nav-item">
+                        <button class="nav-link active" data-coreui-toggle="tab"
+                                data-coreui-target="#riskBreakdownTab" type="button">
+                            <i class="bi bi-exclamation-triangle me-1"></i>Risk Breakdown
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" data-coreui-toggle="tab"
+                                data-coreui-target="#accountPropsTab" type="button">
+                            <i class="bi bi-person-badge me-1"></i>Account Info
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" data-coreui-toggle="tab"
+                                data-coreui-target="#privilegesTab" type="button">
+                            <i class="bi bi-shield-lock me-1"></i>Privileges
+                        </button>
+                    </li>
+                </ul>
+            </div>
+            <div class="card-body">
+                <div class="tab-content">
+                    <!-- Risk Breakdown Tab -->
+                    <div class="tab-pane fade show active" id="riskBreakdownTab">
+                        <h6 class="mb-3">Why This User Has This Risk Score</h6>
+                        <div id="riskBreakdownContent">
+                            <!-- Populated by JavaScript -->
+                        </div>
+                    </div>
+
+                    <!-- Account Properties Tab -->
+                    <div class="tab-pane fade" id="accountPropsTab">
+                        <dl class="row mb-0" id="accountPropsContent">
+                            <!-- Populated by JavaScript -->
+                        </dl>
+                    </div>
+
+                    <!-- Privileges Tab -->
+                    <div class="tab-pane fade" id="privilegesTab">
+                        <div id="privilegesContent">
+                            <!-- Populated by JavaScript -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
