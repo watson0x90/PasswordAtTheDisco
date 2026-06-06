@@ -41,6 +41,19 @@ func (s *Store) Accounts(includeSecrets bool) []model.Account {
 	return out
 }
 
+// Find returns the full (unredacted) account for username. Callers must gate
+// this behind authorization + audit logging.
+func (s *Store) Find(username string) (model.Account, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, a := range s.ds.Accounts {
+		if a.Username == username {
+			return a, true
+		}
+	}
+	return model.Account{}, false
+}
+
 // Summary returns non-sensitive aggregate stats.
 func (s *Store) Summary() model.Summary {
 	s.mu.RLock()

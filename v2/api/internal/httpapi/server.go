@@ -2,6 +2,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"log"
@@ -11,25 +12,50 @@ import (
 	"strings"
 	"time"
 
+	"github.com/watson0x90/PasswordAtTheDisco/v2/api/internal/audit"
+	"github.com/watson0x90/PasswordAtTheDisco/v2/api/internal/auth"
 	"github.com/watson0x90/PasswordAtTheDisco/v2/api/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/v2/api/internal/store"
 )
+
+const sessionCookie = "patd_session"
 
 // Server holds the API's dependencies.
 type Server struct {
 	Store       *store.Store
 	StaticDir   string
 	IngestToken string // bearer token the analysis engine uses to push data
+	Users       auth.Users
+	Sessions    *auth.SessionStore
+	Audit       *audit.Logger
+}
+
+type ctxKey int
+
+const sessionKey ctxKey = 0
+
+func sessionFrom(ctx context.Context) (auth.Session, bool) {
+	s, ok := ctx.Value(sessionKey).(auth.Session)
+	return s, ok
 }
 
 // Routes returns the fully-wrapped handler (routes + middleware).
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
+	// Public
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /api/version", s.handleVersion)
+	mux.HandleFunc("POST /api/login", s.handleLogin)
+	// Engine ingestion (separate token, not a user session)
 	mux.Handle("POST /api/ingest", s.requireIngestToken(http.HandlerFunc(s.handleIngest)))
-	mux.HandleFunc("GET /api/summary", s.handleSummary)
-	mux.HandleFunc("GET /api/accounts", s.handleAccounts)
+	// Authenticated operators (any role) -- redacted data only
+	mux.Handle("POST /api/logout", s.requireAuth(http.HandlerFunc(s.handleLogout)))
+	mux.Handle("GET /api/me", s.requireAuth(http.HandlerFunc(s.handleMe)))
+	mux.Handle("GET /api/summary", s.requireAuth(http.HandlerFunc(s.handleSummary)))
+	mux.Handle("GET /api/accounts", s.requireAuth(http.HandlerFunc(s.handleAccounts)))
+	// Cleartext reveal -- requires lead role, always audit-logged
+	mux.Handle("GET /api/accounts/{username}/secret", s.requireAuth(http.HandlerFunc(s.handleReveal)))
+	// SPA
 	mux.Handle("/", spaHandler(s.StaticDir))
 	return securityHeaders(logRequests(mux))
 }
@@ -42,8 +68,56 @@ func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"name": "passwordatthedisco-api", "version": "0.1.0-dev"})
 }
 
-// handleIngest accepts a full audit dataset from the analysis engine and
-// replaces the in-memory dataset. Requires a valid ingest token (middleware).
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	var creds struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16))
+	if err := dec.Decode(&creds); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+	user, ok := s.Users.Authenticate(creds.Username, creds.Password)
+	if !ok {
+		s.Audit.Log(audit.Event{Actor: creds.Username, Action: "login", Source: r.RemoteAddr, Result: "denied"})
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
+		return
+	}
+	id, err := s.Sessions.Create(user)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "session error"})
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookie,
+		Value:    id,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteStrictMode,
+	})
+	s.Audit.Log(audit.Event{Actor: user.Username, Role: string(user.Role), Action: "login", Source: r.RemoteAddr, Result: "ok"})
+	writeJSON(w, http.StatusOK, map[string]string{"username": user.Username, "role": string(user.Role)})
+}
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		s.Sessions.Delete(c.Value)
+	}
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true})
+	if sess, ok := sessionFrom(r.Context()); ok {
+		s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "logout", Source: r.RemoteAddr, Result: "ok"})
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	writeJSON(w, http.StatusOK, map[string]string{"username": sess.Username, "role": string(sess.Role)})
+}
+
 func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256<<20)) // 256 MiB cap
@@ -60,8 +134,6 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]int{"ingested": len(ds.Accounts)})
 }
 
-// handleAccounts returns the accounts redacted (no cleartext passwords).
-// Cleartext access will be a separate authorized, audit-logged endpoint.
 func (s *Server) handleAccounts(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.Store.Accounts(false))
 }
@@ -70,8 +142,45 @@ func (s *Server) handleSummary(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.Store.Summary())
 }
 
-// requireIngestToken enforces a bearer token on the ingestion endpoint and
-// fails closed: if no token is configured, all ingestion is rejected.
+// handleReveal returns a single account's cleartext password. Requires the lead
+// role; every attempt (allowed or denied) is audit-logged. The password is
+// never written to the audit log.
+func (s *Server) handleReveal(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	username := r.PathValue("username")
+	if sess.Role != auth.RoleLead {
+		s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "reveal_secret", Target: username, Source: r.RemoteAddr, Result: "denied"})
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	acct, ok := s.Store.Find(username)
+	if !ok {
+		s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "reveal_secret", Target: username, Source: r.RemoteAddr, Result: "not_found"})
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "account not found"})
+		return
+	}
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "reveal_secret", Target: username, Source: r.RemoteAddr, Result: "ok"})
+	writeJSON(w, http.StatusOK, map[string]string{"username": acct.Username, "password": acct.Password})
+}
+
+// requireAuth ensures a valid session and puts it in the request context.
+func (s *Server) requireAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := r.Cookie(sessionCookie)
+		if err != nil {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+			return
+		}
+		sess, ok := s.Sessions.Get(c.Value)
+		if !ok {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid or expired session"})
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), sessionKey, sess)))
+	})
+}
+
+// requireIngestToken enforces a bearer token on ingestion; fails closed.
 func (s *Server) requireIngestToken(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.IngestToken == "" {
