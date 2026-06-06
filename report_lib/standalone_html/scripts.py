@@ -44,6 +44,22 @@ document.addEventListener('DOMContentLoaded', () => {
 SEARCH_JS = """
 <script>
 // ========================================
+// HTML escaping (prevent XSS from account data injected into the DOM).
+// Account usernames, domains and cracked passwords are attacker-influenceable
+// (AD object names; arbitrary cracked passwords), so anything interpolated into
+// innerHTML/attributes must be escaped.
+// ========================================
+function escapeHtml(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+// ========================================
 // Global State
 // ========================================
 let allAccounts = [];
@@ -562,28 +578,30 @@ function renderResults() {
 
         const username = account.Username || account.username || 'N/A';
 
+        // Account data (username/domain/password) is escaped; badges and daPath
+        // are trusted HTML generated above.
         row.innerHTML = `
             <td>
                 <a href="#" class="user-detail-link text-decoration-none"
-                   data-username="${username}"
+                   data-username="${escapeHtml(username)}"
                    data-coreui-toggle="offcanvas"
                    data-coreui-target="#userDetailOffcanvas">
-                    <code>${username}</code>
+                    <code>${escapeHtml(username)}</code>
                 </a>
             </td>
-            <td>${account.Domain || account['Domain Name'] || 'N/A'}</td>
-            <td>${account.Type === 'Cracked' ? account.Password : '<span class="text-muted">Hash: ' + account.Password + '</span>'}</td>
+            <td>${escapeHtml(account.Domain || account['Domain Name'] || 'N/A')}</td>
+            <td>${account.Type === 'Cracked' ? escapeHtml(account.Password) : '<span class="text-muted">Hash: ' + escapeHtml(account.Password) + '</span>'}</td>
             <td>${typeBadge}</td>
             <td>${riskBadge}</td>
             <td>${enabledBadge}</td>
-            <td>${account['Last Logon Timestamp'] || 'Unknown'}</td>
-            <td>${account['Password Set to Expire'] || 'Unknown'}</td>
-            <td>${account['Controlled Object Count'] || 0}</td>
+            <td>${escapeHtml(account['Last Logon Timestamp'] || 'Unknown')}</td>
+            <td>${escapeHtml(account['Password Set to Expire'] || 'Unknown')}</td>
+            <td>${escapeHtml(account['Controlled Object Count'] || 0)}</td>
             <td>${daPath}</td>
-            <td>${account['Shared With'] || 0}</td>
-            <td>${account['Last Password Set'] || 'Unknown'}</td>
-            <td>${account['Days Out of Compliance'] || 0}</td>
-            <td><small class="text-muted">${account['Risk Vector'] || 'N/A'}</small></td>
+            <td>${escapeHtml(account['Shared With'] || 0)}</td>
+            <td>${escapeHtml(account['Last Password Set'] || 'Unknown')}</td>
+            <td>${escapeHtml(account['Days Out of Compliance'] || 0)}</td>
+            <td><small class="text-muted">${escapeHtml(account['Risk Vector'] || 'N/A')}</small></td>
         `;
         tbody.appendChild(row);
     });
@@ -833,9 +851,10 @@ function showError(message) {
 
 # Redacted search JavaScript (hides actual passwords)
 SEARCH_REDACTED_JS = SEARCH_JS.replace(
-    "<td>${account.Type === 'Cracked' ? account.Password : '<span class=\"text-muted\">Hash: ' + account.Password + '</span>'}</td>",
-    "<td>${account.Type === 'Cracked' ? '********' : '<span class=\"text-muted\">Hash: ' + account.Password + '</span>'}</td>"
+    "<td>${account.Type === 'Cracked' ? escapeHtml(account.Password) : '<span class=\"text-muted\">Hash: ' + escapeHtml(account.Password) + '</span>'}</td>",
+    "<td>${account.Type === 'Cracked' ? '********' : '<span class=\"text-muted\">Hash: ' + escapeHtml(account.Password) + '</span>'}</td>"
 )
+assert SEARCH_REDACTED_JS != SEARCH_JS, "Redacted search replacement failed to match -- passwords would be exposed"
 
 # JavaScript for tab switching (Bootstrap/CoreUI)
 TAB_SWITCH_JS = """
@@ -945,6 +964,17 @@ function parseRiskVector(vector) {
 # Placeholder {USER_DATA_JSON} will be replaced with actual JSON data
 USER_DETAIL_JS = """
 <script>
+// Escape account data before injecting into the offcanvas DOM (see SEARCH_JS).
+function escapeHtml(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 // User detail data (populated during report generation)
 let userDetailsData = {USER_DATA_JSON};
 
@@ -1072,7 +1102,7 @@ function populateRiskBreakdown(userData) {
             <div class="alert alert-danger mb-3">
                 <i class="bi bi-exclamation-triangle me-2"></i>
                 <strong>Domain Admin Pathway Detected</strong><br>
-                Domains: ${userData.da_domains}
+                Domains: ${escapeHtml(userData.da_domains)}
             </div>
         `;
     }
@@ -1132,7 +1162,7 @@ function createScoreItem(label, value, description) {
                     <span>${label}</span>
                     <span class="text-muted">N/A</span>
                 </div>
-                <small class="text-muted"><i class="bi bi-info-circle me-1"></i>${description}</small>
+                <small class="text-muted"><i class="bi bi-info-circle me-1"></i>${escapeHtml(description)}</small>
             </div>
         `;
     }
@@ -1156,7 +1186,7 @@ function createScoreItem(label, value, description) {
             <div class="progress mb-2" style="height: 8px;">
                 <div class="progress-bar ${colorClass}" style="width: ${percentage}%"></div>
             </div>
-            <small class="text-muted"><i class="bi bi-info-circle me-1"></i>${description}</small>
+            <small class="text-muted"><i class="bi bi-info-circle me-1"></i>${escapeHtml(description)}</small>
         </div>
     `;
 }
@@ -1174,7 +1204,7 @@ function populateAccountProperties(userData) {
         </dd>
 
         <dt class="col-sm-5">Domain</dt>
-        <dd class="col-sm-7">${userData.domain}</dd>
+        <dd class="col-sm-7">${escapeHtml(userData.domain)}</dd>
 
         <dt class="col-sm-5">Last Logon</dt>
         <dd class="col-sm-7">${userData.last_logon || 'Unknown'}</dd>
@@ -1213,7 +1243,7 @@ function populateAccountProperties(userData) {
         <dd class="col-sm-7">${userData.password_length} characters</dd>
 
         <dt class="col-sm-5">Complexity</dt>
-        <dd class="col-sm-7"><code>${userData.complexity_label}</code></dd>
+        <dd class="col-sm-7"><code>${escapeHtml(userData.complexity_label)}</code></dd>
 
         <dt class="col-sm-5">HIBP Breached</dt>
         <dd class="col-sm-7">
@@ -1224,7 +1254,7 @@ function populateAccountProperties(userData) {
         </dd>
 
         <dt class="col-sm-5">Risk Vector</dt>
-        <dd class="col-sm-7"><small><code>${userData.risk_vector}</code></small></dd>
+        <dd class="col-sm-7"><small><code>${escapeHtml(userData.risk_vector)}</code></small></dd>
     `;
 
     container.innerHTML = html;
@@ -1244,7 +1274,7 @@ function populatePrivileges(userData) {
                     <i class="bi bi-exclamation-triangle me-2"></i>Domain Admin Pathway
                 </h6>
                 <p class="mb-0">This account has a pathway to Domain Admin in the following domains:</p>
-                <p class="mb-0 mt-2"><strong>${userData.da_domains}</strong></p>
+                <p class="mb-0 mt-2"><strong>${escapeHtml(userData.da_domains)}</strong></p>
             </div>
         `;
     }
@@ -1278,7 +1308,7 @@ function populatePrivileges(userData) {
                 </div>
                 <div class="card-body">
                     <p class="mb-0">This password is shared with <strong>${userData.share_count}</strong> other accounts.</p>
-                    ${userData.shared_with !== 'N/A' ? '<p class="mb-0 mt-2 small text-muted">Details: ' + userData.shared_with + '</p>' : ''}
+                    ${userData.shared_with !== 'N/A' ? '<p class="mb-0 mt-2 small text-muted">Details: ' + escapeHtml(userData.shared_with) + '</p>' : ''}
                 </div>
             </div>
         `;
