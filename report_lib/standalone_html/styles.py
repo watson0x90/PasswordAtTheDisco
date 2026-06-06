@@ -596,6 +596,46 @@ table.table-sortable thead th.sorted-desc::after {
 #userDetailOffcanvas .card:last-child {
     margin-bottom: 0;
 }
+
+/* ============================================
+   Accessibility: WCAG AA colour-contrast fixes
+   ============================================ */
+
+/* Sidebar section titles were #75787a on #212529 (3.47:1). */
+.sidebar .nav-title {
+    color: #adb5bd !important;   /* ~7:1 on the sidebar background */
+}
+
+/* Light "bg-light" cards inherited near-white text in the dark theme, giving
+   ~1:1 contrast (effectively invisible). Force readable dark text on them. */
+[data-coreui-theme="dark"] .bg-light,
+[data-coreui-theme="dark"] .bg-light .mt-3,
+[data-coreui-theme="dark"] .bg-light h1,
+[data-coreui-theme="dark"] .bg-light h2,
+[data-coreui-theme="dark"] .bg-light h3,
+[data-coreui-theme="dark"] .bg-light h4,
+[data-coreui-theme="dark"] .bg-light h5,
+[data-coreui-theme="dark"] .bg-light h6,
+[data-coreui-theme="dark"] .bg-light p {
+    color: #1a1d23 !important;
+}
+[data-coreui-theme="dark"] .bg-light .text-muted {
+    color: #495057 !important;   /* ~8:1 on #f3f4f7 */
+}
+
+/* "text-dark" headers on bg-info/bg-warning rendered light (2.84 / 1.89:1).
+   Force dark text against the light header background. */
+.card-header.bg-info.text-dark, .card-header.bg-warning.text-dark,
+.card-header.bg-info.text-dark :is(h1, h2, h3, h4, h5, h6),
+.card-header.bg-warning.text-dark :is(h1, h2, h3, h4, h5, h6) {
+    color: #0a2540 !important;   /* dark navy on the light header */
+}
+
+/* White text on the lighter danger/success badge backgrounds was 3.66/3.85:1.
+   Darken the badge backgrounds to clear 4.5:1 (does not affect the custom
+   badge-risk-* classes used for risk levels). */
+.badge.bg-danger { background-color: #b02a37 !important; }
+.badge.bg-success { background-color: #15703a !important; }
 </style>
 """
 

@@ -3,6 +3,7 @@
    `content` block, where {{ value }} interpolation is autoescaped. #}
 {{ head | safe }}
 <body>
+    <a class="visually-hidden-focusable position-absolute top-0 start-0 m-2 btn btn-primary" href="#main-content">Skip to main content</a>
     <div class="wrapper">
         {{ navbar | safe }}
 
@@ -10,11 +11,11 @@
             {{ sidebar | safe }}
 
             <!-- Main Content Area -->
-            <div class="main-content">
+            <main class="main-content" id="main-content">
                 <div class="container-fluid p-4">
 {% block content %}{% endblock %}
                 </div>
-            </div>
+            </main>
         </div>
     </div>
 

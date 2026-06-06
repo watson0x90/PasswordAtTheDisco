@@ -85,7 +85,9 @@ class TestChromePartials:
 
     def test_sidebar_active_state_and_fallback(self):
         from report_lib.standalone_html.components import create_sidebar
-        assert 'nav-link active" href="about.html"' in create_sidebar(current_page='about')
+        sb = create_sidebar(current_page='about')
+        assert 'class="nav-link active"' in sb
+        assert 'aria-current="page" href="about.html"' in sb   # active item marked for AT
         assert 'No domains loaded' in create_sidebar(domains=[])
 
     def test_navbar_conditionals(self):
@@ -99,3 +101,13 @@ class TestChromePartials:
         from report_lib.standalone_html.components import create_user_detail_offcanvas
         oc = create_user_detail_offcanvas()
         assert 'id="userDetailOffcanvas"' in oc and 'id="riskBreakdownContent"' in oc
+        assert 'role="tab"' in oc and 'aria-controls="riskBreakdownTab"' in oc
+        assert 'role="tabpanel" aria-labelledby="riskBreakdownTabBtn"' in oc
+
+
+    def test_base_layout_has_landmarks_and_skip_link(self):
+        from report_lib.templating import render
+        html = render("base.html.j2", head="<head></head>", navbar="", sidebar="",
+                      sidebar_nav_js="")
+        assert 'href="#main-content"' in html and "Skip to main content" in html
+        assert '<main class="main-content" id="main-content">' in html

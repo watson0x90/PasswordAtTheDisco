@@ -26,7 +26,7 @@
 {% macro account_table(columns, rows) -%}
 <div class="table-responsive">
     <table class="table table-hover table-striped table-bordered">
-        <thead class="table-dark"><tr>{% for c in columns %}<th>{{ c.header }}</th>{% endfor %}</tr></thead>
+        <thead class="table-dark"><tr>{% for c in columns %}<th scope="col">{{ c.header }}</th>{% endfor %}</tr></thead>
         <tbody>
 {% for row in rows %}            <tr>{% for c in columns %}{{ _cell(row.get(c.field, 'N/A'), c.kind) }}{% endfor %}</tr>
 {% endfor %}        </tbody>
@@ -38,7 +38,7 @@
 {% macro top_shared_passwords_table(rows) -%}
 <div class="table-responsive">
     <table class="table table-hover table-striped table-bordered">
-        <thead class="table-dark"><tr><th>Password</th><th>Total Accounts</th><th>Instances per Domain</th></tr></thead>
+        <thead class="table-dark"><tr><th scope="col">Password</th><th scope="col">Total Accounts</th><th scope="col">Instances per Domain</th></tr></thead>
         <tbody>
 {% for r in rows %}            <tr>
                 <td><code>{{ r.password }}</code></td>

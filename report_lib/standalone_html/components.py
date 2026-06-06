@@ -970,6 +970,7 @@ def create_page_wrapper(content, navbar, sidebar):
 
     return f'''
 <body>
+    <a class="visually-hidden-focusable position-absolute top-0 start-0 m-2 btn btn-primary" href="#main-content">Skip to main content</a>
     <div class="wrapper">
         {navbar}
 
@@ -977,11 +978,11 @@ def create_page_wrapper(content, navbar, sidebar):
             {sidebar}
 
             <!-- Main Content Area -->
-            <div class="main-content">
+            <main class="main-content" id="main-content">
                 <div class="container-fluid p-4">
                     {content}
                 </div>
-            </div>
+            </main>
         </div>
     </div>
 

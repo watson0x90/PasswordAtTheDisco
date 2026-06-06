@@ -60,21 +60,27 @@
             <div class="card-header bg-transparent border-bottom">
                 <ul class="nav nav-tabs card-header-tabs" role="tablist">
                     <li class="nav-item">
-                        <button class="nav-link active" data-coreui-toggle="tab"
+                        <button class="nav-link active" id="riskBreakdownTabBtn" role="tab"
+                                aria-selected="true" aria-controls="riskBreakdownTab"
+                                data-coreui-toggle="tab"
                                 data-coreui-target="#riskBreakdownTab" type="button">
-                            <i class="bi bi-exclamation-triangle me-1"></i>Risk Breakdown
+                            <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>Risk Breakdown
                         </button>
                     </li>
                     <li class="nav-item">
-                        <button class="nav-link" data-coreui-toggle="tab"
+                        <button class="nav-link" id="accountPropsTabBtn" role="tab"
+                                aria-selected="false" aria-controls="accountPropsTab"
+                                data-coreui-toggle="tab"
                                 data-coreui-target="#accountPropsTab" type="button">
-                            <i class="bi bi-person-badge me-1"></i>Account Info
+                            <i class="bi bi-person-badge me-1" aria-hidden="true"></i>Account Info
                         </button>
                     </li>
                     <li class="nav-item">
-                        <button class="nav-link" data-coreui-toggle="tab"
+                        <button class="nav-link" id="privilegesTabBtn" role="tab"
+                                aria-selected="false" aria-controls="privilegesTab"
+                                data-coreui-toggle="tab"
                                 data-coreui-target="#privilegesTab" type="button">
-                            <i class="bi bi-shield-lock me-1"></i>Privileges
+                            <i class="bi bi-shield-lock me-1" aria-hidden="true"></i>Privileges
                         </button>
                     </li>
                 </ul>
@@ -82,7 +88,7 @@
             <div class="card-body">
                 <div class="tab-content">
                     <!-- Risk Breakdown Tab -->
-                    <div class="tab-pane fade show active" id="riskBreakdownTab">
+                    <div class="tab-pane fade show active" id="riskBreakdownTab" role="tabpanel" aria-labelledby="riskBreakdownTabBtn">
                         <h6 class="mb-3">Why This User Has This Risk Score</h6>
                         <div id="riskBreakdownContent">
                             <!-- Populated by JavaScript -->
@@ -90,14 +96,14 @@
                     </div>
 
                     <!-- Account Properties Tab -->
-                    <div class="tab-pane fade" id="accountPropsTab">
+                    <div class="tab-pane fade" id="accountPropsTab" role="tabpanel" aria-labelledby="accountPropsTabBtn">
                         <dl class="row mb-0" id="accountPropsContent">
                             <!-- Populated by JavaScript -->
                         </dl>
                     </div>
 
                     <!-- Privileges Tab -->
-                    <div class="tab-pane fade" id="privilegesTab">
+                    <div class="tab-pane fade" id="privilegesTab" role="tabpanel" aria-labelledby="privilegesTabBtn">
                         <div id="privilegesContent">
                             <!-- Populated by JavaScript -->
                         </div>

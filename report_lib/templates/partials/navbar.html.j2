@@ -15,8 +15,8 @@
               onsubmit="event.preventDefault(); const q = document.getElementById('navbarSearch').value.trim(); if(q) window.location.href='search.html?q=' + encodeURIComponent(q); else window.location.href='search.html';">
             <input class="form-control form-control-sm me-2" type="search"
                    placeholder="Search accounts..." aria-label="Search" id="navbarSearch">
-            <button class="btn btn-sm btn-outline-primary" type="submit">
-                <i class="bi bi-search"></i>
+            <button class="btn btn-sm btn-outline-primary" type="submit" aria-label="Search">
+                <i class="bi bi-search" aria-hidden="true"></i>
             </button>
         </form>
         {% endif %}
