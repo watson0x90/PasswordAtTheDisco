@@ -546,20 +546,11 @@ function renderResults() {
             '<span class="badge bg-warning text-dark">DA Path</span>' :
             '';
 
-        // Enabled status
-        const enabledBadge = account['Enabled'] === 'True' || account['Enabled'] === true ?
-            '<span class="badge bg-primary">Enabled</span>' :
-            '<span class="badge bg-secondary">Disabled</span>';
-
-        // Type badge
-        const typeBadge = account.Type === 'Cracked' ?
-            '<span class="badge bg-success">Cracked</span>' :
-            '<span class="badge bg-warning">Uncracked</span>';
-
         const username = account.Username || account.username || 'N/A';
 
-        // Account data (username/domain/password) is escaped; badges and daPath
-        // are trusted HTML generated above.
+        // Triage columns only -- the full per-account detail (dates, controllables,
+        // sharing, compliance, risk vector, etc.) lives in the click-through
+        // offcanvas. Account data is escaped; badges/daPath are trusted HTML.
         row.innerHTML = `
             <td>
                 <a href="#" class="user-detail-link text-decoration-none"
@@ -571,17 +562,9 @@ function renderResults() {
             </td>
             <td>${escapeHtml(account.Domain || account['Domain Name'] || 'N/A')}</td>
             <td class="font-monospace">${account.Type === 'Cracked' ? escapeHtml(account.Password) : '<span class="text-muted">Hash: ' + escapeHtml(account.Password) + '</span>'}</td>
-            <td>${typeBadge}</td>
             <td>${riskBadge}</td>
-            <td>${enabledBadge}</td>
-            <td>${escapeHtml(account['Last Logon Timestamp'] || 'Unknown')}</td>
-            <td>${escapeHtml(account['Password Set to Expire'] || 'Unknown')}</td>
-            <td>${escapeHtml(account['Controlled Object Count'] || 0)}</td>
-            <td>${daPath}</td>
-            <td>${escapeHtml(account['Shared With'] || 0)}</td>
-            <td>${escapeHtml(account['Last Password Set'] || 'Unknown')}</td>
-            <td>${escapeHtml(account['Days Out of Compliance'] || 0)}</td>
-            <td><small class="text-muted">${escapeHtml(account['Risk Vector'] || 'N/A')}</small></td>
+            <td>${hibpBadge}</td>
+            <td>${daPath || '<span class="text-muted">&mdash;</span>'}</td>
         `;
         tbody.appendChild(row);
     });

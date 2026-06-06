@@ -82,17 +82,9 @@ def generate_search_html(json_file, logger=None):
                                         <th scope="col" data-column="Username">Username</th>
                                         <th scope="col" data-column="Domain">Domain</th>
                                         <th scope="col" data-column="Password">Password</th>
-                                        <th scope="col" data-column="Type">Type</th>
                                         <th scope="col" data-column="Risk Level">Risk Level</th>
-                                        <th scope="col" data-column="Enabled">Enabled</th>
-                                        <th scope="col" data-column="Last Logon Timestamp">Last Logon</th>
-                                        <th scope="col" data-column="Password Set to Expire">Expires</th>
-                                        <th scope="col" data-column="Controlled Object Count">Controllables</th>
+                                        <th scope="col" data-column="HIBP Breach Count">HIBP</th>
                                         <th scope="col" data-column="DA Domains">DA Pathway</th>
-                                        <th scope="col" data-column="Shared With">Shared With</th>
-                                        <th scope="col" data-column="Last Password Set">Last Set</th>
-                                        <th scope="col" data-column="Days Out of Compliance">Non-Compliant</th>
-                                        <th scope="col" data-column="Risk Vector">Risk Vector</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -215,18 +207,10 @@ def generate_search_redacted_html(json_file_with_placeholders, logger=None):
                                     <tr>
                                         <th scope="col" data-column="Username">Username</th>
                                         <th scope="col" data-column="Domain">Domain</th>
-                                        <th scope="col" data-column="Password Placeholder">Password Placeholder</th>
-                                        <th scope="col" data-column="Type">Type</th>
+                                        <th scope="col" data-column="Password Placeholder">Password</th>
                                         <th scope="col" data-column="Risk Level">Risk Level</th>
-                                        <th scope="col" data-column="Enabled">Enabled</th>
-                                        <th scope="col" data-column="Last Logon Timestamp">Last Logon</th>
-                                        <th scope="col" data-column="Password Set to Expire">Expires</th>
-                                        <th scope="col" data-column="Controlled Object Count">Controllables</th>
+                                        <th scope="col" data-column="HIBP Breach Count">HIBP</th>
                                         <th scope="col" data-column="DA Domains">DA Pathway</th>
-                                        <th scope="col" data-column="Shared With">Shared With</th>
-                                        <th scope="col" data-column="Last Password Set">Last Set</th>
-                                        <th scope="col" data-column="Days Out of Compliance">Non-Compliant</th>
-                                        <th scope="col" data-column="Risk Vector">Risk Vector</th>
                                     </tr>
                                 </thead>
                                 <tbody>
