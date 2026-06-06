@@ -78,7 +78,10 @@ plain HTTP with a warning if unset), `PATD_STATIC_DIR` (built SPA, default
       `/api/version`, SPA static serving with path-traversal protection, graceful
       shutdown. Builds/vets clean, zero deps.
 - [x] React SPA skeleton — pinned, build-time-only toolchain.
-- [ ] Engine → API data ingestion (structured findings).
+- [x] In-memory store (cleartext only in RAM, never on disk) + token-gated
+      `POST /api/ingest` (fails closed) + **redacted-by-default** `GET /api/accounts`
+      and `GET /api/summary`. Unit-tested + verified end-to-end.
+- [ ] Python engine emitter (POST the structured dataset to `/api/ingest`).
 - [ ] AuthN/AuthZ + session handling.
-- [ ] Redacted-by-default views; role-gated, audit-logged cleartext.
-- [ ] CI security gates (`govulncheck`, `npm audit`).
+- [ ] Role-gated, **audit-logged** cleartext access (separate endpoint).
+- [ ] CI security gates (`govulncheck`, `npm audit`) — deferred.
