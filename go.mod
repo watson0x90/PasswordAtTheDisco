@@ -1,4 +1,4 @@
-module github.com/watson0x90/PasswordAtTheDisco/v2/api
+module github.com/watson0x90/PasswordAtTheDisco
 
 go 1.26
 

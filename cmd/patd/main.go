@@ -24,10 +24,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/watson0x90/PasswordAtTheDisco/v2/api/internal/audit"
-	"github.com/watson0x90/PasswordAtTheDisco/v2/api/internal/auth"
-	"github.com/watson0x90/PasswordAtTheDisco/v2/api/internal/httpapi"
-	"github.com/watson0x90/PasswordAtTheDisco/v2/api/internal/store"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/audit"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/auth"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/httpapi"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/store"
 )
 
 func main() {
@@ -62,7 +62,7 @@ func main() {
 
 	api := &httpapi.Server{
 		Store:       store.New(),
-		StaticDir:   env("PATD_STATIC_DIR", "../web/dist"),
+		StaticDir:   env("PATD_STATIC_DIR", "web/dist"),
 		IngestToken: os.Getenv("PATD_INGEST_TOKEN"),
 		Users:       users,
 		Sessions:    auth.NewSessionStore(8 * time.Hour),

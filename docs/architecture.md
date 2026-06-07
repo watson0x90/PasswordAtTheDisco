@@ -1,29 +1,41 @@
-# Password!AtTheDisco — v2 secure delivery stack
+# Password!AtTheDisco — architecture (Go + React rewrite)
 
-The Python tool (repo root) is the **analysis engine**: it parses SecretsDump
-output, correlates against HIBP, enriches via BloodHound, and computes CVSS-style
-risk. Its v1 output is a self-contained, offline HTML report bundle — which
-necessarily writes **cleartext cracked passwords to disk**.
+This is a **full rewrite** of Password!AtTheDisco as a Go API + React frontend.
+The original Python tool (now under `legacy-python/`) is kept only as a porting
+reference and is removed subsystem-by-subsystem as each Go replacement reaches
+parity. **End state: no Python.**
 
-v2 replaces *delivery* (not the engine) with an access-controlled stack so those
-credentials are never sitting in world-readable static files:
+The driver is delivery security: the Python tool's output is a self-contained
+offline HTML bundle that necessarily writes **cleartext cracked passwords to
+disk**. The new stack never does — cleartext lives only in process memory and is
+revealed only to authorized operators, one account at a time, with an audit log.
 
 ```
-  Python engine  ──structured data──▶  Go API (TLS, authn/authz, audit)  ──▶  React SPA
-   (keep as-is)                         single binary, stdlib-only              (static, served by Go)
+  ingest (NTDS/dump) ─▶ Go engine (HIBP, BloodHound, risk) ─▶ Go API (TLS, authn/authz, audit) ─▶ React SPA
+   parsing in Go        in-process, typed                      single binary: static assets + JSON
+```
+
+## Layout
+
+```
+cmd/patd/            server binary (+ `hashpw` subcommand)
+internal/
+  httpapi/ auth/ audit/ store/ model/    built
+  secretsdump/ hibp/ bloodhound/ risk/    to port from legacy-python/
+web/                 React + Vite SPA (built to web/dist/, served by the binary)
+legacy-python/       v1 reference, deleted as parity is reached
 ```
 
 ## Architecture
 
 - **Runtime = one Go binary.** Serves the built React SPA as static assets plus
-  a JSON API over TLS. **Standard library only** — zero third-party runtime
-  dependencies, so the runtime supply-chain surface is just the Go toolchain.
+  a JSON API over TLS. Only one external Go module (`golang.org/x/crypto`),
+  keeping the runtime supply-chain surface tiny.
 - **Node/npm is build-time only.** It compiles the React SPA to static files
   (`web/dist/`). Nothing from npm ships in the runtime; the Vite dev server is
   never used in production.
-- **The engine stays Python.** The hard, well-tested logic (parsing, HIBP,
-  BloodHound, scoring) is reused; it will emit structured data into the API's
-  store rather than rendering cleartext HTML.
+- **Engine logic moves into Go packages** (`internal/secretsdump`, `hibp`,
+  `bloodhound`, `risk`) — typed, in-process, no cleartext rendered to disk.
 
 ## Security model
 
@@ -73,24 +85,25 @@ Roles: `analyst` (redacted only) · `lead` (may reveal). Every reveal attempt
 ## Build & run
 
 ```bash
-# Backend (Go installed):
-cd v2/api && go build ./... && go vet ./... && go test ./...
+# Backend (from repo root):
+go build ./... && go vet ./... && go test ./...
+go build -o patd ./cmd/patd
 
 # Create operators (argon2id hashes; copy users.example.json -> users.json):
-go run . hashpw        # prompts on stderr, prints the hash on stdout
+go run ./cmd/patd hashpw       # prompts on stderr, prints the hash on stdout
 
 PATD_TLS_CERT=cert.pem PATD_TLS_KEY=key.pem PATD_INGEST_TOKEN=$(openssl rand -hex 32) \
-  PATD_USERS_FILE=users.json PATD_AUDIT_LOG=audit.log PATD_STATIC_DIR=../web/dist ./api
+  PATD_USERS_FILE=users.json PATD_AUDIT_LOG=audit.log PATD_STATIC_DIR=web/dist ./patd
 
 # Frontend (in an isolated build env, no secrets present):
-cd v2/web && npm ci --ignore-scripts && npm audit --audit-level=moderate && npm run build
+cd web && npm ci --ignore-scripts && npm audit --audit-level=moderate && npm run build
 ```
 
 Env: `PATD_ADDR` (default `127.0.0.1:8443`), `PATD_TLS_CERT`/`PATD_TLS_KEY` (TLS;
 plain HTTP with a warning if unset), `PATD_INGEST_TOKEN` (engine bearer token;
 ingestion disabled if unset), `PATD_USERS_FILE` (default `users.json`),
 `PATD_AUDIT_LOG` (default stdout; file is created `0600`), `PATD_STATIC_DIR`
-(built SPA, default `../web/dist`).
+(built SPA, default `web/dist`).
 
 ## Status
 
@@ -106,8 +119,12 @@ ingestion disabled if unset), `PATD_USERS_FILE` (default `users.json`),
 - [x] Role-gated, **audit-logged** cleartext reveal (`/api/accounts/{u}/secret`).
       Unit-tested + verified end-to-end (analyst denied, lead allowed, no cleartext
       in the audit log).
-- [ ] Python engine emitter (POST the structured dataset to `/api/ingest`).
-- [ ] Frontend: login + dashboard + redacted table + reveal UI.
-- [ ] Session hardening: idle/absolute expiry refresh, login rate-limiting, CSRF
-      token for state-changing requests (SameSite=Strict is the current defense).
-- [ ] CI security gates (`govulncheck`, `npm audit`) — deferred.
+- [ ] **Session hardening** (next): login rate-limiting, CSRF token for state-
+      changing requests, idle/absolute session-expiry refresh.
+- [ ] **Engine ports** from `legacy-python/`: `secretsdump` (NTDS/dump parsing)
+      → `hibp` (NTLM prefix-index lookup) → `risk` (CVSS-style scoring) →
+      `bloodhound` (BHE client + DA pathways).
+- [ ] **React UI**: login → dashboard → redacted table/search → reveal →
+      actionable / per-domain views.
+- [ ] **Persistence + packaging**: encrypted-at-rest store, SPA embedded in the
+      binary, TLS, CI security gates (`govulncheck`, `npm audit`) — CI deferred.

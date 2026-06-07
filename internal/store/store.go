@@ -6,7 +6,7 @@ package store
 import (
 	"sync"
 
-	"github.com/watson0x90/PasswordAtTheDisco/v2/api/internal/model"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 )
 
 // Store is a thread-safe, in-memory holder for the current audit dataset.

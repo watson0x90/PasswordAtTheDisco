@@ -3,7 +3,7 @@ package store
 import (
 	"testing"
 
-	"github.com/watson0x90/PasswordAtTheDisco/v2/api/internal/model"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 )
 
 func sample() model.Dataset {

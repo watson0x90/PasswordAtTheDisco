@@ -1,7 +1,0 @@
-/api
-/api.exe
-*.exe
-
-# operator credentials (argon2 hashes) and audit output -- never commit
-users.json
-*.log
