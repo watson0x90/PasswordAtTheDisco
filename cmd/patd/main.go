@@ -31,12 +31,18 @@ import (
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "hashpw" {
-		hashpw()
-		return
+	log.SetFlags(log.LstdFlags | log.LUTC)
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "hashpw":
+			hashpw()
+			return
+		case "audit":
+			runAudit(os.Args[2:])
+			return
+		}
 	}
 
-	log.SetFlags(log.LstdFlags | log.LUTC)
 	addr := env("PATD_ADDR", "127.0.0.1:8443")
 	cert, key := os.Getenv("PATD_TLS_CERT"), os.Getenv("PATD_TLS_KEY")
 

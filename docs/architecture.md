@@ -132,9 +132,10 @@ ingestion disabled if unset), `PATD_USERS_FILE` (default `users.json`),
       simplified uncracked scoring). HIBP/BHE injected behind interfaces; a
       `BloodhoundEnricher` adapter wraps the real client. (Deferred refinements:
       post-hoc shared-password risk boost, domain-risk factor, cross-domain reuse.)
-- [ ] **Wiring / CLI** (next): a `patd audit` command that loads config + lists +
-      HIBP + BHE, runs the engine over domain dumps, and POSTs to `/api/ingest`.
-- [ ] **React UI**: login → dashboard → redacted table/search → reveal →
+- [x] **Wiring / CLI** (`patd audit`): loads lists + HIBP + (optional) BHE, runs
+      the engine over domain dumps, and POSTs the dataset to `/api/ingest`.
+      Verified end-to-end: dumps → real HIBP correlation → scored, redacted serving.
+- [ ] **React UI** (next): login → dashboard → redacted table/search → reveal →
       actionable / per-domain views.
 - [ ] **Persistence + packaging**: encrypted-at-rest store, SPA embedded in the
       binary, TLS, CI security gates (`govulncheck`, `npm audit`) — CI deferred.
