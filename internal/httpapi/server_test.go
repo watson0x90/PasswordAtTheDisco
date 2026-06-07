@@ -30,9 +30,41 @@ func newServerAudit(token string, auditW io.Writer) *Server {
 			"lead":    {Username: "lead", PasswordHash: leadHash, Role: auth.RoleLead},
 			"analyst": {Username: "analyst", PasswordHash: analystHash, Role: auth.RoleAnalyst},
 		},
-		Sessions: auth.NewSessionStore(time.Hour),
-		Audit:    audit.New(auditW),
+		Sessions:     auth.NewSessionStore(time.Hour, time.Hour),
+		Audit:        audit.New(auditW),
+		LoginLimiter: auth.NewLimiter(50, time.Minute),
 	}
+}
+
+func loginCSRF(t *testing.T, srv *Server, user, pass string) (*http.Cookie, string) {
+	t.Helper()
+	rec := loginAttempt(srv, user, pass)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login failed: %d %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		CSRFToken string `json:"csrf_token"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("bad login body: %v", err)
+	}
+	var cookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == sessionCookie {
+			cookie = c
+		}
+	}
+	if cookie == nil || body.CSRFToken == "" {
+		t.Fatalf("missing session cookie or csrf token (csrf=%q)", body.CSRFToken)
+	}
+	return cookie, body.CSRFToken
+}
+
+func loginAttempt(srv *Server, user, pass string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest("POST", "/api/login", strings.NewReader(fmt.Sprintf(`{"username":%q,"password":%q}`, user, pass)))
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	return rec
 }
 
 func newServer(token string) *Server { return newServerAudit(token, io.Discard) }
@@ -147,5 +179,49 @@ func TestSummaryRequiresAuth(t *testing.T) {
 	var sum model.Summary
 	if err := json.Unmarshal(rec.Body.Bytes(), &sum); err != nil || sum.TotalAccounts != 1 || sum.DAPathways != 1 {
 		t.Fatalf("unexpected summary: %v %+v", err, sum)
+	}
+}
+
+func TestLogoutRequiresCSRF(t *testing.T) {
+	srv := newServer("secret")
+	cookie, csrf := loginCSRF(t, srv, "analyst", "analystpw")
+
+	// Without the CSRF header -> 403.
+	req := httptest.NewRequest("POST", "/api/logout", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("logout without CSRF should be 403, got %d", rec.Code)
+	}
+
+	// With the CSRF header -> 200, and the session is then invalid.
+	req = httptest.NewRequest("POST", "/api/logout", nil)
+	req.AddCookie(cookie)
+	req.Header.Set("X-CSRF-Token", csrf)
+	rec = httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("logout with CSRF should be 200, got %d", rec.Code)
+	}
+	if rec := do(srv, "GET", "/api/accounts", cookie); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("session should be invalid after logout, got %d", rec.Code)
+	}
+}
+
+func TestLoginRateLimited(t *testing.T) {
+	srv := newServer("secret")
+	srv.LoginLimiter = auth.NewLimiter(5, time.Minute)
+	for i := 0; i < 5; i++ {
+		if rec := loginAttempt(srv, "analyst", "wrong"); rec.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d: expected 401, got %d", i, rec.Code)
+		}
+	}
+	if rec := loginAttempt(srv, "analyst", "wrong"); rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 after threshold, got %d", rec.Code)
+	}
+	// Correct creds are still blocked while locked out.
+	if rec := loginAttempt(srv, "analyst", "analystpw"); rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 even with correct creds while locked, got %d", rec.Code)
 	}
 }

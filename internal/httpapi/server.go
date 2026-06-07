@@ -6,9 +6,11 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,12 +24,13 @@ const sessionCookie = "patd_session"
 
 // Server holds the API's dependencies.
 type Server struct {
-	Store       *store.Store
-	StaticDir   string
-	IngestToken string // bearer token the analysis engine uses to push data
-	Users       auth.Users
-	Sessions    *auth.SessionStore
-	Audit       *audit.Logger
+	Store        *store.Store
+	StaticDir    string
+	IngestToken  string // bearer token the analysis engine uses to push data
+	Users        auth.Users
+	Sessions     *auth.SessionStore
+	Audit        *audit.Logger
+	LoginLimiter *auth.Limiter // per-IP failed-login throttle
 }
 
 type ctxKey int
@@ -49,7 +52,7 @@ func (s *Server) Routes() http.Handler {
 	// Engine ingestion (separate token, not a user session)
 	mux.Handle("POST /api/ingest", s.requireIngestToken(http.HandlerFunc(s.handleIngest)))
 	// Authenticated operators (any role) -- redacted data only
-	mux.Handle("POST /api/logout", s.requireAuth(http.HandlerFunc(s.handleLogout)))
+	mux.Handle("POST /api/logout", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleLogout))))
 	mux.Handle("GET /api/me", s.requireAuth(http.HandlerFunc(s.handleMe)))
 	mux.Handle("GET /api/summary", s.requireAuth(http.HandlerFunc(s.handleSummary)))
 	mux.Handle("GET /api/accounts", s.requireAuth(http.HandlerFunc(s.handleAccounts)))
@@ -70,6 +73,13 @@ func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
+	ip := clientIP(r)
+	if ok, retry := s.LoginLimiter.Allowed(ip); !ok {
+		s.Audit.Log(audit.Event{Action: "login", Source: r.RemoteAddr, Result: "rate_limited"})
+		w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())+1))
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, try again later"})
+		return
+	}
 	var creds struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -81,11 +91,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	user, ok := s.Users.Authenticate(creds.Username, creds.Password)
 	if !ok {
+		s.LoginLimiter.RecordFailure(ip)
 		s.Audit.Log(audit.Event{Actor: creds.Username, Action: "login", Source: r.RemoteAddr, Result: "denied"})
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
-	id, err := s.Sessions.Create(user)
+	s.LoginLimiter.Reset(ip)
+	id, csrf, err := s.Sessions.Create(user)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "session error"})
 		return
@@ -99,7 +111,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteStrictMode,
 	})
 	s.Audit.Log(audit.Event{Actor: user.Username, Role: string(user.Role), Action: "login", Source: r.RemoteAddr, Result: "ok"})
-	writeJSON(w, http.StatusOK, map[string]string{"username": user.Username, "role": string(user.Role)})
+	writeJSON(w, http.StatusOK, map[string]string{"username": user.Username, "role": string(user.Role), "csrf_token": csrf})
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -115,7 +127,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	sess, _ := sessionFrom(r.Context())
-	writeJSON(w, http.StatusOK, map[string]string{"username": sess.Username, "role": string(sess.Role)})
+	writeJSON(w, http.StatusOK, map[string]string{"username": sess.Username, "role": string(sess.Role), "csrf_token": sess.CSRF})
 }
 
 func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
@@ -178,6 +190,34 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), sessionKey, sess)))
 	})
+}
+
+// requireCSRF enforces the per-session CSRF token (synchronizer pattern) on
+// state-changing requests. Defense-in-depth atop the SameSite=Strict cookie.
+// Must be wrapped inside requireAuth (it reads the session from context).
+func (s *Server) requireCSRF(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sess, ok := sessionFrom(r.Context())
+		if !ok {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+			return
+		}
+		got := r.Header.Get("X-CSRF-Token")
+		if got == "" || subtle.ConstantTimeCompare([]byte(got), []byte(sess.CSRF)) != 1 {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "invalid CSRF token"})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// clientIP returns the request's source IP (without port) for rate-limiting.
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
 
 // requireIngestToken enforces a bearer token on ingestion; fails closed.

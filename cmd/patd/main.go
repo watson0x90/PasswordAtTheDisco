@@ -61,12 +61,13 @@ func main() {
 	}
 
 	api := &httpapi.Server{
-		Store:       store.New(),
-		StaticDir:   env("PATD_STATIC_DIR", "web/dist"),
-		IngestToken: os.Getenv("PATD_INGEST_TOKEN"),
-		Users:       users,
-		Sessions:    auth.NewSessionStore(8 * time.Hour),
-		Audit:       audit.New(auditW),
+		Store:        store.New(),
+		StaticDir:    env("PATD_STATIC_DIR", "web/dist"),
+		IngestToken:  os.Getenv("PATD_INGEST_TOKEN"),
+		Users:        users,
+		Sessions:     auth.NewSessionStore(30*time.Minute, 8*time.Hour),
+		Audit:        audit.New(auditW),
+		LoginLimiter: auth.NewLimiter(10, 15*time.Minute),
 	}
 
 	srv := &http.Server{

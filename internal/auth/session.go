@@ -11,35 +11,58 @@ import (
 type Session struct {
 	Username string
 	Role     Role
-	Expires  time.Time
+	CSRF     string // per-session CSRF token (synchronizer pattern)
+	Created  time.Time
+	LastSeen time.Time
 }
 
-// SessionStore is an in-memory, thread-safe session store.
+// SessionStore is an in-memory, thread-safe session store with sliding idle
+// expiry bounded by an absolute lifetime.
 type SessionStore struct {
-	mu       sync.Mutex
-	sessions map[string]Session
-	ttl      time.Duration
+	mu          sync.Mutex
+	sessions    map[string]Session
+	idleTTL     time.Duration
+	absoluteTTL time.Duration
+	now         func() time.Time
 }
 
-// NewSessionStore returns a store whose sessions expire after ttl.
-func NewSessionStore(ttl time.Duration) *SessionStore {
-	return &SessionStore{sessions: make(map[string]Session), ttl: ttl}
+// NewSessionStore returns a store where sessions expire after idleTTL of
+// inactivity, or absoluteTTL after creation regardless of activity.
+func NewSessionStore(idleTTL, absoluteTTL time.Duration) *SessionStore {
+	return &SessionStore{
+		sessions:    make(map[string]Session),
+		idleTTL:     idleTTL,
+		absoluteTTL: absoluteTTL,
+		now:         time.Now,
+	}
 }
 
-// Create starts a session for u and returns an opaque, random session ID.
-func (s *SessionStore) Create(u User) (string, error) {
-	b := make([]byte, 32)
+func randToken(n int) (string, error) {
+	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
-	id := base64.RawURLEncoding.EncodeToString(b)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.sessions[id] = Session{Username: u.Username, Role: u.Role, Expires: time.Now().Add(s.ttl)}
-	return id, nil
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// Get returns the session for id if it exists and has not expired.
+// Create starts a session for u, returning the opaque session ID and its CSRF
+// token.
+func (s *SessionStore) Create(u User) (id, csrf string, err error) {
+	if id, err = randToken(32); err != nil {
+		return "", "", err
+	}
+	if csrf, err = randToken(32); err != nil {
+		return "", "", err
+	}
+	now := s.now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sessions[id] = Session{Username: u.Username, Role: u.Role, CSRF: csrf, Created: now, LastSeen: now}
+	return id, csrf, nil
+}
+
+// Get returns the session for id if it is within both the idle and absolute
+// timeouts, refreshing LastSeen (sliding idle expiry).
 func (s *SessionStore) Get(id string) (Session, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -47,10 +70,13 @@ func (s *SessionStore) Get(id string) (Session, bool) {
 	if !ok {
 		return Session{}, false
 	}
-	if time.Now().After(sess.Expires) {
+	now := s.now()
+	if now.Sub(sess.Created) >= s.absoluteTTL || now.Sub(sess.LastSeen) >= s.idleTTL {
 		delete(s.sessions, id)
 		return Session{}, false
 	}
+	sess.LastSeen = now
+	s.sessions[id] = sess
 	return sess, true
 }
 

@@ -72,8 +72,9 @@ Process:
 
 | Endpoint | Auth | Purpose |
 |---|---|---|
-| `POST /api/login` / `POST /api/logout` | — / session | start/end an operator session (HttpOnly, SameSite=Strict cookie; Secure under TLS) |
-| `GET /api/me` | session | current operator + role |
+| `POST /api/login` | — (rate-limited per IP) | authenticate; sets HttpOnly/SameSite=Strict session cookie, returns a CSRF token |
+| `POST /api/logout` | session + CSRF | revoke the session |
+| `GET /api/me` | session | current operator, role, and CSRF token |
 | `POST /api/ingest` | bearer token | analysis engine pushes the dataset (fails closed) |
 | `GET /api/accounts`, `GET /api/summary` | session (any role) | **redacted** data + aggregates |
 | `GET /api/accounts/{username}/secret` | session, **`lead` role** | reveal one cleartext password — **always audit-logged** |
@@ -119,8 +120,9 @@ ingestion disabled if unset), `PATD_USERS_FILE` (default `users.json`),
 - [x] Role-gated, **audit-logged** cleartext reveal (`/api/accounts/{u}/secret`).
       Unit-tested + verified end-to-end (analyst denied, lead allowed, no cleartext
       in the audit log).
-- [ ] **Session hardening** (next): login rate-limiting, CSRF token for state-
-      changing requests, idle/absolute session-expiry refresh.
+- [x] **Session hardening** — per-IP login rate-limiting (429 + `Retry-After`),
+      synchronizer CSRF token on state-changing requests, sliding idle + absolute
+      session expiry. Unit-tested + verified live.
 - [ ] **Engine ports** from `legacy-python/`: `secretsdump` (NTDS/dump parsing)
       → `hibp` (NTLM prefix-index lookup) → `risk` (CVSS-style scoring) →
       `bloodhound` (BHE client + DA pathways).
