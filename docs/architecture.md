@@ -155,5 +155,8 @@ ingestion disabled if unset), `PATD_USERS_FILE` (default `users.json`),
 - [x] **SPA embedded in the binary** (`internal/webui`, `-tags embed` via
       `embed.FS`): single self-contained ~11 MB binary, fs.FS static serving with
       on-disk fallback. Verified serving the embedded SPA with no disk deps.
-- [ ] **Persistence + packaging**: encrypted-at-rest store, TLS cert setup,
-      CI security gates (`govulncheck`, `npm audit`) — CI deferred.
+- [x] **CI security gates** (`.github/workflows/ci.yml`): Go job
+      (build/vet/gofmt/test + **govulncheck**) and web job
+      (`npm ci --ignore-scripts` + **`npm audit --audit-level=moderate`** +
+      tsc/vite build). Both blocking; gate commands verified green locally.
+- [ ] **Persistence + packaging**: encrypted-at-rest store, TLS cert setup.
