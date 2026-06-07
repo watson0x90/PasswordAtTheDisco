@@ -123,9 +123,9 @@ ingestion disabled if unset), `PATD_USERS_FILE` (default `users.json`),
 - [x] **Session hardening** — per-IP login rate-limiting (429 + `Retry-After`),
       synchronizer CSRF token on state-changing requests, sliding idle + absolute
       session expiry. Unit-tested + verified live.
-- [ ] **Engine ports** from `legacy-python/`: `secretsdump` **✅** → `hibp`
-      (NTLM prefix-index lookup) **✅** → `risk` (CVSS-style scoring, **next**)
-      → `bloodhound` (BHE client + DA pathways).
+- [ ] **Engine ports** from `legacy-python/`: `secretsdump` **✅** → `hibp` **✅**
+      → `risk` (CVSS-style scoring + vector) **✅** → `bloodhound` (BHE client +
+      DA pathways, **next**).
 - [ ] **React UI**: login → dashboard → redacted table/search → reveal →
       actionable / per-domain views.
 - [ ] **Persistence + packaging**: encrypted-at-rest store, SPA embedded in the
