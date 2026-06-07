@@ -1,21 +1,29 @@
-import { useEffect, useState } from 'react'
+import { AuthProvider, useAuth } from "./auth"
+import { Login } from "./components/Login"
+import { AppShell } from "./components/AppShell"
+import { Dashboard } from "./components/Dashboard"
 
-// Skeleton shell. Talks to the Go API (same origin). Real views (auth, redacted
-// dashboard, authz-gated cleartext) are built on top of this.
-export function App() {
-  const [version, setVersion] = useState('...')
-
-  useEffect(() => {
-    fetch('/api/version')
-      .then((r) => r.json())
-      .then((d) => setVersion(d.version as string))
-      .catch(() => setVersion('unavailable'))
-  }, [])
-
+function Routed() {
+  const { status } = useAuth()
+  if (status === "loading") {
+    return (
+      <div className="center-state">
+        <div className="spinner">initializing</div>
+      </div>
+    )
+  }
+  if (status === "anonymous") return <Login />
   return (
-    <main style={{ fontFamily: 'system-ui, sans-serif', padding: '2rem', color: '#d1d5db', background: '#1a1d23', minHeight: '100vh' }}>
-      <h1>Password!AtTheDisco</h1>
-      <p>Secure delivery stack — API version: {version}</p>
-    </main>
+    <AppShell>
+      <Dashboard />
+    </AppShell>
+  )
+}
+
+export function App() {
+  return (
+    <AuthProvider>
+      <Routed />
+    </AuthProvider>
   )
 }

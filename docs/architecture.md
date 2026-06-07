@@ -135,7 +135,11 @@ ingestion disabled if unset), `PATD_USERS_FILE` (default `users.json`),
 - [x] **Wiring / CLI** (`patd audit`): loads lists + HIBP + (optional) BHE, runs
       the engine over domain dumps, and POSTs the dataset to `/api/ingest`.
       Verified end-to-end: dumps → real HIBP correlation → scored, redacted serving.
-- [ ] **React UI** (next): login → dashboard → redacted table/search → reveal →
-      actionable / per-domain views.
+- [~] **React UI**: login + dashboard (summary stats + risk distribution) ✅,
+      wired to the live API (cookie session + CSRF, `/api/me` bootstrap). SOC
+      console / disco-noir theme, strict-CSP-friendly (external CSS, no remote
+      assets). Next: redacted accounts table/search → lead-gated reveal →
+      actionable / per-domain views. (Build in the isolated env:
+      `cd web && npm ci --ignore-scripts && npm run build`.)
 - [ ] **Persistence + packaging**: encrypted-at-rest store, SPA embedded in the
       binary, TLS, CI security gates (`govulncheck`, `npm audit`) — CI deferred.

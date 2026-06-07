@@ -246,8 +246,11 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
+		// script-src stays strict ('self'); style-src allows inline style
+		// attributes (needed for data-driven widths in the SPA) but not remote
+		// stylesheets. No script inlining is permitted.
 		h.Set("Content-Security-Policy",
-			"default-src 'self'; img-src 'self' data:; style-src 'self'; "+
+			"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "+
 				"script-src 'self'; connect-src 'self'; font-src 'self'; "+
 				"object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
 		h.Set("X-Content-Type-Options", "nosniff")
