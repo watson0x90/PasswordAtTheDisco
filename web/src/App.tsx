@@ -1,10 +1,14 @@
+import { useState } from "react"
 import { AuthProvider, useAuth } from "./auth"
 import { Login } from "./components/Login"
-import { AppShell } from "./components/AppShell"
+import { AppShell, type View } from "./components/AppShell"
 import { Dashboard } from "./components/Dashboard"
+import { Accounts } from "./components/Accounts"
 
 function Routed() {
   const { status } = useAuth()
+  const [view, setView] = useState<View>("overview")
+
   if (status === "loading") {
     return (
       <div className="center-state">
@@ -13,9 +17,10 @@ function Routed() {
     )
   }
   if (status === "anonymous") return <Login />
+
   return (
-    <AppShell>
-      <Dashboard />
+    <AppShell view={view} onNav={setView}>
+      {view === "overview" ? <Dashboard /> : <Accounts />}
     </AppShell>
   )
 }

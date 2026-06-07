@@ -1,15 +1,31 @@
 import type { ReactNode } from "react"
 import { useAuth } from "../auth"
 
-export function AppShell({ children }: { children: ReactNode }) {
+export type View = "overview" | "accounts"
+
+const TABS: { id: View; label: string }[] = [
+  { id: "overview", label: "Overview" },
+  { id: "accounts", label: "Accounts" },
+]
+
+export function AppShell({ view, onNav, children }: { view: View; onNav: (v: View) => void; children: ReactNode }) {
   const { me, logout } = useAuth()
   return (
     <div className="shell">
       <header className="topbar">
-        <div className="brand">
-          <span className="b-main">Password</span>
-          <span className="b-dim">!AtTheDisco</span>
-          <span className="cursor" />
+        <div className="topbar-left">
+          <div className="brand">
+            <span className="b-main">Password</span>
+            <span className="b-dim">!AtTheDisco</span>
+            <span className="cursor" />
+          </div>
+          <nav className="nav">
+            {TABS.map((t) => (
+              <button key={t.id} className={t.id === view ? "nav-tab active" : "nav-tab"} onClick={() => onNav(t.id)}>
+                {t.label}
+              </button>
+            ))}
+          </nav>
         </div>
         {me && (
           <div className="topbar-right">
