@@ -3,9 +3,20 @@
    Strict-CSP friendly (no remote assets). A distinctive display font can be
    self-hosted into public/fonts later; the stack falls back to system sans. */
 
+/* Self-hosted display face for the wordmark (SIL OFL 1.1; see fonts/OFL.txt).
+   font-src 'self' under the strict CSP -> served from /fonts by the binary. */
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("/fonts/bricolage-grotesque-700.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --sans: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
 
   --text: #e8edf7;
   --dim: #8a96b2;
@@ -69,7 +80,7 @@ a { color: var(--accent); text-decoration: none; }
 .topbar-left { display: flex; align-items: center; }
 
 .brand { display: flex; align-items: center; gap: 11px; }
-.brand .word { font-size: 17px; font-weight: 700; letter-spacing: -0.3px; }
+.brand .word { font-family: var(--display); font-size: 18px; font-weight: 700; letter-spacing: -0.4px; }
 .brand .word b { font-weight: 700; background: linear-gradient(90deg, #67e8f9, #a5b4fc); -webkit-background-clip: text; background-clip: text; color: transparent; }
 
 .nav { display: flex; gap: 4px; margin-left: 30px; }
@@ -205,7 +216,7 @@ a { color: var(--accent); text-decoration: none; }
   animation: rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 .login-brand { display: flex; align-items: center; gap: 12px; }
-.login-brand .word { font-size: 22px; font-weight: 700; letter-spacing: -0.4px; }
+.login-brand .word { font-family: var(--display); font-size: 24px; font-weight: 700; letter-spacing: -0.5px; }
 .login-brand .word b { background: linear-gradient(90deg, #67e8f9, #a5b4fc); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .login-tag { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--faint); margin: 12px 0 26px; }
 
