@@ -1,9 +1,25 @@
 import { useState } from "react"
 import { AuthProvider, useAuth } from "./auth"
+import { AccountsProvider } from "./accountsData"
 import { Login } from "./components/Login"
 import { AppShell, type View } from "./components/AppShell"
 import { Dashboard } from "./components/Dashboard"
+import { Actionable } from "./components/Actionable"
+import { Domains } from "./components/Domains"
 import { Accounts } from "./components/Accounts"
+
+function viewFor(view: View) {
+  switch (view) {
+    case "actionable":
+      return <Actionable />
+    case "domains":
+      return <Domains />
+    case "accounts":
+      return <Accounts />
+    default:
+      return <Dashboard />
+  }
+}
 
 function Routed() {
   const { status } = useAuth()
@@ -19,9 +35,11 @@ function Routed() {
   if (status === "anonymous") return <Login />
 
   return (
-    <AppShell view={view} onNav={setView}>
-      {view === "overview" ? <Dashboard /> : <Accounts />}
-    </AppShell>
+    <AccountsProvider>
+      <AppShell view={view} onNav={setView}>
+        {viewFor(view)}
+      </AppShell>
+    </AccountsProvider>
   )
 }
 

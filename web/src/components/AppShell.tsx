@@ -1,10 +1,12 @@
 import type { ReactNode } from "react"
 import { useAuth } from "../auth"
 
-export type View = "overview" | "accounts"
+export type View = "overview" | "actionable" | "domains" | "accounts"
 
 const TABS: { id: View; label: string }[] = [
   { id: "overview", label: "Overview" },
+  { id: "actionable", label: "Actionable" },
+  { id: "domains", label: "Domains" },
   { id: "accounts", label: "Accounts" },
 ]
 

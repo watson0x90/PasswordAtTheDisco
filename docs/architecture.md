@@ -144,12 +144,14 @@ ingestion disabled if unset), `PATD_USERS_FILE` (default `users.json`),
 - [x] **Wiring / CLI** (`patd audit`): loads lists + HIBP + (optional) BHE, runs
       the engine over domain dumps, and POSTs the dataset to `/api/ingest`.
       Verified end-to-end: dumps → real HIBP correlation → scored, redacted serving.
-- [~] **React UI**: login + dashboard + redacted accounts table (search +
-      risk filter) + **lead-gated reveal** (audit-logged) ✅, wired to the live
-      API (cookie session + CSRF, `/api/me` bootstrap). SOC console / disco-noir
-      theme, strict-CSP-friendly (external CSS). Vetted/built/browser-verified
-      end-to-end. Next: actionable / per-domain views, pagination/virtualization
-      for large datasets. (Build: `cd web && npm ci --ignore-scripts && npm run build`.)
+- [x] **React UI**: login, dashboard, **Actionable** (DA pathways / breached /
+      reused remediation lists), **Domains** (per-domain stat cards), and the
+      accounts table (search + risk filter) with **lead-gated audited reveal** —
+      wired to the live API (cookie session + CSRF). Actionable/Domains derive
+      client-side from `/api/accounts` via a shared provider. SOC console /
+      disco-noir theme, strict-CSP-friendly. Vetted/built/browser-verified.
+      Next: table pagination/virtualization for large datasets, account detail.
+      (Build: `cd web && npm ci --ignore-scripts && npm run build`.)
 - [x] **SPA embedded in the binary** (`internal/webui`, `-tags embed` via
       `embed.FS`): single self-contained ~11 MB binary, fs.FS static serving with
       on-disk fallback. Verified serving the embedded SPA with no disk deps.

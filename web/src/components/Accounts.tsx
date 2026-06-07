@@ -1,27 +1,21 @@
-import { useEffect, useMemo, useState } from "react"
-import { api, ApiError, type Account } from "../api"
+import { useMemo, useState } from "react"
+import { api, ApiError } from "../api"
+import { useAccountsData } from "../accountsData"
 import { useAuth } from "../auth"
+import { RISK_CLASS, hasDA } from "../util"
 
-const RISK_CLASS: Record<string, string> = { Critical: "crit", High: "high", Medium: "med", Low: "low" }
 const FILTERS = ["All", "Critical", "High", "Medium", "Low"] as const
 
 export function Accounts() {
   const { me } = useAuth()
+  const { accounts, error: loadError } = useAccountsData()
   const isLead = me?.role === "lead"
 
-  const [accounts, setAccounts] = useState<Account[] | null>(null)
-  const [error, setError] = useState("")
   const [query, setQuery] = useState("")
   const [risk, setRisk] = useState<string>("All")
   const [revealed, setRevealed] = useState<Record<string, string>>({})
   const [revealing, setRevealing] = useState("")
-
-  useEffect(() => {
-    api
-      .accounts()
-      .then(setAccounts)
-      .catch((e) => setError(e instanceof ApiError ? e.message : "failed to load accounts"))
-  }, [])
+  const [revealError, setRevealError] = useState("")
 
   const filtered = useMemo(() => {
     if (!accounts) return []
@@ -35,12 +29,12 @@ export function Accounts() {
 
   async function reveal(username: string) {
     setRevealing(username)
-    setError("")
+    setRevealError("")
     try {
       const r = await api.revealSecret(username)
       setRevealed((prev) => ({ ...prev, [username]: r.password }))
     } catch (e) {
-      setError(e instanceof ApiError ? `reveal failed: ${e.message}` : "reveal failed")
+      setRevealError(e instanceof ApiError ? `reveal failed: ${e.message}` : "reveal failed")
     } finally {
       setRevealing("")
     }
@@ -54,7 +48,7 @@ export function Accounts() {
     })
   }
 
-  if (error && !accounts) return <div className="center-state">{error}</div>
+  if (loadError && !accounts) return <div className="center-state">{loadError}</div>
   if (!accounts) {
     return (
       <div className="center-state">
@@ -91,7 +85,7 @@ export function Accounts() {
         </div>
       </div>
 
-      {error && <div className="error">{error}</div>}
+      {revealError && <div className="error">{revealError}</div>}
 
       <div className="table-wrap">
         <table className="accounts">
@@ -121,7 +115,24 @@ export function Accounts() {
                 </td>
                 <td className="num">{a.shared_with > 0 ? a.shared_with : <span className="muted">0</span>}</td>
                 <td>{hasDA(a.da_domains) ? <span className="badge crit">{a.da_domains}</span> : <span className="muted">—</span>}</td>
-                {isLead && <td>{revealCell(a, revealed, revealing, reveal, hide)}</td>}
+                {isLead && (
+                  <td>
+                    {!a.cracked ? (
+                      <span className="muted">uncracked</span>
+                    ) : a.username in revealed ? (
+                      <span className="secret">
+                        <span className="mono-pw">{revealed[a.username]}</span>
+                        <button className="link-btn" onClick={() => hide(a.username)}>
+                          hide
+                        </button>
+                      </span>
+                    ) : (
+                      <button className="reveal-btn" disabled={revealing === a.username} onClick={() => reveal(a.username)}>
+                        {revealing === a.username ? "…" : "reveal"}
+                      </button>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -133,33 +144,4 @@ export function Accounts() {
       )}
     </>
   )
-}
-
-function revealCell(
-  a: Account,
-  revealed: Record<string, string>,
-  revealing: string,
-  doReveal: (u: string) => void,
-  doHide: (u: string) => void,
-) {
-  if (!a.cracked) return <span className="muted">uncracked</span>
-  if (a.username in revealed) {
-    return (
-      <span className="secret">
-        <span className="mono-pw">{revealed[a.username]}</span>
-        <button className="link-btn" onClick={() => doHide(a.username)}>
-          hide
-        </button>
-      </span>
-    )
-  }
-  return (
-    <button className="reveal-btn" disabled={revealing === a.username} onClick={() => doReveal(a.username)}>
-      {revealing === a.username ? "…" : "reveal"}
-    </button>
-  )
-}
-
-function hasDA(da: string): boolean {
-  return da !== "" && da !== "None" && da !== "Unknown"
 }
