@@ -228,3 +228,5 @@ users.json
 audit.log
 # Node (also covered by web/.gitignore)
 node_modules/
+# Built SPA copied here for `-tags embed` release builds (artifact)
+internal/webui/dist/

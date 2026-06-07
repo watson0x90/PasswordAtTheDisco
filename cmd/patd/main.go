@@ -28,6 +28,7 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/auth"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/httpapi"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/store"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/webui"
 )
 
 func main() {
@@ -68,6 +69,7 @@ func main() {
 
 	api := &httpapi.Server{
 		Store:        store.New(),
+		StaticFS:     webui.FS, // embedded SPA when built with -tags embed; else nil
 		StaticDir:    env("PATD_STATIC_DIR", "web/dist"),
 		IngestToken:  os.Getenv("PATD_INGEST_TOKEN"),
 		Users:        users,

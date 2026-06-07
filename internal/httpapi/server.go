@@ -2,14 +2,16 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -25,12 +27,25 @@ const sessionCookie = "patd_session"
 // Server holds the API's dependencies.
 type Server struct {
 	Store        *store.Store
-	StaticDir    string
+	StaticFS     fs.FS  // embedded SPA; if nil, served from StaticDir on disk
+	StaticDir    string // disk fallback for the SPA (e.g. web/dist)
 	IngestToken  string // bearer token the analysis engine uses to push data
 	Users        auth.Users
 	Sessions     *auth.SessionStore
 	Audit        *audit.Logger
 	LoginLimiter *auth.Limiter // per-IP failed-login throttle
+}
+
+// staticFS resolves the SPA filesystem: the embedded FS if present, else the
+// on-disk StaticDir, else nil.
+func (s *Server) staticFS() fs.FS {
+	if s.StaticFS != nil {
+		return s.StaticFS
+	}
+	if s.StaticDir != "" {
+		return os.DirFS(s.StaticDir)
+	}
+	return nil
 }
 
 type ctxKey int
@@ -59,7 +74,7 @@ func (s *Server) Routes() http.Handler {
 	// Cleartext reveal -- requires lead role, always audit-logged
 	mux.Handle("GET /api/accounts/{username}/secret", s.requireAuth(http.HandlerFunc(s.handleReveal)))
 	// SPA
-	mux.Handle("/", spaHandler(s.StaticDir))
+	mux.Handle("/", spaHandler(s.staticFS()))
 	return securityHeaders(logRequests(mux))
 }
 
@@ -270,26 +285,43 @@ func logRequests(next http.Handler) http.Handler {
 	})
 }
 
-// spaHandler serves static files from dir, falling back to index.html for
-// client-side routes. Rejects path traversal; never serves outside dir.
-func spaHandler(dir string) http.Handler {
-	root, _ := filepath.Abs(dir)
-	fs := http.FileServer(http.Dir(root))
+// spaHandler serves the single-page app from fsys (embedded or on-disk),
+// falling back to index.html for client-side routes. fs.FS path semantics
+// reject traversal by construction. A nil fsys yields 503 (frontend not built).
+func spaHandler(fsys fs.FS) http.Handler {
+	if fsys == nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "frontend not built (run the web build)", http.StatusServiceUnavailable)
+		})
+	}
+	fileServer := http.FileServerFS(fsys)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		target := filepath.Join(root, filepath.Clean(r.URL.Path))
-		if !strings.HasPrefix(target, root) {
-			http.Error(w, "not found", http.StatusNotFound)
-			return
+		name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
+		if name == "" {
+			name = "index.html"
 		}
-		if info, err := os.Stat(target); err != nil || info.IsDir() {
-			index := filepath.Join(root, "index.html")
-			if _, err := os.Stat(index); err != nil {
-				http.Error(w, "frontend not built (run the web build)", http.StatusServiceUnavailable)
-				return
+		// Serve a real file when it exists; otherwise fall back to the SPA entry
+		// point so client-side routes resolve.
+		if fs.ValidPath(name) {
+			if f, err := fsys.Open(name); err == nil {
+				info, statErr := f.Stat()
+				_ = f.Close()
+				if statErr == nil && !info.IsDir() {
+					fileServer.ServeHTTP(w, r)
+					return
+				}
 			}
-			http.ServeFile(w, r, index)
-			return
 		}
-		fs.ServeHTTP(w, r)
+		serveIndex(w, r, fsys)
 	})
+}
+
+func serveIndex(w http.ResponseWriter, r *http.Request, fsys fs.FS) {
+	b, err := fs.ReadFile(fsys, "index.html")
+	if err != nil {
+		http.Error(w, "frontend not built (run the web build)", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(b))
 }

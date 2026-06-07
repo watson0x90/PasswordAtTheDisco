@@ -96,9 +96,18 @@ go run ./cmd/patd hashpw       # prompts on stderr, prints the hash on stdout
 PATD_TLS_CERT=cert.pem PATD_TLS_KEY=key.pem PATD_INGEST_TOKEN=$(openssl rand -hex 32) \
   PATD_USERS_FILE=users.json PATD_AUDIT_LOG=audit.log PATD_STATIC_DIR=web/dist ./patd
 
-# Frontend (in an isolated build env, no secrets present):
+# Frontend (vet deps first; see Supply-chain controls):
 cd web && npm ci --ignore-scripts && npm audit --audit-level=moderate && npm run build
+
+# Single-binary release (SPA embedded via embed.FS, served with zero disk deps):
+cd web && npm ci --ignore-scripts && npm run build && cd ..
+rm -rf internal/webui/dist && cp -r web/dist internal/webui/dist
+go build -tags embed -o patd ./cmd/patd        # ~11 MB self-contained binary
 ```
+
+Static SPA serving: the binary serves `internal/webui` (embedded, `-tags embed`)
+when present, else `PATD_STATIC_DIR` on disk (default `web/dist`) — so default/CI
+builds need no frontend.
 
 Env: `PATD_ADDR` (default `127.0.0.1:8443`), `PATD_TLS_CERT`/`PATD_TLS_KEY` (TLS;
 plain HTTP with a warning if unset), `PATD_INGEST_TOKEN` (engine bearer token;
@@ -141,5 +150,8 @@ ingestion disabled if unset), `PATD_USERS_FILE` (default `users.json`),
       theme, strict-CSP-friendly (external CSS). Vetted/built/browser-verified
       end-to-end. Next: actionable / per-domain views, pagination/virtualization
       for large datasets. (Build: `cd web && npm ci --ignore-scripts && npm run build`.)
-- [ ] **Persistence + packaging**: encrypted-at-rest store, SPA embedded in the
-      binary, TLS, CI security gates (`govulncheck`, `npm audit`) — CI deferred.
+- [x] **SPA embedded in the binary** (`internal/webui`, `-tags embed` via
+      `embed.FS`): single self-contained ~11 MB binary, fs.FS static serving with
+      on-disk fallback. Verified serving the embedded SPA with no disk deps.
+- [ ] **Persistence + packaging**: encrypted-at-rest store, TLS cert setup,
+      CI security gates (`govulncheck`, `npm audit`) — CI deferred.
