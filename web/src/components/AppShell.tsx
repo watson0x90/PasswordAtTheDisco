@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 import { useAuth } from "../auth"
+import { Logo } from "./Logo"
 
 export type View = "overview" | "actionable" | "domains" | "accounts"
 
@@ -17,9 +18,8 @@ export function AppShell({ view, onNav, children }: { view: View; onNav: (v: Vie
       <header className="topbar">
         <div className="topbar-left">
           <div className="brand">
-            <span className="b-main">Password</span>
-            <span className="b-dim">!AtTheDisco</span>
-            <span className="cursor" />
+            <Logo size={28} />
+            <span className="word">Password<b>!AtTheDisco</b></span>
           </div>
           <nav className="nav">
             {TABS.map((t) => (

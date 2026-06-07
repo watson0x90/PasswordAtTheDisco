@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react"
 import { useAuth } from "../auth"
 import { ApiError } from "../api"
+import { Logo } from "./Logo"
 
 export function Login() {
   const { login } = useAuth()
@@ -25,8 +26,8 @@ export function Login() {
     <div className="login-wrap">
       <form className="login-card" onSubmit={onSubmit}>
         <div className="login-brand">
-          <span className="b-main">Password!AtTheDisco</span>
-          <span className="cursor" />
+          <Logo size={34} />
+          <span className="word">Password<b>!AtTheDisco</b></span>
         </div>
         <div className="login-tag">credential exposure console</div>
 
