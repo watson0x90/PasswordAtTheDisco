@@ -1,5 +1,5 @@
 /* Password!AtTheDisco — "Abyss" design system.
-   Modern dark-blue, glassmorphic; sans-serif UI with monospace for data.
+   Modern dark-blue: solid panels + gradient accents; sans-serif UI, mono for data.
    Strict-CSP friendly (no remote assets). A distinctive display font can be
    self-hosted into public/fonts later; the stack falls back to system sans. */
 
@@ -27,10 +27,12 @@
   --accent-grad: linear-gradient(90deg, #38bdf8, #818cf8);
   --accent-glow: rgba(56, 189, 248, 0.35);
 
-  --glass: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
-  --glass-strong: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.025));
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --hairline: rgba(255, 255, 255, 0.06);
+  /* solid (opaque) panel surfaces — no transparency/blur; a subtle gradient is
+     kept inside the panels for depth */
+  --glass: linear-gradient(180deg, #141d31, #0f1525);
+  --glass-strong: linear-gradient(180deg, #18223c, #121a2e);
+  --glass-border: #242e46;
+  --hairline: #1b2236;
 
   --crit: #fb7185;
   --high: #fbbf24;
@@ -71,8 +73,7 @@ a { color: var(--accent); text-decoration: none; }
   justify-content: space-between;
   padding: 15px 28px;
   border-bottom: 1px solid var(--glass-border);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent);
-  backdrop-filter: blur(12px);
+  background: linear-gradient(180deg, #11182b, #0c1120);
   position: sticky;
   top: 0;
   z-index: 50;
@@ -160,9 +161,7 @@ a { color: var(--accent); text-decoration: none; }
   padding: 22px;
   border-radius: 16px;
   background: var(--glass);
-  border: 1px solid var(--glass-border);
-  backdrop-filter: blur(14px);
-  box-shadow: 0 18px 50px -30px rgba(0, 0, 0, 0.85);
+  border: 1px solid var(--glass-border);  box-shadow: 0 18px 50px -30px rgba(0, 0, 0, 0.85);
   opacity: 0;
   animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
 }
@@ -181,9 +180,7 @@ a { color: var(--accent); text-decoration: none; }
   padding: 24px 28px;
   border-radius: 16px;
   background: var(--glass);
-  border: 1px solid var(--glass-border);
-  backdrop-filter: blur(14px);
-}
+  border: 1px solid var(--glass-border);}
 
 .risk-row { display: flex; align-items: center; gap: 16px; padding: 11px 0; }
 .risk-row + .risk-row { border-top: 1px solid var(--hairline); }
@@ -210,9 +207,7 @@ a { color: var(--accent); text-decoration: none; }
   padding: 36px 34px 30px;
   border-radius: 18px;
   background: var(--glass-strong);
-  border: 1px solid var(--glass-border);
-  backdrop-filter: blur(18px);
-  box-shadow: 0 40px 90px -34px rgba(0, 0, 0, 0.85), 0 0 70px -26px var(--accent-glow);
+  border: 1px solid var(--glass-border);  box-shadow: 0 40px 90px -34px rgba(0, 0, 0, 0.85), 0 0 70px -26px var(--accent-glow);
   animation: rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 .login-brand { display: flex; align-items: center; gap: 12px; }
@@ -227,7 +222,7 @@ a { color: var(--accent); text-decoration: none; }
   font-family: var(--sans);
   font-size: 14px;
   color: var(--text);
-  background: rgba(8, 12, 24, 0.6);
+  background: #0a1020;
   border: 1px solid var(--glass-border);
   border-radius: 10px;
   padding: 11px 13px;
@@ -260,7 +255,7 @@ a { color: var(--accent); text-decoration: none; }
   font-family: var(--sans);
   font-size: 14px;
   color: var(--text);
-  background: rgba(8, 12, 24, 0.6);
+  background: #0a1020;
   border: 1px solid var(--glass-border);
   border-radius: 10px;
   padding: 9px 14px;
@@ -295,9 +290,7 @@ a { color: var(--accent); text-decoration: none; }
 .table-wrap {
   border: 1px solid var(--glass-border);
   border-radius: 14px;
-  background: var(--glass);
-  backdrop-filter: blur(14px);
-  max-height: calc(100vh - 250px);
+  background: var(--glass);  max-height: calc(100vh - 250px);
   overflow: auto;
 }
 table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -305,8 +298,7 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
   position: sticky;
   top: 0;
   z-index: 1;
-  background: rgba(17, 24, 42, 0.92);
-  backdrop-filter: blur(8px);
+  background: #161f36;
   font-size: 11px;
   letter-spacing: 0.6px;
   text-transform: uppercase;
@@ -395,9 +387,7 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
   padding: 18px 20px;
   border-radius: 16px;
   background: var(--glass);
-  border: 1px solid var(--glass-border);
-  backdrop-filter: blur(14px);
-  overflow: hidden;
+  border: 1px solid var(--glass-border);  overflow: hidden;
 }
 .domain-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--accent-grad); opacity: 0.8; }
 .domain-card-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
