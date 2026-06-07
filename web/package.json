@@ -1,0 +1,24 @@
+{
+  "name": "passwordatthedisco-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "v2 secure-delivery frontend (built to static assets, served by the Go API)",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "audit": "npm audit --audit-level=moderate"
+  },
+  "dependencies": {
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.2",
+    "typescript": "6.0.3",
+    "vite": "8.0.16"
+  }
+}

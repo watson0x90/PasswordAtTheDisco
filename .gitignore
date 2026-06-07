@@ -216,3 +216,17 @@ CLAUDE.md
 # Bootstrapped automatically from the committed *.json.example templates.
 config/*.json
 !config/*.json.example
+
+# Go + Node secure stack (cmd/, internal/, web/)
+# ===============================================
+# Compiled server binary
+/patd
+/patd.exe
+*.exe
+# Operator credentials (argon2id hashes) and live audit log -- never commit
+users.json
+audit.log
+# Node (also covered by web/.gitignore)
+node_modules/
+# Built SPA copied here for `-tags embed` release builds (artifact)
+internal/webui/dist/

@@ -1,0 +1,12 @@
+[
+  {
+    "username": "analyst1",
+    "password_hash": "$argon2id$v=19$m=65536,t=3,p=2$REPLACE_SALT$REPLACE_HASH",
+    "role": "analyst"
+  },
+  {
+    "username": "lead1",
+    "password_hash": "$argon2id$v=19$m=65536,t=3,p=2$REPLACE_SALT$REPLACE_HASH",
+    "role": "lead"
+  }
+]
