@@ -125,10 +125,10 @@ ingestion disabled if unset), `PATD_USERS_FILE` (default `users.json`),
       session expiry. Unit-tested + verified live.
 - [x] **Engine ports** from `legacy-python/`: `secretsdump` ✅ → `hibp` ✅ →
       `risk` (scoring + vector) ✅ → `bloodhound` (BHE client + DA pathways) ✅.
-- [ ] **Password analysis + pipeline** (next): port `password_analysis` (the
-      complexity / common / dictionary / keyboard / similarity signals that feed
-      `risk.Analysis`), then the orchestration that runs parse → HIBP → analysis
-      → BHE → score and emits `model.Account` into the store via `/api/ingest`.
+- [x] **Password analysis** (`pwanalysis`): complexity / policy / wordlist /
+      keyboard / similarity (Levenshtein) signals feeding `risk.Analysis`.
+- [ ] **Orchestration pipeline** (next): run parse → HIBP → analysis → BHE →
+      score per account, build `model.Account`, push to `/api/ingest`.
 - [ ] **React UI**: login → dashboard → redacted table/search → reveal →
       actionable / per-domain views.
 - [ ] **Persistence + packaging**: encrypted-at-rest store, SPA embedded in the
