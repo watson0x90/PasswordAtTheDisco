@@ -127,8 +127,13 @@ ingestion disabled if unset), `PATD_USERS_FILE` (default `users.json`),
       `risk` (scoring + vector) ✅ → `bloodhound` (BHE client + DA pathways) ✅.
 - [x] **Password analysis** (`pwanalysis`): complexity / policy / wordlist /
       keyboard / similarity (Levenshtein) signals feeding `risk.Analysis`.
-- [ ] **Orchestration pipeline** (next): run parse → HIBP → analysis → BHE →
-      score per account, build `model.Account`, push to `/api/ingest`.
+- [x] **Orchestration pipeline** (`engine`): parse → HIBP → analysis → BHE →
+      score per account → `model.Account` (shared-with, similarity caching,
+      simplified uncracked scoring). HIBP/BHE injected behind interfaces; a
+      `BloodhoundEnricher` adapter wraps the real client. (Deferred refinements:
+      post-hoc shared-password risk boost, domain-risk factor, cross-domain reuse.)
+- [ ] **Wiring / CLI** (next): a `patd audit` command that loads config + lists +
+      HIBP + BHE, runs the engine over domain dumps, and POSTs to `/api/ingest`.
 - [ ] **React UI**: login → dashboard → redacted table/search → reveal →
       actionable / per-domain views.
 - [ ] **Persistence + packaging**: encrypted-at-rest store, SPA embedded in the
