@@ -117,6 +117,12 @@ ingestion disabled if unset), `PATD_USERS_FILE` (default `users.json`),
 
 ## Status
 
+**Shipped.** The rewrite is merged into `main` (the repo's default branch) and is
+green in CI on GitHub Actions. The full stack was verified end-to-end (browser +
+API): authn/authz, role enforcement in both the UI and the API, redaction,
+audited cleartext reveal, CSRF, session lifecycle, real-HIBP scoring, and the
+audit log (no cleartext). Remaining items are optional polish.
+
 - [x] Go API skeleton — TLS-capable, strict security headers, `/healthz`,
       `/api/version`, SPA static serving with path-traversal protection, graceful
       shutdown. Builds/vets clean, zero deps.
@@ -158,5 +164,5 @@ ingestion disabled if unset), `PATD_USERS_FILE` (default `users.json`),
 - [x] **CI security gates** (`.github/workflows/ci.yml`): Go job
       (build/vet/gofmt/test + **govulncheck**) and web job
       (`npm ci --ignore-scripts` + **`npm audit --audit-level=moderate`** +
-      tsc/vite build). Both blocking; gate commands verified green locally.
+      tsc/vite build). Both blocking; **green in CI on GitHub Actions**.
 - [ ] **Persistence + packaging**: encrypted-at-rest store, TLS cert setup.
