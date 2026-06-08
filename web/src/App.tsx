@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { AuthProvider, useAuth } from "./auth"
 import { AccountsProvider } from "./accountsData"
+import { NavProvider } from "./nav"
 import { Login } from "./components/Login"
 import { AppShell, type View } from "./components/AppShell"
 import { Dashboard } from "./components/Dashboard"
@@ -41,11 +42,13 @@ function Routed() {
   if (status === "anonymous") return <Login />
 
   return (
-    <AccountsProvider>
-      <AppShell view={view} onNav={setView}>
-        {viewFor(view)}
-      </AppShell>
-    </AccountsProvider>
+    <NavProvider value={setView}>
+      <AccountsProvider>
+        <AppShell view={view} onNav={setView}>
+          {viewFor(view)}
+        </AppShell>
+      </AccountsProvider>
+    </NavProvider>
   )
 }
 

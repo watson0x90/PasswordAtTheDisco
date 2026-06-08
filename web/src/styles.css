@@ -489,3 +489,39 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 
 .policy-actions { display: flex; align-items: center; gap: 14px; margin-top: 22px; }
 .policy-actions .btn-primary { margin-left: auto; }
+
+/* ---- get started (empty-state guide) ---- */
+
+.getstarted { max-width: 720px; }
+.gs-title { font-family: var(--display); font-size: 24px; font-weight: 700; letter-spacing: -0.4px; margin: 4px 0 8px; }
+.gs-sub { font-size: 14px; color: var(--dim); margin: 0 0 26px; }
+.gs-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.gs-step {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 18px 20px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--hairline);
+}
+.gs-step.gs-current { border-color: rgba(56, 189, 248, 0.4); background: rgba(56, 189, 248, 0.06); }
+.gs-num {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--glass-border);
+}
+.gs-current .gs-num { color: #06121f; background: var(--accent-grad); border-color: transparent; }
+.gs-body { flex: 1; }
+.gs-head { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.gs-opt { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--faint); }
+.gs-text { font-size: 12.5px; color: var(--dim); margin-top: 4px; line-height: 1.55; }
+.gs-action { flex: none; white-space: nowrap; }

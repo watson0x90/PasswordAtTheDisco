@@ -32,7 +32,7 @@ export function Ingest() {
 
   return (
     <>
-      <div className="section-label">Ingest</div>
+      <div className="section-label">Upload</div>
       <form className="panel ingest-form" onSubmit={onSubmit}>
         <p className="ingest-note">
           Upload a domain's credential dumps. The server parses them, correlates against HIBP, scores each

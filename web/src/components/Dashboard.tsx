@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react"
 import { api, ApiError, type Summary } from "../api"
+import { useAuth } from "../auth"
+import { useNav } from "../nav"
 
 const RISK_ORDER = ["Critical", "High", "Medium", "Low"]
 const RISK_CLASS: Record<string, string> = {
@@ -28,6 +30,7 @@ export function Dashboard() {
       </div>
     )
   }
+  if (summary.total_accounts === 0) return <GetStarted />
 
   const crackPct = summary.total_accounts ? Math.round((summary.cracked / summary.total_accounts) * 100) : 0
   const maxRisk = Math.max(1, ...RISK_ORDER.map((r) => summary.risk_counts[r] || 0))
@@ -61,6 +64,71 @@ export function Dashboard() {
           )
         })}
         <div className="meta-line">snapshot generated {fmtTime(summary.generated_at)}</div>
+      </div>
+    </>
+  )
+}
+
+function GetStarted() {
+  const { me } = useAuth()
+  const nav = useNav()
+  const isLead = me?.role === "lead"
+  return (
+    <>
+      <div className="section-label">Get started</div>
+      <div className="panel getstarted">
+        <h2 className="gs-title">Start a password audit</h2>
+        <p className="gs-sub">
+          {isLead
+            ? "No data ingested yet — follow these steps to run your first audit."
+            : "No data ingested yet. A lead needs to upload credential dumps before findings appear."}
+        </p>
+
+        <ol className="gs-steps">
+          <li className="gs-step">
+            <span className="gs-num">1</span>
+            <div className="gs-body">
+              <div className="gs-head">
+                Configure policies <span className="gs-opt">optional</span>
+              </div>
+              <div className="gs-text">
+                Set per-domain password rules (min length, required classes, max age). They drive the
+                “Meets Policy” and max-age compliance signals in scoring.
+              </div>
+            </div>
+            {isLead && (
+              <button className="btn gs-action" onClick={() => nav("policies")}>
+                Open Policies →
+              </button>
+            )}
+          </li>
+
+          <li className="gs-step gs-current">
+            <span className="gs-num">2</span>
+            <div className="gs-body">
+              <div className="gs-head">Upload credential dumps</div>
+              <div className="gs-text">
+                Upload the cracked (and optional uncracked) files for a domain. The server parses them,
+                correlates against HIBP, scores each account, and ingests — cleartext never touches disk.
+              </div>
+            </div>
+            {isLead && (
+              <button className="btn btn-primary gs-action" onClick={() => nav("ingest")}>
+                Upload data →
+              </button>
+            )}
+          </li>
+
+          <li className="gs-step">
+            <span className="gs-num">3</span>
+            <div className="gs-body">
+              <div className="gs-head">Review findings</div>
+              <div className="gs-text">
+                Overview, Accounts, Actionable, and Domains light up once data is ingested.
+              </div>
+            </div>
+          </li>
+        </ol>
       </div>
     </>
   )

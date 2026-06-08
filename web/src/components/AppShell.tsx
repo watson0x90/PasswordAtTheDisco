@@ -16,7 +16,7 @@ export function AppShell({ view, onNav, children }: { view: View; onNav: (v: Vie
   // Ingest (web upload) and Policies editing are lead-only.
   const tabs =
     me?.role === "lead"
-      ? [...TABS, { id: "ingest" as View, label: "Ingest" }, { id: "policies" as View, label: "Policies" }]
+      ? [...TABS, { id: "ingest" as View, label: "Upload" }, { id: "policies" as View, label: "Policies" }]
       : TABS
   return (
     <div className="shell">
