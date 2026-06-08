@@ -33,6 +33,21 @@ export interface Account {
   controlled_object_count: number
   shared_with: number
   enabled: boolean
+  meets_policy: boolean
+}
+
+export interface PolicyRule {
+  min_length: number
+  require_lowercase: boolean
+  require_uppercase: boolean
+  require_digits: boolean
+  require_special: boolean
+  max_password_age_days: number
+}
+
+export interface PoliciesPayload {
+  default: PolicyRule
+  domains: Record<string, PolicyRule>
 }
 
 export class ApiError extends Error {
@@ -103,6 +118,15 @@ export const api = {
     // No Content-Type header: the browser sets the multipart boundary.
     return request<AuditResult>("/audit", { method: "POST", headers: { "X-CSRF-Token": csrf }, body: fd })
   },
+
+  getPolicies: () => request<PoliciesPayload>("/policies"),
+
+  savePolicies: (payload: PoliciesPayload, csrf: string) =>
+    request<{ domains: number; persisted: string }>("/policies", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+      body: JSON.stringify(payload),
+    }),
 }
 
 export interface AuditResult {

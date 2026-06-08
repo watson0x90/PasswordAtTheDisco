@@ -8,6 +8,7 @@ import { Actionable } from "./components/Actionable"
 import { Domains } from "./components/Domains"
 import { Accounts } from "./components/Accounts"
 import { Ingest } from "./components/Ingest"
+import { Policies } from "./components/Policies"
 
 function viewFor(view: View) {
   switch (view) {
@@ -19,6 +20,8 @@ function viewFor(view: View) {
       return <Accounts />
     case "ingest":
       return <Ingest />
+    case "policies":
+      return <Policies />
     default:
       return <Dashboard />
   }

@@ -96,6 +96,7 @@ export function Accounts() {
               <th>Risk</th>
               <th className="num">Score</th>
               <th className="num">HIBP</th>
+              <th>Policy</th>
               <th className="num">Shared</th>
               <th>DA Pathway</th>
               {isLead && <th>Secret</th>}
@@ -112,6 +113,15 @@ export function Accounts() {
                 <td className="num">{a.risk_score.toFixed(1)}</td>
                 <td className="num">
                   {a.hibp_breached ? <span className="c-crit">{a.hibp_breach_count.toLocaleString()}</span> : <span className="muted">—</span>}
+                </td>
+                <td>
+                  {!a.cracked ? (
+                    <span className="muted">—</span>
+                  ) : a.meets_policy ? (
+                    <span className="c-low">✓ meets</span>
+                  ) : (
+                    <span className="c-high">✗ fails</span>
+                  )}
                 </td>
                 <td className="num">{a.shared_with > 0 ? a.shared_with : <span className="muted">0</span>}</td>
                 <td>{hasDA(a.da_domains) ? <span className="badge crit">{a.da_domains}</span> : <span className="muted">—</span>}</td>

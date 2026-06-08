@@ -21,6 +21,7 @@ type Account struct {
 	Controlled      int     `json:"controlled_object_count"`
 	SharedWith      int     `json:"shared_with"`
 	Enabled         bool    `json:"enabled"`
+	MeetsPolicy     bool    `json:"meets_policy"`
 }
 
 // Redacted returns a copy with the cleartext password removed.

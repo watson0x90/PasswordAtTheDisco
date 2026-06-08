@@ -18,6 +18,7 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/engine"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/hibp"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/pwanalysis"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/secretsdump"
 )
@@ -33,7 +34,7 @@ func runAudit(args []string) {
 	hibpPath := fs.String("hibp", "PwnedPasswordsDownloader/pwnedpasswords_ntlm.txt", "HIBP NTLM dump path (optional)")
 	listsDir := fs.String("lists", "lists", "wordlists directory")
 	bhePath := fs.String("bhe", "config/bloodhound.json", "BloodHound config path (optional)")
-	maxAge := fs.Int("max-age", 90, "max password age in days (compliance)")
+	policyPath := fs.String("policy", "lists/password_policy.json", "per-domain password policy file (optional)")
 	out := fs.String("out", "", "also write the dataset JSON to this file")
 	insecure := fs.Bool("insecure", false, "skip TLS verification when POSTing (self-signed dev certs)")
 	fs.Usage = func() {
@@ -48,7 +49,7 @@ func runAudit(args []string) {
 		log.Fatalf("audit: %v", err)
 	}
 
-	eng, cleanup := buildEngine(*hibpPath, *listsDir, *bhePath, *maxAge)
+	eng, _, cleanup := buildEngine(*hibpPath, *listsDir, *bhePath, *policyPath)
 	defer cleanup()
 
 	var all []model.Account
@@ -102,13 +103,21 @@ func configured(c bloodhound.Config) bool {
 }
 
 // buildEngine constructs the audit engine from on-disk inputs (shared by the
-// `audit` CLI and the server's web-upload endpoint). The returned cleanup closes
-// the HIBP searcher; call it on shutdown.
-func buildEngine(hibpPath, listsDir, bhePath string, maxAge int) (*engine.Engine, func()) {
+// `audit` CLI and the server's web-upload endpoint). It also returns the loaded
+// policy Set so the server can expose/edit it. The returned cleanup closes the
+// HIBP searcher; call it on shutdown.
+func buildEngine(hibpPath, listsDir, bhePath, policyPath string) (*engine.Engine, *policy.Set, func()) {
+	policies, err := policy.Load(policyPath)
+	if err != nil {
+		log.Printf("password policy load failed (%v); using built-in default", err)
+		policies = policy.DefaultSet()
+	} else {
+		def, dom := policies.Snapshot()
+		log.Printf("password policy loaded (%s): default min-len %d / max-age %dd, %d domain override(s)", policyPath, def.MinLength, def.MaxPasswordAgeDays, len(dom))
+	}
 	eng := &engine.Engine{
-		Lists:              loadLists(listsDir),
-		Policy:             pwanalysis.DefaultPolicy(),
-		MaxPasswordAgeDays: maxAge,
+		Lists:    loadLists(listsDir),
+		Policies: policies,
 	}
 	cleanup := func() {}
 	if s, err := hibp.Open(hibpPath, hibp.DefaultPrefixLen); err == nil {
@@ -124,7 +133,7 @@ func buildEngine(hibpPath, listsDir, bhePath string, maxAge int) (*engine.Engine
 	} else {
 		log.Printf("BloodHound enrichment disabled")
 	}
-	return eng, cleanup
+	return eng, policies, cleanup
 }
 
 func loadLists(dir string) pwanalysis.Lists {

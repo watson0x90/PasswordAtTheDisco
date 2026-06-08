@@ -16,7 +16,7 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/auth"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/engine"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
-	"github.com/watson0x90/PasswordAtTheDisco/internal/pwanalysis"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/store"
 )
 
@@ -236,7 +236,7 @@ func TestAuditUpload(t *testing.T) {
 
 	// lead with an engine configured -> ingests and the data is queryable (redacted)
 	srv := newServer("secret")
-	srv.Engine = &engine.Engine{Policy: pwanalysis.DefaultPolicy(), MaxPasswordAgeDays: 90}
+	srv.Engine = &engine.Engine{Policies: policy.DefaultSet()}
 	cookie, csrf := loginCSRF(t, srv, "lead", "leadpw")
 	rec := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(rec, auditReq(t, cookie, csrf, "CORP", body))
@@ -263,6 +263,51 @@ func TestAuditUpload(t *testing.T) {
 	srv2.Routes().ServeHTTP(rec, auditReq(t, c2, csrf2, "CORP", body))
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("audit without engine should be 503, got %d", rec.Code)
+	}
+}
+
+func putJSON(srv *Server, cookie *http.Cookie, csrf, path, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest("PUT", path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
+	if csrf != "" {
+		req.Header.Set("X-CSRF-Token", csrf)
+	}
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	return rec
+}
+
+func TestPolicies(t *testing.T) {
+	srv := newServer("secret")
+	srv.Policies = policy.DefaultSet()
+	body := `{"default":{"min_length":15,"require_lowercase":true,"require_uppercase":true,"require_digits":true,"require_special":true,"max_password_age_days":120},"domains":{"CORP.LOCAL":{"min_length":20,"require_lowercase":true,"require_uppercase":true,"require_digits":true,"require_special":true,"max_password_age_days":45}}}`
+
+	// any operator can read
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	if g := do(srv, "GET", "/api/policies", ac); g.Code != http.StatusOK || !strings.Contains(g.Body.String(), `"min_length":14`) {
+		t.Fatalf("GET policies = %d %s", g.Code, g.Body.String())
+	}
+	// analyst cannot edit
+	if r := putJSON(srv, ac, acsrf, "/api/policies", body); r.Code != http.StatusForbidden {
+		t.Fatalf("analyst PUT should be 403, got %d", r.Code)
+	}
+	// lead can edit; the shared Set (used by the engine) reflects it
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	if r := putJSON(srv, lc, lcsrf, "/api/policies", body); r.Code != http.StatusOK {
+		t.Fatalf("lead PUT = %d %s", r.Code, r.Body.String())
+	}
+	if got := srv.Policies.For("CORP.LOCAL"); got.MinLength != 20 || got.MaxPasswordAgeDays != 45 {
+		t.Errorf("override not applied: %+v", got)
+	}
+	if got := srv.Policies.For("other"); got.MinLength != 15 {
+		t.Errorf("default not updated: %+v", got)
+	}
+	// invalid (min_length 0) rejected
+	if r := putJSON(srv, lc, lcsrf, "/api/policies", `{"default":{"min_length":0,"max_password_age_days":90},"domains":{}}`); r.Code != http.StatusBadRequest {
+		t.Fatalf("invalid policy should be 400, got %d", r.Code)
 	}
 }
 

@@ -17,6 +17,7 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/bloodhound"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/hibp"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/pwanalysis"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/risk"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/secretsdump"
@@ -45,12 +46,11 @@ type Enricher interface {
 
 // Engine holds the pipeline's dependencies. HIBP and Enricher are optional.
 type Engine struct {
-	HIBP               HIBPLookup
-	Enricher           Enricher
-	Lists              pwanalysis.Lists
-	Policy             pwanalysis.Policy
-	MaxPasswordAgeDays int
-	Now                func() time.Time
+	HIBP     HIBPLookup
+	Enricher Enricher
+	Lists    pwanalysis.Lists
+	Policies *policy.Set // per-domain password policies (length/classes + max age)
+	Now      func() time.Time
 }
 
 func (e *Engine) now() time.Time {
@@ -94,10 +94,11 @@ func (e *Engine) ProcessDomain(domain string, cracked, uncracked []secretsdump.P
 
 func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, sharedWith int, allPasswords []string, analysisCache map[string]*pwanalysis.Analysis, simCache map[string]float64, now time.Time) model.Account {
 	pw := a.Password
+	pol := e.Policies.For(domain) // ProcessDomain is per-domain, so one policy here
 
 	an, ok := analysisCache[pw]
 	if !ok {
-		an = pwanalysis.Analyze(pw, e.Lists, nil, e.Policy)
+		an = pwanalysis.Analyze(pw, e.Lists, nil, pol.Analysis())
 		analysisCache[pw] = an
 	}
 	simMax, ok := simCache[pw]
@@ -115,7 +116,7 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 		SharedWith:          sharedWith,
 		DADomains:           enr.DADomains,
 		ControlledObjects:   enr.ControlledObjects,
-		DaysOutOfCompliance: e.daysOutOfCompliance(enr.PwdLastSet, now),
+		DaysOutOfCompliance: daysOutOfCompliance(enr.PwdLastSet, now, pol.MaxPasswordAgeDays),
 		PasswordExpires:     passwordExpires(enr.PwdNeverExpires),
 		HIBPBreachCount:     count,
 	}
@@ -145,6 +146,7 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 		Controlled:      derefInt(enr.ControlledObjects),
 		SharedWith:      sharedWith,
 		Enabled:         derefBool(enr.Enabled),
+		MeetsPolicy:     an.MeetsPolicy,
 	}
 }
 
@@ -192,12 +194,12 @@ func (e *Engine) enrich(username, domain string, wanted bool) Enrichment {
 	return e.Enricher.Enrich(normalizeUsername(username, domain))
 }
 
-func (e *Engine) daysOutOfCompliance(pwdLastSet *int64, now time.Time) *int {
+func daysOutOfCompliance(pwdLastSet *int64, now time.Time, maxAge int) *int {
 	if pwdLastSet == nil {
 		return nil
 	}
 	daysSince := int(now.Sub(time.Unix(*pwdLastSet, 0).UTC()).Hours() / 24)
-	d := daysSince - e.MaxPasswordAgeDays
+	d := daysSince - maxAge
 	if d < 0 {
 		d = 0
 	}

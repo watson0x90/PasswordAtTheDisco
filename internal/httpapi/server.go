@@ -22,6 +22,7 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/auth"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/engine"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/secretsdump"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/store"
 )
@@ -39,6 +40,8 @@ type Server struct {
 	Audit        *audit.Logger
 	LoginLimiter *auth.Limiter  // per-IP failed-login throttle
 	Engine       *engine.Engine // optional: enables lead web uploads (POST /api/audit)
+	Policies     *policy.Set    // shared with Engine; exposed/edited via /api/policies
+	PolicyPath   string         // where to persist policy edits (empty = in-memory only)
 }
 
 // staticFS resolves the SPA filesystem: the embedded FS if present, else the
@@ -80,6 +83,9 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /api/accounts/{username}/secret", s.requireAuth(http.HandlerFunc(s.handleReveal)))
 	// Web upload: lead uploads dump files, the server runs the engine + ingests
 	mux.Handle("POST /api/audit", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleAudit))))
+	// Per-domain password policies: any operator may read; lead may edit
+	mux.Handle("GET /api/policies", s.requireAuth(http.HandlerFunc(s.handleGetPolicies)))
+	mux.Handle("PUT /api/policies", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleSetPolicies))))
 	// SPA
 	mux.Handle("/", spaHandler(s.staticFS()))
 	return securityHeaders(logRequests(mux))
@@ -258,6 +264,81 @@ func optionalUpload(r *http.Request, field, domain string, fn func(io.Reader, st
 	}
 	defer f.Close()
 	return fn(f, domain)
+}
+
+// policiesPayload is the wire shape for GET/PUT /api/policies.
+type policiesPayload struct {
+	Default policy.Policy            `json:"default"`
+	Domains map[string]policy.Policy `json:"domains"`
+}
+
+// handleGetPolicies returns the current default + per-domain policies.
+func (s *Server) handleGetPolicies(w http.ResponseWriter, _ *http.Request) {
+	if s.Policies == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "policies not configured"})
+		return
+	}
+	def, domains := s.Policies.Snapshot()
+	writeJSON(w, http.StatusOK, policiesPayload{Default: def, Domains: domains})
+}
+
+// handleSetPolicies replaces the policy set (lead only), persists it to disk if a
+// path is configured, and -- because the Set is shared with the engine -- takes
+// effect for the next upload immediately. Audit-logged.
+func (s *Server) handleSetPolicies(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "policy_update", Source: r.RemoteAddr, Result: "denied"})
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	if s.Policies == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "policies not configured"})
+		return
+	}
+	defer r.Body.Close()
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	dec.DisallowUnknownFields()
+	var p policiesPayload
+	if err := dec.Decode(&p); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid policies: " + err.Error()})
+		return
+	}
+	if err := validatePolicy("default", p.Default); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	for name, pol := range p.Domains {
+		if strings.TrimSpace(name) == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "domain name cannot be empty"})
+			return
+		}
+		if err := validatePolicy(name, pol); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+	}
+	s.Policies.Replace(p.Default, p.Domains)
+	saved := "memory"
+	if s.PolicyPath != "" {
+		if err := s.Policies.Save(s.PolicyPath); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "saved in memory but failed to persist: " + err.Error()})
+			return
+		}
+		saved = s.PolicyPath
+	}
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "policy_update", Target: strconv.Itoa(len(p.Domains)) + " domain(s)", Source: r.RemoteAddr, Result: "ok"})
+	writeJSON(w, http.StatusOK, map[string]any{"domains": len(p.Domains), "persisted": saved})
+}
+
+func validatePolicy(name string, p policy.Policy) error {
+	if p.MinLength < 1 || p.MinLength > 256 {
+		return fmt.Errorf("%s: min_length must be between 1 and 256", name)
+	}
+	if p.MaxPasswordAgeDays < 0 || p.MaxPasswordAgeDays > 100000 {
+		return fmt.Errorf("%s: max_password_age_days out of range", name)
+	}
+	return nil
 }
 
 // requireAuth ensures a valid session and puts it in the request context.

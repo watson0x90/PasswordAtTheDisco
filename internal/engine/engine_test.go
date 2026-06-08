@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/pwanalysis"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/secretsdump"
 )
@@ -26,10 +27,9 @@ func ipv(n int) *int  { return &n }
 
 func newEngine() *Engine {
 	return &Engine{
-		Lists:              pwanalysis.Lists{CommonPasswords: pwanalysis.NewSet("welcome1")},
-		Policy:             pwanalysis.DefaultPolicy(),
-		MaxPasswordAgeDays: 90,
-		Now:                func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
+		Lists:    pwanalysis.Lists{CommonPasswords: pwanalysis.NewSet("welcome1")},
+		Policies: policy.DefaultSet(),
+		Now:      func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
 	}
 }
 
@@ -130,11 +130,11 @@ func TestPasswordExpiresAndDays(t *testing.T) {
 	e := newEngine() // now = 1_700_000_000
 	// pwdlastset 200 days before now, maxAge 90 -> ~110 days out
 	setEpoch := int64(1_700_000_000 - 200*24*3600)
-	d := e.daysOutOfCompliance(&setEpoch, e.now())
+	d := daysOutOfCompliance(&setEpoch, e.now(), 90)
 	if d == nil || *d < 105 || *d > 115 {
 		t.Errorf("daysOutOfCompliance = %v, want ~110", d)
 	}
-	if e.daysOutOfCompliance(nil, e.now()) != nil {
+	if daysOutOfCompliance(nil, e.now(), 90) != nil {
 		t.Error("nil pwdlastset -> nil days")
 	}
 }

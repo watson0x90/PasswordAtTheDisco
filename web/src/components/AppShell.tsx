@@ -2,7 +2,7 @@ import type { ReactNode } from "react"
 import { useAuth } from "../auth"
 import { Logo } from "./Logo"
 
-export type View = "overview" | "actionable" | "domains" | "accounts" | "ingest"
+export type View = "overview" | "actionable" | "domains" | "accounts" | "ingest" | "policies"
 
 const TABS: { id: View; label: string }[] = [
   { id: "overview", label: "Overview" },
@@ -13,8 +13,11 @@ const TABS: { id: View; label: string }[] = [
 
 export function AppShell({ view, onNav, children }: { view: View; onNav: (v: View) => void; children: ReactNode }) {
   const { me, logout } = useAuth()
-  // Ingest (web upload) is lead-only.
-  const tabs = me?.role === "lead" ? [...TABS, { id: "ingest" as View, label: "Ingest" }] : TABS
+  // Ingest (web upload) and Policies editing are lead-only.
+  const tabs =
+    me?.role === "lead"
+      ? [...TABS, { id: "ingest" as View, label: "Ingest" }, { id: "policies" as View, label: "Policies" }]
+      : TABS
   return (
     <div className="shell">
       <header className="topbar">
