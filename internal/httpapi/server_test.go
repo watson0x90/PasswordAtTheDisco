@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,7 +14,9 @@ import (
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/audit"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/auth"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/engine"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/pwanalysis"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/store"
 )
 
@@ -206,6 +209,60 @@ func TestLogoutRequiresCSRF(t *testing.T) {
 	}
 	if rec := do(srv, "GET", "/api/accounts", cookie); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("session should be invalid after logout, got %d", rec.Code)
+	}
+}
+
+func auditReq(t *testing.T, cookie *http.Cookie, csrf, domain, crackedBody string) *http.Request {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	_ = mw.WriteField("domain", domain)
+	fw, _ := mw.CreateFormFile("cracked", "cracked.txt")
+	_, _ = io.WriteString(fw, crackedBody)
+	_ = mw.Close()
+	req := httptest.NewRequest("POST", "/api/audit", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
+	if csrf != "" {
+		req.Header.Set("X-CSRF-Token", csrf)
+	}
+	return req
+}
+
+func TestAuditUpload(t *testing.T) {
+	body := "alice:1001:aad3b435b51404eeaad3b435b51404ee:NTLMHASHVALUE:::Welcome1\n"
+
+	// lead with an engine configured -> ingests and the data is queryable (redacted)
+	srv := newServer("secret")
+	srv.Engine = &engine.Engine{Policy: pwanalysis.DefaultPolicy(), MaxPasswordAgeDays: 90}
+	cookie, csrf := loginCSRF(t, srv, "lead", "leadpw")
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, auditReq(t, cookie, csrf, "CORP", body))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"accounts":1`) {
+		t.Fatalf("lead upload = %d %s", rec.Code, rec.Body.String())
+	}
+	ar := do(srv, "GET", "/api/accounts", cookie)
+	if !strings.Contains(ar.Body.String(), "alice") || strings.Contains(ar.Body.String(), "Welcome1") {
+		t.Fatalf("accounts after upload (must include alice, NOT cleartext): %s", ar.Body.String())
+	}
+
+	// analyst -> 403
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	rec = httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, auditReq(t, ac, acsrf, "CORP", body))
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("analyst audit should be 403, got %d", rec.Code)
+	}
+
+	// no engine configured -> 503
+	srv2 := newServer("secret")
+	c2, csrf2 := loginCSRF(t, srv2, "lead", "leadpw")
+	rec = httptest.NewRecorder()
+	srv2.Routes().ServeHTTP(rec, auditReq(t, c2, csrf2, "CORP", body))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("audit without engine should be 503, got %d", rec.Code)
 	}
 }
 

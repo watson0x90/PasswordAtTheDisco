@@ -48,24 +48,8 @@ func runAudit(args []string) {
 		log.Fatalf("audit: %v", err)
 	}
 
-	eng := &engine.Engine{
-		Lists:              loadLists(*listsDir),
-		Policy:             pwanalysis.DefaultPolicy(),
-		MaxPasswordAgeDays: *maxAge,
-	}
-	if s, err := hibp.Open(*hibpPath, hibp.DefaultPrefixLen); err == nil {
-		defer s.Close()
-		eng.HIBP = s
-		log.Printf("HIBP correlation enabled (%s)", *hibpPath)
-	} else {
-		log.Printf("HIBP correlation disabled (%v)", err)
-	}
-	if cfg, err := bloodhound.LoadConfig(*bhePath); err == nil && configured(cfg) {
-		eng.Enricher = engine.BloodhoundEnricher{Client: bloodhound.New(cfg)}
-		log.Printf("BloodHound enrichment enabled (%s:%d)", cfg.Host, cfg.Port)
-	} else {
-		log.Printf("BloodHound enrichment disabled")
-	}
+	eng, cleanup := buildEngine(*hibpPath, *listsDir, *bhePath, *maxAge)
+	defer cleanup()
 
 	var all []model.Account
 	for _, e := range entries {
@@ -115,6 +99,32 @@ func parseEntries(args []string) ([]domainEntry, error) {
 // configured reports whether a BHE config has real (non-placeholder) credentials.
 func configured(c bloodhound.Config) bool {
 	return c.TokenID != "" && c.TokenID != "your-token-id-here" && c.TokenKey != "" && c.TokenKey != "your-token-key-here"
+}
+
+// buildEngine constructs the audit engine from on-disk inputs (shared by the
+// `audit` CLI and the server's web-upload endpoint). The returned cleanup closes
+// the HIBP searcher; call it on shutdown.
+func buildEngine(hibpPath, listsDir, bhePath string, maxAge int) (*engine.Engine, func()) {
+	eng := &engine.Engine{
+		Lists:              loadLists(listsDir),
+		Policy:             pwanalysis.DefaultPolicy(),
+		MaxPasswordAgeDays: maxAge,
+	}
+	cleanup := func() {}
+	if s, err := hibp.Open(hibpPath, hibp.DefaultPrefixLen); err == nil {
+		eng.HIBP = s
+		cleanup = func() { _ = s.Close() }
+		log.Printf("HIBP correlation enabled (%s)", hibpPath)
+	} else {
+		log.Printf("HIBP correlation disabled (%v)", err)
+	}
+	if cfg, err := bloodhound.LoadConfig(bhePath); err == nil && configured(cfg) {
+		eng.Enricher = engine.BloodhoundEnricher{Client: bloodhound.New(cfg)}
+		log.Printf("BloodHound enrichment enabled (%s:%d)", cfg.Host, cfg.Port)
+	} else {
+		log.Printf("BloodHound enrichment disabled")
+	}
+	return eng, cleanup
 }
 
 func loadLists(dir string) pwanalysis.Lists {

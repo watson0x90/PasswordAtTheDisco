@@ -2,7 +2,7 @@ import type { ReactNode } from "react"
 import { useAuth } from "../auth"
 import { Logo } from "./Logo"
 
-export type View = "overview" | "actionable" | "domains" | "accounts"
+export type View = "overview" | "actionable" | "domains" | "accounts" | "ingest"
 
 const TABS: { id: View; label: string }[] = [
   { id: "overview", label: "Overview" },
@@ -13,6 +13,8 @@ const TABS: { id: View; label: string }[] = [
 
 export function AppShell({ view, onNav, children }: { view: View; onNav: (v: View) => void; children: ReactNode }) {
   const { me, logout } = useAuth()
+  // Ingest (web upload) is lead-only.
+  const tabs = me?.role === "lead" ? [...TABS, { id: "ingest" as View, label: "Ingest" }] : TABS
   return (
     <div className="shell">
       <header className="topbar">
@@ -22,7 +24,7 @@ export function AppShell({ view, onNav, children }: { view: View; onNav: (v: Vie
             <span className="word">Password<b>!AtTheDisco</b></span>
           </div>
           <nav className="nav">
-            {TABS.map((t) => (
+            {tabs.map((t) => (
               <button key={t.id} className={t.id === view ? "nav-tab active" : "nav-tab"} onClick={() => onNav(t.id)}>
                 {t.label}
               </button>

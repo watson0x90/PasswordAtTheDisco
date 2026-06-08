@@ -5,6 +5,7 @@ package store
 
 import (
 	"sync"
+	"time"
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 )
@@ -23,6 +24,22 @@ func (s *Store) Replace(ds model.Dataset) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ds = ds
+}
+
+// ReplaceDomain replaces all accounts for one domain with the given set, leaving
+// other domains intact. Used by per-domain web uploads so operators can build up
+// (and re-upload) a multi-domain dataset.
+func (s *Store) ReplaceDomain(domain string, accounts []model.Account) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := make([]model.Account, 0, len(s.ds.Accounts))
+	for _, a := range s.ds.Accounts {
+		if a.Domain != domain {
+			kept = append(kept, a)
+		}
+	}
+	s.ds.Accounts = append(kept, accounts...)
+	s.ds.GeneratedAt = time.Now().UTC()
 }
 
 // Accounts returns the accounts. Passwords are stripped unless includeSecrets is

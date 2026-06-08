@@ -67,6 +67,16 @@ func main() {
 		auditW = f
 	}
 
+	// Audit engine for web uploads (lead POST /api/audit). Same inputs as the
+	// `audit` CLI, from env. cleanup closes the HIBP searcher on shutdown.
+	eng, cleanup := buildEngine(
+		env("PATD_HIBP", "PwnedPasswordsDownloader/pwnedpasswords_ntlm.txt"),
+		env("PATD_LISTS", "lists"),
+		env("PATD_BHE", "config/bloodhound.json"),
+		90,
+	)
+	defer cleanup()
+
 	api := &httpapi.Server{
 		Store:        store.New(),
 		StaticFS:     webui.FS, // embedded SPA when built with -tags embed; else nil
@@ -76,6 +86,7 @@ func main() {
 		Sessions:     auth.NewSessionStore(30*time.Minute, 8*time.Hour),
 		Audit:        audit.New(auditW),
 		LoginLimiter: auth.NewLimiter(10, 15*time.Minute),
+		Engine:       eng,
 	}
 
 	srv := &http.Server{

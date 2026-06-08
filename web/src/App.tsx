@@ -7,6 +7,7 @@ import { Dashboard } from "./components/Dashboard"
 import { Actionable } from "./components/Actionable"
 import { Domains } from "./components/Domains"
 import { Accounts } from "./components/Accounts"
+import { Ingest } from "./components/Ingest"
 
 function viewFor(view: View) {
   switch (view) {
@@ -16,6 +17,8 @@ function viewFor(view: View) {
       return <Domains />
     case "accounts":
       return <Accounts />
+    case "ingest":
+      return <Ingest />
     default:
       return <Dashboard />
   }

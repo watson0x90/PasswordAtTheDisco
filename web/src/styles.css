@@ -397,3 +397,54 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 .dstat { text-align: center; }
 .dstat-v { font-family: var(--mono); font-size: 20px; font-weight: 600; line-height: 1.1; }
 .dstat-l { font-size: 9px; letter-spacing: 0.6px; text-transform: uppercase; color: var(--faint); margin-top: 4px; }
+
+/* ---- ingest (web upload) ---- */
+
+.ingest-form { max-width: 560px; }
+.ingest-note { font-size: 13px; color: var(--dim); margin: 0 0 22px; line-height: 1.6; }
+.ingest-form .field label { display: flex; align-items: center; gap: 8px; }
+.req { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--crit); }
+.opt { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--faint); }
+.hint { font-size: 11px; color: var(--faint); margin-top: 6px; }
+.hint code { font-family: var(--mono); color: var(--dim); background: rgba(255, 255, 255, 0.05); padding: 1px 5px; border-radius: 4px; }
+
+.ingest-form input[type="file"] {
+  width: 100%;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--dim);
+  background: #0a1020;
+  border: 1px dashed var(--glass-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+.ingest-form input[type="file"]::file-selector-button {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--glass-border);
+  border-radius: 7px;
+  padding: 6px 12px;
+  margin-right: 12px;
+  cursor: pointer;
+}
+.ingest-form input[type="file"]::file-selector-button:hover { border-color: rgba(129, 140, 248, 0.4); }
+.ingest-form .btn-primary { margin-top: 4px; }
+
+.ingest-ok {
+  font-size: 13px;
+  color: #bbf7d0;
+  background: var(--low-bg);
+  border: 1px solid rgba(34, 211, 238, 0.3);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.ingest-ok b { color: var(--text); }
+.ingest-ok .btn { margin-left: auto; padding: 6px 12px; }

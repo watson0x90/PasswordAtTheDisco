@@ -94,4 +94,19 @@ export const api = {
 
   revealSecret: (username: string) =>
     request<{ username: string; password: string }>(`/accounts/${encodeURIComponent(username)}/secret`),
+
+  audit: (domain: string, cracked: File, uncracked: File | null, csrf: string) => {
+    const fd = new FormData()
+    fd.append("domain", domain)
+    fd.append("cracked", cracked)
+    if (uncracked) fd.append("uncracked", uncracked)
+    // No Content-Type header: the browser sets the multipart boundary.
+    return request<AuditResult>("/audit", { method: "POST", headers: { "X-CSRF-Token": csrf }, body: fd })
+  },
+}
+
+export interface AuditResult {
+  accounts: number
+  cracked: number
+  uncracked: number
 }

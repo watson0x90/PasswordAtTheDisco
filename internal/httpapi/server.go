@@ -6,6 +6,8 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net"
@@ -18,7 +20,9 @@ import (
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/audit"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/auth"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/engine"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/secretsdump"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/store"
 )
 
@@ -33,7 +37,8 @@ type Server struct {
 	Users        auth.Users
 	Sessions     *auth.SessionStore
 	Audit        *audit.Logger
-	LoginLimiter *auth.Limiter // per-IP failed-login throttle
+	LoginLimiter *auth.Limiter  // per-IP failed-login throttle
+	Engine       *engine.Engine // optional: enables lead web uploads (POST /api/audit)
 }
 
 // staticFS resolves the SPA filesystem: the embedded FS if present, else the
@@ -73,6 +78,8 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /api/accounts", s.requireAuth(http.HandlerFunc(s.handleAccounts)))
 	// Cleartext reveal -- requires lead role, always audit-logged
 	mux.Handle("GET /api/accounts/{username}/secret", s.requireAuth(http.HandlerFunc(s.handleReveal)))
+	// Web upload: lead uploads dump files, the server runs the engine + ingests
+	mux.Handle("POST /api/audit", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleAudit))))
 	// SPA
 	mux.Handle("/", spaHandler(s.staticFS()))
 	return securityHeaders(logRequests(mux))
@@ -188,6 +195,69 @@ func (s *Server) handleReveal(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "reveal_secret", Target: username, Source: r.RemoteAddr, Result: "ok"})
 	writeJSON(w, http.StatusOK, map[string]string{"username": acct.Username, "password": acct.Password})
+}
+
+// handleAudit accepts uploaded credential dumps (multipart: domain + a required
+// "cracked" file and an optional "uncracked" file), runs the engine, and upserts
+// the domain's results into the store. Lead role only; audit-logged. Cleartext
+// is parsed and scored in memory and never written to disk.
+func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "audit_upload", Source: r.RemoteAddr, Result: "denied"})
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	if s.Engine == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "audit engine not configured on this server"})
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 128<<20) // 128 MiB cap
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid upload: " + err.Error()})
+		return
+	}
+	domain := strings.TrimSpace(r.FormValue("domain"))
+	if domain == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "domain is required"})
+		return
+	}
+
+	cf, _, err := r.FormFile("cracked")
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a cracked-passwords file is required"})
+		return
+	}
+	defer cf.Close()
+	cracked, err := secretsdump.ParseCracked(cf, domain)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "parse cracked: " + err.Error()})
+		return
+	}
+	uncracked, err := optionalUpload(r, "uncracked", domain, secretsdump.ParseUncracked)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	accts := s.Engine.ProcessDomain(domain, cracked, uncracked)
+	s.Store.ReplaceDomain(domain, accts)
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "audit_upload", Target: domain, Source: r.RemoteAddr, Result: "ok"})
+	writeJSON(w, http.StatusOK, map[string]int{"accounts": len(accts), "cracked": len(cracked), "uncracked": len(uncracked)})
+}
+
+// optionalUpload parses an optional multipart file part; returns nil if absent.
+func optionalUpload(r *http.Request, field, domain string, fn func(io.Reader, string) ([]secretsdump.ParsedAccount, error)) ([]secretsdump.ParsedAccount, error) {
+	f, _, err := r.FormFile(field)
+	if err == http.ErrMissingFile {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%s file: %v", field, err)
+	}
+	defer f.Close()
+	return fn(f, domain)
 }
 
 // requireAuth ensures a valid session and puts it in the request context.
