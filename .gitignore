@@ -230,3 +230,6 @@ audit.log
 node_modules/
 # Built SPA copied here for `-tags embed` release builds (artifact)
 internal/webui/dist/
+
+# Encrypted-at-rest store (keyfile + audit blobs)
+/data/

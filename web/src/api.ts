@@ -9,6 +9,8 @@ export interface Me {
   role: Role
   csrf_token: string
   active_audit: string
+  store_initialized: boolean
+  store_unlocked: boolean
 }
 
 export interface AuditMeta {
@@ -132,6 +134,13 @@ export const api = {
     // No Content-Type header: the browser sets the multipart boundary.
     return request<AuditResult>("/upload", { method: "POST", headers: { "X-CSRF-Token": csrf }, body: fd })
   },
+
+  unlock: (passphrase: string, csrf: string) =>
+    request<{ unlocked: boolean; initialized: boolean }>("/unlock", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+      body: JSON.stringify({ passphrase }),
+    }),
 
   listAudits: () => request<AuditListItem[]>("/audits"),
 

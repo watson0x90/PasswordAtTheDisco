@@ -18,6 +18,7 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/store"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/vault"
 )
 
 const oneAccount = `{"accounts":[{"username":"alice","domain":"CORP","password":"Welcome1",` +
@@ -355,6 +356,37 @@ func TestPolicies(t *testing.T) {
 	// invalid (min_length 0) rejected
 	if r := sendJSON(srv, "PUT", "/api/policies", lc, lcsrf, `{"default":{"min_length":0,"max_password_age_days":90},"domains":{}}`); r.Code != http.StatusBadRequest {
 		t.Fatalf("invalid policy should be 400, got %d", r.Code)
+	}
+}
+
+func TestStoreLockAndUnlock(t *testing.T) {
+	srv := newServer("secret")
+	v, err := vault.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.Store = store.NewPersistent(v)
+
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	// locked -> data endpoints return 423
+	if rec := do(srv, "GET", "/api/audits", lc); rec.Code != http.StatusLocked {
+		t.Fatalf("locked store should be 423, got %d", rec.Code)
+	}
+	// analyst cannot unlock
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	if rec := sendJSON(srv, "POST", "/api/unlock", ac, acsrf, `{"passphrase":"a-strong-passphrase"}`); rec.Code != http.StatusForbidden {
+		t.Fatalf("analyst unlock should be 403, got %d", rec.Code)
+	}
+	// too-short passphrase on first run -> 400
+	if rec := sendJSON(srv, "POST", "/api/unlock", lc, lcsrf, `{"passphrase":"short"}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("short passphrase should be 400, got %d", rec.Code)
+	}
+	// lead first-run sets the passphrase + unlocks
+	if rec := sendJSON(srv, "POST", "/api/unlock", lc, lcsrf, `{"passphrase":"a-strong-passphrase"}`); rec.Code != http.StatusOK {
+		t.Fatalf("lead unlock = %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := do(srv, "GET", "/api/audits", lc); rec.Code != http.StatusOK {
+		t.Fatalf("after unlock, audits should be 200, got %d", rec.Code)
 	}
 }
 

@@ -11,6 +11,7 @@ import { Domains } from "./components/Domains"
 import { Accounts } from "./components/Accounts"
 import { Ingest } from "./components/Ingest"
 import { Policies } from "./components/Policies"
+import { Unlock } from "./components/Unlock"
 
 function viewFor(view: View) {
   switch (view) {
@@ -30,7 +31,7 @@ function viewFor(view: View) {
 }
 
 function Routed() {
-  const { status } = useAuth()
+  const { status, me } = useAuth()
   const [view, setView] = useState<View>("overview")
 
   if (status === "loading") {
@@ -41,6 +42,8 @@ function Routed() {
     )
   }
   if (status === "anonymous") return <Login />
+  // Authenticated but the encrypted store is locked: gate behind the unlock screen.
+  if (me && !me.store_unlocked) return <Unlock />
 
   return (
     <NavProvider value={setView}>

@@ -28,6 +28,7 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/auth"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/httpapi"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/store"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/vault"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/webui"
 )
 
@@ -78,8 +79,21 @@ func main() {
 	)
 	defer cleanup()
 
+	// Encrypted-at-rest store. Starts locked; a lead unlocks it via the UI (the
+	// passphrase is never persisted). On first run the passphrase is set then.
+	dataDir := env("PATD_DATA", "data")
+	vlt, err := vault.Open(dataDir)
+	if err != nil {
+		log.Fatalf("cannot open data dir %s: %v", dataDir, err)
+	}
+	if vlt.Initialized() {
+		log.Printf("encrypted store %s: locked -- a lead must unlock via the UI", dataDir)
+	} else {
+		log.Printf("encrypted store %s: uninitialized -- a lead sets the passphrase on first unlock", dataDir)
+	}
+
 	api := &httpapi.Server{
-		Store:        store.New(),
+		Store:        store.NewPersistent(vlt),
 		StaticFS:     webui.FS, // embedded SPA when built with -tags embed; else nil
 		StaticDir:    env("PATD_STATIC_DIR", "web/dist"),
 		IngestToken:  os.Getenv("PATD_INGEST_TOKEN"),

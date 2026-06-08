@@ -6,12 +6,14 @@ package store
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"sort"
 	"sync"
 	"time"
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/vault"
 )
 
 // ErrNotFound is returned when an audit id does not exist.
@@ -38,21 +40,104 @@ type audit struct {
 	ds   model.Dataset
 }
 
-// Store is a thread-safe, in-memory collection of audits.
+// persisted is the on-disk (pre-encryption) shape of one audit.
+type persisted struct {
+	Meta    AuditMeta     `json:"meta"`
+	Dataset model.Dataset `json:"dataset"`
+}
+
+// Store is a thread-safe collection of audits, optionally persisted to an
+// encrypted vault. With no vault it is purely in-memory and always "unlocked".
 type Store struct {
 	mu     sync.RWMutex
 	audits map[string]*audit
 	now    func() time.Time
 	newID  func() string
+	vault  *vault.Vault // nil = in-memory only
 }
 
-// New returns an empty Store.
+// New returns an empty in-memory Store (no persistence).
 func New() *Store {
 	return &Store{
 		audits: map[string]*audit{},
 		now:    func() time.Time { return time.Now().UTC() },
 		newID:  randomID,
 	}
+}
+
+// NewPersistent returns a Store backed by an encrypted vault. It starts locked
+// (and empty) until Unlock loads the decrypted audits into memory.
+func NewPersistent(v *vault.Vault) *Store {
+	s := New()
+	s.vault = v
+	return s
+}
+
+// Initialized reports whether the backing vault has a passphrase set (always
+// true for an in-memory store).
+func (s *Store) Initialized() bool {
+	if s.vault == nil {
+		return true
+	}
+	return s.vault.Initialized()
+}
+
+// Unlocked reports whether the store is usable (always true in-memory).
+func (s *Store) Unlocked() bool {
+	if s.vault == nil {
+		return true
+	}
+	return s.vault.Unlocked()
+}
+
+// Initialize sets the store passphrase on first run (no-op in-memory).
+func (s *Store) Initialize(passphrase string) error {
+	if s.vault == nil {
+		return nil
+	}
+	return s.vault.Initialize(passphrase)
+}
+
+// Unlock decrypts the vault with the passphrase and loads the audits into memory.
+func (s *Store) Unlock(passphrase string) error {
+	if s.vault == nil {
+		return nil
+	}
+	if err := s.vault.Unlock(passphrase); err != nil {
+		return err
+	}
+	return s.load()
+}
+
+func (s *Store) load() error {
+	blobs, err := s.vault.LoadAll()
+	if err != nil {
+		return err
+	}
+	loaded := make(map[string]*audit, len(blobs))
+	for id, b := range blobs {
+		var p persisted
+		if err := json.Unmarshal(b, &p); err != nil {
+			return err
+		}
+		loaded[id] = &audit{meta: p.Meta, ds: p.Dataset}
+	}
+	s.mu.Lock()
+	s.audits = loaded
+	s.mu.Unlock()
+	return nil
+}
+
+// persist writes one audit to the vault (caller holds s.mu). No-op in-memory.
+func (s *Store) persist(a *audit) error {
+	if s.vault == nil {
+		return nil
+	}
+	b, err := json.Marshal(persisted{Meta: a.meta, Dataset: a.ds})
+	if err != nil {
+		return err
+	}
+	return s.vault.SaveAudit(a.meta.ID, b)
 }
 
 func randomID() string {
@@ -62,13 +147,17 @@ func randomID() string {
 }
 
 // CreateAudit adds a new, empty audit and returns its metadata.
-func (s *Store) CreateAudit(name, notes string) AuditMeta {
+func (s *Store) CreateAudit(name, notes string) (AuditMeta, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
-	m := AuditMeta{ID: s.newID(), Name: name, Notes: notes, CreatedAt: now, UpdatedAt: now}
-	s.audits[m.ID] = &audit{meta: m, ds: model.Dataset{GeneratedAt: now}}
-	return m
+	a := &audit{meta: AuditMeta{ID: s.newID(), Name: name, Notes: notes, CreatedAt: now, UpdatedAt: now}, ds: model.Dataset{GeneratedAt: now}}
+	s.audits[a.meta.ID] = a
+	if err := s.persist(a); err != nil {
+		delete(s.audits, a.meta.ID) // roll back if it can't be saved
+		return AuditMeta{}, err
+	}
+	return a.meta, nil
 }
 
 // List returns all audits' metadata + counts, newest first.
@@ -106,6 +195,9 @@ func (s *Store) Delete(id string) bool {
 		return false
 	}
 	delete(s.audits, id)
+	if s.vault != nil {
+		_ = s.vault.DeleteAudit(id) // best-effort; file may already be gone
+	}
 	return true
 }
 
@@ -127,7 +219,7 @@ func (s *Store) ReplaceDomain(id, domain string, accounts []model.Account) error
 	a.ds.Accounts = append(kept, accounts...)
 	a.ds.GeneratedAt = s.now()
 	a.meta.UpdatedAt = a.ds.GeneratedAt
-	return nil
+	return s.persist(a)
 }
 
 // Replace swaps an audit's entire dataset (CLI ingest).
@@ -143,7 +235,7 @@ func (s *Store) Replace(id string, ds model.Dataset) error {
 	}
 	a.ds = ds
 	a.meta.UpdatedAt = ds.GeneratedAt
-	return nil
+	return s.persist(a)
 }
 
 // Accounts returns an audit's accounts. Passwords are stripped unless

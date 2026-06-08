@@ -8,6 +8,7 @@ interface AuthState {
   me: Me | null
   login: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
+  refresh: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthState | null>(null)
@@ -56,7 +57,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [me])
 
-  return <AuthContext.Provider value={{ status, me, login, logout }}>{children}</AuthContext.Provider>
+  // refresh re-reads /me (e.g. after unlocking the store, to pick up the new state).
+  const refresh = useCallback(async () => {
+    setMe(await api.me())
+  }, [])
+
+  return (
+    <AuthContext.Provider value={{ status, me, login, logout, refresh }}>{children}</AuthContext.Provider>
+  )
 }
 
 export function useAuth(): AuthState {

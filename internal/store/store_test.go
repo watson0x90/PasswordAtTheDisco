@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/vault"
 )
 
 func sample() model.Dataset {
@@ -17,11 +18,14 @@ func sample() model.Dataset {
 // seed creates an audit and loads the sample dataset into it, returning its id.
 func seed(t *testing.T, s *Store) string {
 	t.Helper()
-	id := s.CreateAudit("test", "").ID
-	if err := s.Replace(id, sample()); err != nil {
+	m, err := s.CreateAudit("test", "")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := s.Replace(m.ID, sample()); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	return id
+	return m.ID
 }
 
 func TestAccountsRedactedByDefault(t *testing.T) {
@@ -71,8 +75,8 @@ func TestSummary(t *testing.T) {
 
 func TestAuditsIsolatedAndListed(t *testing.T) {
 	s := New()
-	a := s.CreateAudit("Engagement A", "client A")
-	b := s.CreateAudit("Engagement B", "")
+	a, _ := s.CreateAudit("Engagement A", "client A")
+	b, _ := s.CreateAudit("Engagement B", "")
 	if err := s.Replace(a.ID, sample()); err != nil {
 		t.Fatal(err)
 	}
@@ -94,9 +98,54 @@ func TestAuditsIsolatedAndListed(t *testing.T) {
 	}
 }
 
+func TestPersistentRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	v, _ := vault.Open(dir)
+	s := NewPersistent(v)
+	if s.Unlocked() {
+		t.Fatal("persistent store should start locked")
+	}
+	if err := s.Initialize("a-strong-passphrase"); err != nil { // first run, unlocks
+		t.Fatalf("initialize: %v", err)
+	}
+	m, err := s.CreateAudit("Engagement", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Replace(m.ID, sample()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Reopen from disk: locked until the correct passphrase, then data is back.
+	s2 := NewPersistent(mustReopen(t, dir))
+	if s2.Unlocked() {
+		t.Fatal("reopened store should be locked")
+	}
+	if err := s2.Unlock("wrong"); err == nil {
+		t.Fatal("wrong passphrase should fail")
+	}
+	if err := s2.Unlock("a-strong-passphrase"); err != nil {
+		t.Fatalf("unlock: %v", err)
+	}
+	sum, err := s2.Summary(m.ID)
+	if err != nil || sum.TotalAccounts != 2 {
+		t.Fatalf("data not persisted across reopen: %v %+v", err, sum)
+	}
+}
+
+func mustReopen(t *testing.T, dir string) *vault.Vault {
+	t.Helper()
+	v, err := vault.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
 func TestReplaceDomainScoped(t *testing.T) {
 	s := New()
-	id := s.CreateAudit("x", "").ID
+	idm, _ := s.CreateAudit("x", "")
+	id := idm.ID
 	_ = s.Replace(id, sample()) // CORP: alice, bob
 	// upsert CORP -> replaces both CORP accounts with one
 	if err := s.ReplaceDomain(id, "CORP", []model.Account{{Username: "carol", Domain: "CORP", Cracked: true, RiskLevel: "High"}}); err != nil {

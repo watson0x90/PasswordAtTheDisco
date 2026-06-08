@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -25,6 +26,7 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/secretsdump"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/store"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/vault"
 )
 
 const sessionCookie = "patd_session"
@@ -73,22 +75,24 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/version", s.handleVersion)
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	// Engine ingestion (separate token, not a user session) -- creates an audit
-	mux.Handle("POST /api/ingest", s.requireIngestToken(http.HandlerFunc(s.handleIngest)))
+	mux.Handle("POST /api/ingest", s.requireIngestToken(s.requireUnlocked(http.HandlerFunc(s.handleIngest))))
 	// Authenticated operators (any role) -- redacted data only
 	mux.Handle("POST /api/logout", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleLogout))))
 	mux.Handle("GET /api/me", s.requireAuth(http.HandlerFunc(s.handleMe)))
-	// Audit (engagement) management + selection
-	mux.Handle("GET /api/audits", s.requireAuth(http.HandlerFunc(s.handleListAudits)))
-	mux.Handle("POST /api/audits", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleCreateAudit))))
-	mux.Handle("DELETE /api/audits/{id}", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleDeleteAudit))))
-	mux.Handle("POST /api/audits/{id}/open", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleOpenAudit))))
+	// Unlock / first-run passphrase for the encrypted store (lead)
+	mux.Handle("POST /api/unlock", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleUnlock))))
+	// Audit (engagement) management + selection -- needs an unlocked store
+	mux.Handle("GET /api/audits", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleListAudits))))
+	mux.Handle("POST /api/audits", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleCreateAudit)))))
+	mux.Handle("DELETE /api/audits/{id}", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleDeleteAudit)))))
+	mux.Handle("POST /api/audits/{id}/open", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleOpenAudit)))))
 	// Views scoped to the session's active audit
-	mux.Handle("GET /api/summary", s.requireAuth(http.HandlerFunc(s.handleSummary)))
-	mux.Handle("GET /api/accounts", s.requireAuth(http.HandlerFunc(s.handleAccounts)))
+	mux.Handle("GET /api/summary", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleSummary))))
+	mux.Handle("GET /api/accounts", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleAccounts))))
 	// Cleartext reveal -- requires lead role, always audit-logged
-	mux.Handle("GET /api/accounts/{username}/secret", s.requireAuth(http.HandlerFunc(s.handleReveal)))
+	mux.Handle("GET /api/accounts/{username}/secret", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleReveal))))
 	// Web upload of dump files into the active audit (lead)
-	mux.Handle("POST /api/upload", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleAudit))))
+	mux.Handle("POST /api/upload", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleAudit)))))
 	// Per-domain password policies: any operator may read; lead may edit
 	mux.Handle("GET /api/policies", s.requireAuth(http.HandlerFunc(s.handleGetPolicies)))
 	mux.Handle("PUT /api/policies", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleSetPolicies))))
@@ -162,10 +166,76 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	sess, _ := sessionFrom(r.Context())
 	active := sess.ActiveAudit
-	if active != "" && !s.Store.Has(active) {
-		active = "" // selected audit was deleted
+	if active != "" && (!s.Store.Unlocked() || !s.Store.Has(active)) {
+		active = "" // store locked, or the selected audit was deleted
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"username": sess.Username, "role": string(sess.Role), "csrf_token": sess.CSRF, "active_audit": active})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"username":          sess.Username,
+		"role":              string(sess.Role),
+		"csrf_token":        sess.CSRF,
+		"active_audit":      active,
+		"store_initialized": s.Store.Initialized(),
+		"store_unlocked":    s.Store.Unlocked(),
+	})
+}
+
+// handleUnlock unlocks the encrypted store (or, on first run, sets the store
+// passphrase). Lead only; audit-logged. The passphrase is never persisted.
+func (s *Server) handleUnlock(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "store_unlock", Source: r.RemoteAddr, Result: "denied"})
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	defer r.Body.Close()
+	var body struct {
+		Passphrase string `json:"passphrase"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16))
+	if err := dec.Decode(&body); err != nil || body.Passphrase == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "passphrase required"})
+		return
+	}
+	if s.Store.Unlocked() {
+		writeJSON(w, http.StatusOK, map[string]bool{"unlocked": true, "initialized": true})
+		return
+	}
+	first := !s.Store.Initialized()
+	action := "store_unlock"
+	var err error
+	if first {
+		if len(body.Passphrase) < 8 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "store passphrase must be at least 8 characters"})
+			return
+		}
+		action = "store_initialize"
+		err = s.Store.Initialize(body.Passphrase)
+	} else {
+		err = s.Store.Unlock(body.Passphrase)
+	}
+	if err != nil {
+		s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: action, Source: r.RemoteAddr, Result: "failed"})
+		if errors.Is(err, vault.ErrBadPassphrase) {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "incorrect passphrase"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: action, Source: r.RemoteAddr, Result: "ok"})
+	writeJSON(w, http.StatusOK, map[string]bool{"unlocked": true, "initialized": true})
+}
+
+// requireUnlocked rejects requests when the encrypted store is locked (423).
+func (s *Server) requireUnlocked(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.Store.Unlocked() {
+			writeJSON(w, http.StatusLocked, map[string]string{"error": "data store is locked"})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // activeAudit resolves the session's selected audit, writing a 409 if none is
@@ -194,8 +264,15 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = "CLI import"
 	}
-	meta := s.Store.CreateAudit(name, "")
-	_ = s.Store.Replace(meta.ID, ds)
+	meta, err := s.Store.CreateAudit(name, "")
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create audit: " + err.Error()})
+		return
+	}
+	if err := s.Store.Replace(meta.ID, ds); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not store dataset: " + err.Error()})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"audit_id": meta.ID, "ingested": len(ds.Accounts)})
 }
 
@@ -350,7 +427,11 @@ func (s *Server) handleCreateAudit(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "audit name is required"})
 		return
 	}
-	meta := s.Store.CreateAudit(name, strings.TrimSpace(body.Notes))
+	meta, err := s.Store.CreateAudit(name, strings.TrimSpace(body.Notes))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not save audit: " + err.Error()})
+		return
+	}
 	if c, err := r.Cookie(sessionCookie); err == nil {
 		s.Sessions.SetActiveAudit(c.Value, meta.ID) // auto-open for the creator
 	}
