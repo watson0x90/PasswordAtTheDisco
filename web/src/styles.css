@@ -525,3 +525,54 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 .gs-opt { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--faint); }
 .gs-text { font-size: 12.5px; color: var(--dim); margin-top: 4px; line-height: 1.55; }
 .gs-action { flex: none; white-space: nowrap; }
+.gs-create { max-width: 440px; margin-top: 4px; }
+
+/* ---- audit switcher ---- */
+
+.audit-switcher { position: relative; }
+.audit-current {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--glass-border);
+  border-radius: 9px;
+  padding: 7px 12px;
+  cursor: pointer;
+  max-width: 240px;
+}
+.audit-current:hover { border-color: rgba(129, 140, 248, 0.4); }
+.audit-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--accent-grad); box-shadow: 0 0 8px var(--accent-glow); }
+.audit-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.audit-caret { color: var(--faint); font-size: 10px; margin-left: auto; }
+
+.audit-backdrop { position: fixed; inset: 0; z-index: 60; }
+.audit-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 61;
+  width: 290px;
+  padding: 8px;
+  border-radius: 12px;
+  background: #121a2e;
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.85);
+}
+.audit-menu-label { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--faint); padding: 6px 8px; }
+.audit-empty-row { font-size: 12px; color: var(--faint); padding: 6px 8px; }
+.audit-item { display: flex; align-items: center; border-radius: 8px; }
+.audit-item:hover { background: rgba(255, 255, 255, 0.04); }
+.audit-item.active { background: rgba(99, 102, 241, 0.14); }
+.audit-pick { flex: 1; display: flex; align-items: baseline; gap: 8px; background: none; border: none; text-align: left; cursor: pointer; padding: 9px 10px; color: var(--text); font-family: var(--sans); }
+.audit-item-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.audit-item-meta { margin-left: auto; font-size: 11px; color: var(--faint); font-family: var(--mono); white-space: nowrap; }
+.audit-del { background: none; border: none; color: var(--faint); font-size: 16px; line-height: 1; cursor: pointer; padding: 0 10px; }
+.audit-del:hover { color: var(--crit); }
+.audit-new { width: 100%; text-align: left; background: none; border: none; border-top: 1px solid var(--hairline); margin-top: 6px; padding: 11px 10px 5px; color: var(--accent); font-family: var(--sans); font-size: 13px; cursor: pointer; }
+.audit-new:hover { color: #7dd3fc; }
+.audit-create-form { display: flex; gap: 8px; padding: 8px; }
+.audit-create-form .search { flex: 1; width: auto; padding: 8px 11px; }

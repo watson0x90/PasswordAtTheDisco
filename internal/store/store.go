@@ -1,95 +1,211 @@
-// Package store holds the ingested audit dataset in memory. Cleartext passwords
-// live only in process memory -- the API never writes them to disk. Ingestion
-// is full-replace, not append.
+// Package store holds audits in memory. Each audit owns its own dataset of
+// accounts. Cleartext passwords live only in process memory -- the API never
+// writes them to disk in the clear (Phase 2 adds encrypted-at-rest persistence).
 package store
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"sort"
 	"sync"
 	"time"
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 )
 
-// Store is a thread-safe, in-memory holder for the current audit dataset.
+// ErrNotFound is returned when an audit id does not exist.
+var ErrNotFound = errors.New("audit not found")
+
+// AuditMeta describes one audit (no account data).
+type AuditMeta struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Notes     string    `json:"notes,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// AuditListItem is an audit's metadata plus headline counts (for the picker).
+type AuditListItem struct {
+	AuditMeta
+	TotalAccounts int `json:"total_accounts"`
+	Cracked       int `json:"cracked"`
+}
+
+type audit struct {
+	meta AuditMeta
+	ds   model.Dataset
+}
+
+// Store is a thread-safe, in-memory collection of audits.
 type Store struct {
-	mu sync.RWMutex
-	ds model.Dataset
+	mu     sync.RWMutex
+	audits map[string]*audit
+	now    func() time.Time
+	newID  func() string
 }
 
 // New returns an empty Store.
-func New() *Store { return &Store{} }
-
-// Replace swaps in a new dataset.
-func (s *Store) Replace(ds model.Dataset) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.ds = ds
-}
-
-// ReplaceDomain replaces all accounts for one domain with the given set, leaving
-// other domains intact. Used by per-domain web uploads so operators can build up
-// (and re-upload) a multi-domain dataset.
-func (s *Store) ReplaceDomain(domain string, accounts []model.Account) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	kept := make([]model.Account, 0, len(s.ds.Accounts))
-	for _, a := range s.ds.Accounts {
-		if a.Domain != domain {
-			kept = append(kept, a)
-		}
+func New() *Store {
+	return &Store{
+		audits: map[string]*audit{},
+		now:    func() time.Time { return time.Now().UTC() },
+		newID:  randomID,
 	}
-	s.ds.Accounts = append(kept, accounts...)
-	s.ds.GeneratedAt = time.Now().UTC()
 }
 
-// Accounts returns the accounts. Passwords are stripped unless includeSecrets is
-// true (which callers must only set after an authorization + audit check).
-func (s *Store) Accounts(includeSecrets bool) []model.Account {
+func randomID() string {
+	var b [8]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
+}
+
+// CreateAudit adds a new, empty audit and returns its metadata.
+func (s *Store) CreateAudit(name, notes string) AuditMeta {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.now()
+	m := AuditMeta{ID: s.newID(), Name: name, Notes: notes, CreatedAt: now, UpdatedAt: now}
+	s.audits[m.ID] = &audit{meta: m, ds: model.Dataset{GeneratedAt: now}}
+	return m
+}
+
+// List returns all audits' metadata + counts, newest first.
+func (s *Store) List() []AuditListItem {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]model.Account, len(s.ds.Accounts))
-	for i, a := range s.ds.Accounts {
-		if includeSecrets {
-			out[i] = a
-		} else {
-			out[i] = a.Redacted()
+	out := make([]AuditListItem, 0, len(s.audits))
+	for _, a := range s.audits {
+		item := AuditListItem{AuditMeta: a.meta}
+		for _, acc := range a.ds.Accounts {
+			item.TotalAccounts++
+			if acc.Cracked {
+				item.Cracked++
+			}
 		}
+		out = append(out, item)
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
 	return out
 }
 
-// Find returns the full (unredacted) account for username. Callers must gate
-// this behind authorization + audit logging.
-func (s *Store) Find(username string) (model.Account, bool) {
+// Has reports whether an audit exists.
+func (s *Store) Has(id string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	for _, a := range s.ds.Accounts {
-		if a.Username == username {
-			return a, true
+	_, ok := s.audits[id]
+	return ok
+}
+
+// Delete removes an audit. Returns false if it did not exist.
+func (s *Store) Delete(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.audits[id]; !ok {
+		return false
+	}
+	delete(s.audits, id)
+	return true
+}
+
+// ReplaceDomain replaces all accounts for one domain within an audit, leaving
+// other domains intact (per-domain web upload).
+func (s *Store) ReplaceDomain(id, domain string, accounts []model.Account) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a, ok := s.audits[id]
+	if !ok {
+		return ErrNotFound
+	}
+	kept := make([]model.Account, 0, len(a.ds.Accounts))
+	for _, acc := range a.ds.Accounts {
+		if acc.Domain != domain {
+			kept = append(kept, acc)
+		}
+	}
+	a.ds.Accounts = append(kept, accounts...)
+	a.ds.GeneratedAt = s.now()
+	a.meta.UpdatedAt = a.ds.GeneratedAt
+	return nil
+}
+
+// Replace swaps an audit's entire dataset (CLI ingest).
+func (s *Store) Replace(id string, ds model.Dataset) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a, ok := s.audits[id]
+	if !ok {
+		return ErrNotFound
+	}
+	if ds.GeneratedAt.IsZero() {
+		ds.GeneratedAt = s.now()
+	}
+	a.ds = ds
+	a.meta.UpdatedAt = ds.GeneratedAt
+	return nil
+}
+
+// Accounts returns an audit's accounts. Passwords are stripped unless
+// includeSecrets is true (callers must gate that behind authz + audit logging).
+func (s *Store) Accounts(id string, includeSecrets bool) ([]model.Account, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	a, ok := s.audits[id]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	out := make([]model.Account, len(a.ds.Accounts))
+	for i, acc := range a.ds.Accounts {
+		if includeSecrets {
+			out[i] = acc
+		} else {
+			out[i] = acc.Redacted()
+		}
+	}
+	return out, nil
+}
+
+// Find returns the full (unredacted) account for username within an audit.
+// Callers must gate this behind authorization + audit logging.
+func (s *Store) Find(id, username string) (model.Account, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	a, ok := s.audits[id]
+	if !ok {
+		return model.Account{}, false
+	}
+	for _, acc := range a.ds.Accounts {
+		if acc.Username == username {
+			return acc, true
 		}
 	}
 	return model.Account{}, false
 }
 
-// Summary returns non-sensitive aggregate stats.
-func (s *Store) Summary() model.Summary {
+// Summary returns an audit's non-sensitive aggregate stats.
+func (s *Store) Summary(id string) (model.Summary, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	sum := model.Summary{RiskCounts: map[string]int{}, GeneratedAt: s.ds.GeneratedAt}
-	for _, a := range s.ds.Accounts {
+	a, ok := s.audits[id]
+	if !ok {
+		return model.Summary{}, ErrNotFound
+	}
+	sum := model.Summary{RiskCounts: map[string]int{}, GeneratedAt: a.ds.GeneratedAt}
+	for _, acc := range a.ds.Accounts {
 		sum.TotalAccounts++
-		if a.Cracked {
+		if acc.Cracked {
 			sum.Cracked++
 		}
-		if a.HIBPBreached {
+		if acc.HIBPBreached {
 			sum.HIBPBreached++
 		}
-		if a.HasDAPathway() {
+		if acc.HasDAPathway() {
 			sum.DAPathways++
 		}
-		if a.RiskLevel != "" {
-			sum.RiskCounts[a.RiskLevel]++
+		if acc.RiskLevel != "" {
+			sum.RiskCounts[acc.RiskLevel]++
 		}
 	}
-	return sum
+	return sum, nil
 }

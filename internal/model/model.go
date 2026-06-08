@@ -35,8 +35,10 @@ func (a Account) HasDAPathway() bool {
 	return a.DADomains != "" && a.DADomains != "None" && a.DADomains != "Unknown"
 }
 
-// Dataset is a full audit result ingested from the analysis engine.
+// Dataset is a full audit result ingested from the analysis engine. Name lets a
+// CLI ingest label the audit it creates.
 type Dataset struct {
+	Name        string    `json:"name,omitempty"`
 	GeneratedAt time.Time `json:"generated_at"`
 	Accounts    []Account `json:"accounts"`
 }

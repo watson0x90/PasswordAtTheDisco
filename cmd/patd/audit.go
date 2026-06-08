@@ -35,6 +35,7 @@ func runAudit(args []string) {
 	listsDir := fs.String("lists", "lists", "wordlists directory")
 	bhePath := fs.String("bhe", "config/bloodhound.json", "BloodHound config path (optional)")
 	policyPath := fs.String("policy", "lists/password_policy.json", "per-domain password policy file (optional)")
+	name := fs.String("name", "CLI import", "name for the audit this ingest creates")
 	out := fs.String("out", "", "also write the dataset JSON to this file")
 	insecure := fs.Bool("insecure", false, "skip TLS verification when POSTing (self-signed dev certs)")
 	fs.Usage = func() {
@@ -64,7 +65,7 @@ func runAudit(args []string) {
 		log.Printf("%s: %d cracked + %d uncracked -> %d accounts", e.Domain, len(cracked), len(uncracked), len(accts))
 	}
 
-	data, err := json.Marshal(model.Dataset{GeneratedAt: time.Now().UTC(), Accounts: all})
+	data, err := json.Marshal(model.Dataset{Name: *name, GeneratedAt: time.Now().UTC(), Accounts: all})
 	if err != nil {
 		log.Fatalf("encode dataset: %v", err)
 	}

@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { AuthProvider, useAuth } from "./auth"
 import { AccountsProvider } from "./accountsData"
+import { AuditsProvider } from "./auditsData"
 import { NavProvider } from "./nav"
 import { Login } from "./components/Login"
 import { AppShell, type View } from "./components/AppShell"
@@ -43,11 +44,13 @@ function Routed() {
 
   return (
     <NavProvider value={setView}>
-      <AccountsProvider>
-        <AppShell view={view} onNav={setView}>
-          {viewFor(view)}
-        </AppShell>
-      </AccountsProvider>
+      <AuditsProvider>
+        <AccountsProvider>
+          <AppShell view={view} onNav={setView}>
+            {viewFor(view)}
+          </AppShell>
+        </AccountsProvider>
+      </AuditsProvider>
     </NavProvider>
   )
 }

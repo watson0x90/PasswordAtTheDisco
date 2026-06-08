@@ -99,7 +99,8 @@ func do(srv *Server, method, path string, cookie *http.Cookie) *httptest.Respons
 	return rec
 }
 
-func seed(t *testing.T, srv *Server) {
+// seed ingests the sample dataset (creating an audit) and returns its id.
+func seed(t *testing.T, srv *Server) string {
 	t.Helper()
 	req := httptest.NewRequest("POST", "/api/ingest", strings.NewReader(oneAccount))
 	req.Header.Set("Authorization", "Bearer secret")
@@ -108,6 +109,43 @@ func seed(t *testing.T, srv *Server) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("seed ingest failed: %d %s", rec.Code, rec.Body.String())
 	}
+	var body struct {
+		AuditID string `json:"audit_id"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	return body.AuditID
+}
+
+// openAudit points a session (cookie+csrf) at an audit.
+func openAudit(t *testing.T, srv *Server, cookie *http.Cookie, csrf, id string) {
+	t.Helper()
+	req := httptest.NewRequest("POST", "/api/audits/"+id+"/open", nil)
+	req.AddCookie(cookie)
+	req.Header.Set("X-CSRF-Token", csrf)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("open audit %s: %d %s", id, rec.Code, rec.Body.String())
+	}
+}
+
+// createAudit creates a named audit (auto-opens it for the creator) and returns its id.
+func createAudit(t *testing.T, srv *Server, cookie *http.Cookie, csrf, name string) string {
+	t.Helper()
+	req := httptest.NewRequest("POST", "/api/audits", strings.NewReader(fmt.Sprintf(`{"name":%q}`, name)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
+	req.Header.Set("X-CSRF-Token", csrf)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create audit: %d %s", rec.Code, rec.Body.String())
+	}
+	var m struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &m)
+	return m.ID
 }
 
 func TestIngestRejectsMissingToken(t *testing.T) {
@@ -129,8 +167,10 @@ func TestAccountsRequireAuth(t *testing.T) {
 
 func TestAccountsRedactedForAnalyst(t *testing.T) {
 	srv := newServer("secret")
-	seed(t, srv)
-	rec := do(srv, "GET", "/api/accounts", login(t, srv, "analyst", "analystpw"))
+	id := seed(t, srv)
+	cookie, csrf := loginCSRF(t, srv, "analyst", "analystpw")
+	openAudit(t, srv, cookie, csrf, id)
+	rec := do(srv, "GET", "/api/accounts", cookie)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
@@ -145,13 +185,15 @@ func TestAccountsRedactedForAnalyst(t *testing.T) {
 
 func TestRevealRequiresLeadRole(t *testing.T) {
 	srv := newServer("secret")
-	seed(t, srv)
-	// analyst is forbidden
+	id := seed(t, srv)
+	// analyst is forbidden (role checked before the active-audit check)
 	if rec := do(srv, "GET", "/api/accounts/alice/secret", login(t, srv, "analyst", "analystpw")); rec.Code != http.StatusForbidden {
 		t.Fatalf("analyst should be 403, got %d", rec.Code)
 	}
-	// lead may reveal
-	rec := do(srv, "GET", "/api/accounts/alice/secret", login(t, srv, "lead", "leadpw"))
+	// lead may reveal (after opening the audit)
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	openAudit(t, srv, lc, lcsrf, id)
+	rec := do(srv, "GET", "/api/accounts/alice/secret", lc)
 	if rec.Code != http.StatusOK || !bytes.Contains(rec.Body.Bytes(), []byte("Welcome1")) {
 		t.Fatalf("lead reveal failed: %d %s", rec.Code, rec.Body.String())
 	}
@@ -160,8 +202,10 @@ func TestRevealRequiresLeadRole(t *testing.T) {
 func TestRevealIsAuditedWithoutCleartext(t *testing.T) {
 	var buf bytes.Buffer
 	srv := newServerAudit("secret", &buf)
-	seed(t, srv)
-	do(srv, "GET", "/api/accounts/alice/secret", login(t, srv, "lead", "leadpw"))
+	id := seed(t, srv)
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	openAudit(t, srv, lc, lcsrf, id)
+	do(srv, "GET", "/api/accounts/alice/secret", lc)
 
 	logs := buf.String()
 	if !strings.Contains(logs, "reveal_secret") || !strings.Contains(logs, `"target":"alice"`) || !strings.Contains(logs, `"actor":"lead"`) {
@@ -174,11 +218,13 @@ func TestRevealIsAuditedWithoutCleartext(t *testing.T) {
 
 func TestSummaryRequiresAuth(t *testing.T) {
 	srv := newServer("secret")
-	seed(t, srv)
+	id := seed(t, srv)
 	if rec := do(srv, "GET", "/api/summary", nil); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", rec.Code)
 	}
-	rec := do(srv, "GET", "/api/summary", login(t, srv, "analyst", "analystpw"))
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	openAudit(t, srv, ac, acsrf, id)
+	rec := do(srv, "GET", "/api/summary", ac)
 	var sum model.Summary
 	if err := json.Unmarshal(rec.Body.Bytes(), &sum); err != nil || sum.TotalAccounts != 1 || sum.DAPathways != 1 {
 		t.Fatalf("unexpected summary: %v %+v", err, sum)
@@ -220,7 +266,7 @@ func auditReq(t *testing.T, cookie *http.Cookie, csrf, domain, crackedBody strin
 	fw, _ := mw.CreateFormFile("cracked", "cracked.txt")
 	_, _ = io.WriteString(fw, crackedBody)
 	_ = mw.Close()
-	req := httptest.NewRequest("POST", "/api/audit", &buf)
+	req := httptest.NewRequest("POST", "/api/upload", &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	if cookie != nil {
 		req.AddCookie(cookie)
@@ -238,6 +284,7 @@ func TestAuditUpload(t *testing.T) {
 	srv := newServer("secret")
 	srv.Engine = &engine.Engine{Policies: policy.DefaultSet()}
 	cookie, csrf := loginCSRF(t, srv, "lead", "leadpw")
+	createAudit(t, srv, cookie, csrf, "Engagement") // auto-opens for the lead
 	rec := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(rec, auditReq(t, cookie, csrf, "CORP", body))
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"accounts":1`) {
@@ -266,8 +313,8 @@ func TestAuditUpload(t *testing.T) {
 	}
 }
 
-func putJSON(srv *Server, cookie *http.Cookie, csrf, path, body string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest("PUT", path, strings.NewReader(body))
+func sendJSON(srv *Server, method, path string, cookie *http.Cookie, csrf, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	if cookie != nil {
 		req.AddCookie(cookie)
@@ -291,12 +338,12 @@ func TestPolicies(t *testing.T) {
 		t.Fatalf("GET policies = %d %s", g.Code, g.Body.String())
 	}
 	// analyst cannot edit
-	if r := putJSON(srv, ac, acsrf, "/api/policies", body); r.Code != http.StatusForbidden {
+	if r := sendJSON(srv, "PUT", "/api/policies", ac, acsrf, body); r.Code != http.StatusForbidden {
 		t.Fatalf("analyst PUT should be 403, got %d", r.Code)
 	}
 	// lead can edit; the shared Set (used by the engine) reflects it
 	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
-	if r := putJSON(srv, lc, lcsrf, "/api/policies", body); r.Code != http.StatusOK {
+	if r := sendJSON(srv, "PUT", "/api/policies", lc, lcsrf, body); r.Code != http.StatusOK {
 		t.Fatalf("lead PUT = %d %s", r.Code, r.Body.String())
 	}
 	if got := srv.Policies.For("CORP.LOCAL"); got.MinLength != 20 || got.MaxPasswordAgeDays != 45 {
@@ -306,8 +353,45 @@ func TestPolicies(t *testing.T) {
 		t.Errorf("default not updated: %+v", got)
 	}
 	// invalid (min_length 0) rejected
-	if r := putJSON(srv, lc, lcsrf, "/api/policies", `{"default":{"min_length":0,"max_password_age_days":90},"domains":{}}`); r.Code != http.StatusBadRequest {
+	if r := sendJSON(srv, "PUT", "/api/policies", lc, lcsrf, `{"default":{"min_length":0,"max_password_age_days":90},"domains":{}}`); r.Code != http.StatusBadRequest {
 		t.Fatalf("invalid policy should be 400, got %d", r.Code)
+	}
+}
+
+func TestAuditsLifecycle(t *testing.T) {
+	srv := newServer("secret")
+
+	// no audit selected -> summary/accounts 409
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	if rec := do(srv, "GET", "/api/summary", ac); rec.Code != http.StatusConflict {
+		t.Fatalf("summary with no audit should be 409, got %d", rec.Code)
+	}
+
+	// analyst cannot create
+	if rec := sendJSON(srv, "POST", "/api/audits", ac, acsrf, `{"name":"X"}`); rec.Code != http.StatusForbidden {
+		t.Fatalf("analyst create should be 403, got %d", rec.Code)
+	}
+
+	// lead creates two audits (creating auto-opens the latter for the lead)
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	a := createAudit(t, srv, lc, lcsrf, "Engagement A")
+	createAudit(t, srv, lc, lcsrf, "Engagement B")
+	if rec := do(srv, "GET", "/api/audits", lc); rec.Code != http.StatusOK || strings.Count(rec.Body.String(), `"id"`) != 2 {
+		t.Fatalf("list audits = %d %s", rec.Code, rec.Body.String())
+	}
+
+	// open A, confirm /me reflects it
+	openAudit(t, srv, lc, lcsrf, a)
+	if rec := do(srv, "GET", "/api/me", lc); !strings.Contains(rec.Body.String(), `"active_audit":"`+a+`"`) {
+		t.Fatalf("/me should show active audit %s: %s", a, rec.Body.String())
+	}
+
+	// delete A; the session's active audit is now gone -> summary 409
+	if rec := sendJSON(srv, "DELETE", "/api/audits/"+a, lc, lcsrf, ""); rec.Code != http.StatusOK {
+		t.Fatalf("delete = %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := do(srv, "GET", "/api/summary", lc); rec.Code != http.StatusConflict {
+		t.Fatalf("summary after deleting active audit should be 409, got %d", rec.Code)
 	}
 }
 

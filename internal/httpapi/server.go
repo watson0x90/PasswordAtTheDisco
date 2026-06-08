@@ -72,17 +72,23 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /api/version", s.handleVersion)
 	mux.HandleFunc("POST /api/login", s.handleLogin)
-	// Engine ingestion (separate token, not a user session)
+	// Engine ingestion (separate token, not a user session) -- creates an audit
 	mux.Handle("POST /api/ingest", s.requireIngestToken(http.HandlerFunc(s.handleIngest)))
 	// Authenticated operators (any role) -- redacted data only
 	mux.Handle("POST /api/logout", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleLogout))))
 	mux.Handle("GET /api/me", s.requireAuth(http.HandlerFunc(s.handleMe)))
+	// Audit (engagement) management + selection
+	mux.Handle("GET /api/audits", s.requireAuth(http.HandlerFunc(s.handleListAudits)))
+	mux.Handle("POST /api/audits", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleCreateAudit))))
+	mux.Handle("DELETE /api/audits/{id}", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleDeleteAudit))))
+	mux.Handle("POST /api/audits/{id}/open", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleOpenAudit))))
+	// Views scoped to the session's active audit
 	mux.Handle("GET /api/summary", s.requireAuth(http.HandlerFunc(s.handleSummary)))
 	mux.Handle("GET /api/accounts", s.requireAuth(http.HandlerFunc(s.handleAccounts)))
 	// Cleartext reveal -- requires lead role, always audit-logged
 	mux.Handle("GET /api/accounts/{username}/secret", s.requireAuth(http.HandlerFunc(s.handleReveal)))
-	// Web upload: lead uploads dump files, the server runs the engine + ingests
-	mux.Handle("POST /api/audit", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleAudit))))
+	// Web upload of dump files into the active audit (lead)
+	mux.Handle("POST /api/upload", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleAudit))))
 	// Per-domain password policies: any operator may read; lead may edit
 	mux.Handle("GET /api/policies", s.requireAuth(http.HandlerFunc(s.handleGetPolicies)))
 	mux.Handle("PUT /api/policies", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleSetPolicies))))
@@ -155,7 +161,21 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	sess, _ := sessionFrom(r.Context())
-	writeJSON(w, http.StatusOK, map[string]string{"username": sess.Username, "role": string(sess.Role), "csrf_token": sess.CSRF})
+	active := sess.ActiveAudit
+	if active != "" && !s.Store.Has(active) {
+		active = "" // selected audit was deleted
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"username": sess.Username, "role": string(sess.Role), "csrf_token": sess.CSRF, "active_audit": active})
+}
+
+// activeAudit resolves the session's selected audit, writing a 409 if none is
+// selected (or it has been deleted).
+func (s *Server) activeAudit(w http.ResponseWriter, sess auth.Session) (string, bool) {
+	if sess.ActiveAudit == "" || !s.Store.Has(sess.ActiveAudit) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		return "", false
+	}
+	return sess.ActiveAudit, true
 }
 
 func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
@@ -170,16 +190,41 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	if ds.GeneratedAt.IsZero() {
 		ds.GeneratedAt = time.Now().UTC()
 	}
-	s.Store.Replace(ds)
-	writeJSON(w, http.StatusOK, map[string]int{"ingested": len(ds.Accounts)})
+	name := strings.TrimSpace(ds.Name)
+	if name == "" {
+		name = "CLI import"
+	}
+	meta := s.Store.CreateAudit(name, "")
+	_ = s.Store.Replace(meta.ID, ds)
+	writeJSON(w, http.StatusOK, map[string]any{"audit_id": meta.ID, "ingested": len(ds.Accounts)})
 }
 
-func (s *Server) handleAccounts(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, s.Store.Accounts(false))
+func (s *Server) handleAccounts(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	id, ok := s.activeAudit(w, sess)
+	if !ok {
+		return
+	}
+	accts, err := s.Store.Accounts(id, false)
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		return
+	}
+	writeJSON(w, http.StatusOK, accts)
 }
 
-func (s *Server) handleSummary(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, s.Store.Summary())
+func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	id, ok := s.activeAudit(w, sess)
+	if !ok {
+		return
+	}
+	sum, err := s.Store.Summary(id)
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		return
+	}
+	writeJSON(w, http.StatusOK, sum)
 }
 
 // handleReveal returns a single account's cleartext password. Requires the lead
@@ -193,7 +238,11 @@ func (s *Server) handleReveal(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
 		return
 	}
-	acct, ok := s.Store.Find(username)
+	id, ok := s.activeAudit(w, sess)
+	if !ok {
+		return
+	}
+	acct, ok := s.Store.Find(id, username)
 	if !ok {
 		s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "reveal_secret", Target: username, Source: r.RemoteAddr, Result: "not_found"})
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "account not found"})
@@ -216,6 +265,10 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.Engine == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "audit engine not configured on this server"})
+		return
+	}
+	auditID, ok := s.activeAudit(w, sess)
+	if !ok {
 		return
 	}
 
@@ -248,7 +301,10 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	accts := s.Engine.ProcessDomain(domain, cracked, uncracked)
-	s.Store.ReplaceDomain(domain, accts)
+	if err := s.Store.ReplaceDomain(auditID, domain, accts); err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "selected audit no longer exists"})
+		return
+	}
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "audit_upload", Target: domain, Source: r.RemoteAddr, Result: "ok"})
 	writeJSON(w, http.StatusOK, map[string]int{"accounts": len(accts), "cracked": len(cracked), "uncracked": len(uncracked)})
 }
@@ -264,6 +320,73 @@ func optionalUpload(r *http.Request, field, domain string, fn func(io.Reader, st
 	}
 	defer f.Close()
 	return fn(f, domain)
+}
+
+// handleListAudits returns all audits' metadata + headline counts.
+func (s *Server) handleListAudits(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.Store.List())
+}
+
+// handleCreateAudit creates a new (empty) audit and opens it for the creator.
+func (s *Server) handleCreateAudit(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	defer r.Body.Close()
+	var body struct {
+		Name  string `json:"name"`
+		Notes string `json:"notes"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "audit name is required"})
+		return
+	}
+	meta := s.Store.CreateAudit(name, strings.TrimSpace(body.Notes))
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		s.Sessions.SetActiveAudit(c.Value, meta.ID) // auto-open for the creator
+	}
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "audit_create", Target: name, Source: r.RemoteAddr, Result: "ok"})
+	writeJSON(w, http.StatusOK, meta)
+}
+
+// handleDeleteAudit removes an audit (lead only).
+func (s *Server) handleDeleteAudit(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	id := r.PathValue("id")
+	if !s.Store.Delete(id) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "audit not found"})
+		return
+	}
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "audit_delete", Target: id, Source: r.RemoteAddr, Result: "ok"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+// handleOpenAudit sets the session's active audit.
+func (s *Server) handleOpenAudit(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !s.Store.Has(id) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "audit not found"})
+		return
+	}
+	c, err := r.Cookie(sessionCookie)
+	if err != nil || !s.Sessions.SetActiveAudit(c.Value, id) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "session error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"active_audit": id})
 }
 
 // policiesPayload is the wire shape for GET/PUT /api/policies.

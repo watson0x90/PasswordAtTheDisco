@@ -8,6 +8,20 @@ export interface Me {
   username: string
   role: Role
   csrf_token: string
+  active_audit: string
+}
+
+export interface AuditMeta {
+  id: string
+  name: string
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface AuditListItem extends AuditMeta {
+  total_accounts: number
+  cracked: number
 }
 
 export interface Summary {
@@ -116,8 +130,29 @@ export const api = {
     fd.append("cracked", cracked)
     if (uncracked) fd.append("uncracked", uncracked)
     // No Content-Type header: the browser sets the multipart boundary.
-    return request<AuditResult>("/audit", { method: "POST", headers: { "X-CSRF-Token": csrf }, body: fd })
+    return request<AuditResult>("/upload", { method: "POST", headers: { "X-CSRF-Token": csrf }, body: fd })
   },
+
+  listAudits: () => request<AuditListItem[]>("/audits"),
+
+  createAudit: (name: string, notes: string, csrf: string) =>
+    request<AuditMeta>("/audits", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+      body: JSON.stringify({ name, notes }),
+    }),
+
+  deleteAudit: (id: string, csrf: string) =>
+    request<{ status: string }>(`/audits/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrf },
+    }),
+
+  openAudit: (id: string, csrf: string) =>
+    request<{ active_audit: string }>(`/audits/${encodeURIComponent(id)}/open`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrf },
+    }),
 
   getPolicies: () => request<PoliciesPayload>("/policies"),
 

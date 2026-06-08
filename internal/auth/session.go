@@ -9,11 +9,12 @@ import (
 
 // Session is a server-side authenticated session (revocable; lost on restart).
 type Session struct {
-	Username string
-	Role     Role
-	CSRF     string // per-session CSRF token (synchronizer pattern)
-	Created  time.Time
-	LastSeen time.Time
+	Username    string
+	Role        Role
+	CSRF        string // per-session CSRF token (synchronizer pattern)
+	Created     time.Time
+	LastSeen    time.Time
+	ActiveAudit string // id of the audit this session is currently viewing
 }
 
 // SessionStore is an in-memory, thread-safe session store with sliding idle
@@ -78,6 +79,20 @@ func (s *SessionStore) Get(id string) (Session, bool) {
 	sess.LastSeen = now
 	s.sessions[id] = sess
 	return sess, true
+}
+
+// SetActiveAudit records which audit a session is viewing. Returns false if the
+// session no longer exists.
+func (s *SessionStore) SetActiveAudit(id, auditID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess, ok := s.sessions[id]
+	if !ok {
+		return false
+	}
+	sess.ActiveAudit = auditID
+	s.sessions[id] = sess
+	return true
 }
 
 // Delete revokes a session (logout).

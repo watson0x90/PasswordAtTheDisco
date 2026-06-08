@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { api, ApiError, type Summary } from "../api"
 import { useAuth } from "../auth"
+import { useAudits } from "../auditsData"
 import { useNav } from "../nav"
 
 const RISK_ORDER = ["Critical", "High", "Medium", "Low"]
@@ -12,16 +13,37 @@ const RISK_CLASS: Record<string, string> = {
 }
 
 export function Dashboard() {
+  const { activeId, audits, loading: auditsLoading } = useAudits()
   const [summary, setSummary] = useState<Summary | null>(null)
   const [error, setError] = useState("")
 
   useEffect(() => {
+    if (!activeId) {
+      setSummary(null)
+      return
+    }
+    let active = true
+    setSummary(null)
+    setError("")
     api
       .summary()
-      .then(setSummary)
-      .catch((e) => setError(e instanceof ApiError ? e.message : "failed to load summary"))
-  }, [])
+      .then((s) => {
+        if (active) setSummary(s)
+      })
+      .catch((e) => {
+        if (active) setError(e instanceof ApiError ? e.message : "failed to load summary")
+      })
+    return () => {
+      active = false
+    }
+  }, [activeId])
 
+  if (auditsLoading) return <div className="center-state"><div className="spinner">loading</div></div>
+  if (!activeId) {
+    // auto-select is in flight if audits exist; otherwise there are none
+    if (audits.length > 0) return <div className="center-state"><div className="spinner">opening audit</div></div>
+    return <NoAudit />
+  }
   if (error) return <div className="center-state">{error}</div>
   if (!summary) {
     return (
@@ -69,8 +91,62 @@ export function Dashboard() {
   )
 }
 
+// NoAudit is shown when the session has no audit (typically none exist yet).
+function NoAudit() {
+  const { me } = useAuth()
+  const { create } = useAudits()
+  const isLead = me?.role === "lead"
+  const [name, setName] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState("")
+
+  async function go() {
+    if (!name.trim()) return
+    setBusy(true)
+    setErr("")
+    try {
+      await create(name.trim())
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : "failed to create audit")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <div className="section-label">Get started</div>
+      <div className="panel getstarted">
+        <h2 className="gs-title">Create your first audit</h2>
+        <p className="gs-sub">
+          {isLead
+            ? "An audit is a self-contained engagement — its own dataset, scoped views, and findings. Create one to begin (you can run several over time and switch between them up top)."
+            : "No audits yet. A lead needs to create one before findings appear."}
+        </p>
+        {isLead && (
+          <div className="audit-create-form gs-create">
+            <input
+              autoFocus
+              className="search"
+              placeholder="e.g. Acme Corp — Q2 review"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && go()}
+            />
+            <button className="btn btn-primary" disabled={busy} onClick={go}>
+              Create audit
+            </button>
+          </div>
+        )}
+        {err && <div className="error">{err}</div>}
+      </div>
+    </>
+  )
+}
+
 function GetStarted() {
   const { me } = useAuth()
+  const { active } = useAudits()
   const nav = useNav()
   const isLead = me?.role === "lead"
   return (
@@ -80,7 +156,7 @@ function GetStarted() {
         <h2 className="gs-title">Start a password audit</h2>
         <p className="gs-sub">
           {isLead
-            ? "No data ingested yet — follow these steps to run your first audit."
+            ? `No data in ${active ? `“${active.name}”` : "this audit"} yet — follow these steps.`
             : "No data ingested yet. A lead needs to upload credential dumps before findings appear."}
         </p>
 
