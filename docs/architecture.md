@@ -1,9 +1,8 @@
 # Password!AtTheDisco — architecture (Go + React rewrite)
 
 This is a **full rewrite** of Password!AtTheDisco as a Go API + React frontend.
-The original Python tool (now under `legacy-python/`) is kept only as a porting
-reference and is removed subsystem-by-subsystem as each Go replacement reaches
-parity. **End state: no Python.**
+The original Python tool has been fully ported and **removed** — there is no
+Python in the tree (it remains in git history if a port detail is ever needed).
 
 The driver is delivery security: the Python tool's output is a self-contained
 offline HTML bundle that necessarily writes **cleartext cracked passwords to
@@ -18,12 +17,12 @@ revealed only to authorized operators, one account at a time, with an audit log.
 ## Layout
 
 ```
-cmd/patd/            server binary (+ `hashpw` subcommand)
+cmd/patd/            server binary (+ hashpw, audit, reindex subcommands)
 internal/
-  httpapi/ auth/ audit/ store/ model/    built
-  secretsdump/ hibp/ bloodhound/ risk/    to port from legacy-python/
+  httpapi/ auth/ audit/ store/ vault/ model/ policy/    API + persistence
+  secretsdump/ hibp/ bloodhound/ pwanalysis/ risk/ engine/ report/   analysis
+  webui/              embeds the built SPA (build tag `embed`)
 web/                 React + Vite SPA (built to web/dist/, served by the binary)
-legacy-python/       v1 reference, deleted as parity is reached
 ```
 
 ## Architecture
@@ -170,8 +169,9 @@ audit log (no cleartext). Remaining items are optional polish.
 - [x] **Session hardening** — per-IP login rate-limiting (429 + `Retry-After`),
       synchronizer CSRF token on state-changing requests, sliding idle + absolute
       session expiry. Unit-tested + verified live.
-- [x] **Engine ports** from `legacy-python/`: `secretsdump` ✅ → `hibp` ✅ →
-      `risk` (scoring + vector) ✅ → `bloodhound` (BHE client + DA pathways) ✅.
+- [x] **Engine ports** (from the now-removed Python v1): `secretsdump` ✅ →
+      `hibp` ✅ → `risk` (scoring + vector) ✅ → `bloodhound` (BHE client + DA
+      pathways) ✅.
 - [x] **Password analysis** (`pwanalysis`): complexity / policy / wordlist /
       keyboard / similarity (Levenshtein) signals feeding `risk.Analysis`.
 - [x] **Orchestration pipeline** (`engine`): parse → HIBP → analysis → BHE →

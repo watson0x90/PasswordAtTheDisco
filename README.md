@@ -10,8 +10,9 @@ pathways, controlled objects), scores each account with a CVSS-style risk model,
 and serves the results through an authenticated web console — as a single Go
 binary.
 
-It is a ground-up Go + React rewrite of the original Python tool (now kept under
-[`legacy-python/`](legacy-python/) as a reference).
+It is a ground-up Go + React rewrite of the original Python tool. (The Python v1
+has been fully superseded and removed; it remains in git history before this
+point if ever needed.)
 
 ## Why it exists
 
@@ -125,12 +126,12 @@ dropping the key *and* clearing decrypted data from memory.
 ## Layout
 
 ```
-cmd/patd/        server + CLI (audit, hashpw)
+cmd/patd/        server + CLI (audit, hashpw, reindex)
 internal/        engine + API: secretsdump · hibp · pwanalysis · bloodhound ·
-                 risk · engine · store · model · auth · audit · httpapi · webui
+                 risk · engine · report · policy · store · vault · model ·
+                 auth · audit · httpapi · webui
 web/             React + Vite console (TypeScript)
 docs/            architecture, API, scoring
-legacy-python/   the original Python tool (reference)
 ```
 
 ## Development
