@@ -107,7 +107,8 @@ function DiffView({ res }: { res: DiffResult }) {
   )
 }
 
-function CohortCard({ title, tone, items }: { title: string; tone: string; items: DiffAccount[] }) {
+function CohortCard({ title, tone, items: raw }: { title: string; tone: string; items: DiffAccount[] | null }) {
+  const items = raw ?? []
   return (
     <div className="panel chart-card">
       <div className="chart-title">

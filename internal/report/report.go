@@ -48,7 +48,13 @@ func ComputeDiff(a, b []model.Account) Diff {
 	for _, x := range b {
 		bm[key(x)] = x
 	}
-	var d Diff
+	// Initialize to non-nil so JSON emits [] not null (the client maps over them).
+	d := Diff{
+		NewlyCracked:  []DiffAccount{},
+		Remediated:    []DiffAccount{},
+		NewlyBreached: []DiffAccount{},
+		Regressed:     []DiffAccount{},
+	}
 	d.PostureA, _, _, _ = PostureScore(a)
 	d.PostureB, _, _, _ = PostureScore(b)
 	ref := func(ax, bx model.Account, name model.Account) DiffAccount {
