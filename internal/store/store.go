@@ -55,11 +55,12 @@ type persisted struct {
 // Store is a thread-safe collection of audits, optionally persisted to an
 // encrypted vault. With no vault it is purely in-memory and always "unlocked".
 type Store struct {
-	mu     sync.RWMutex
-	audits map[string]*audit
-	now    func() time.Time
-	newID  func() string
-	vault  *vault.Vault // nil = in-memory only
+	mu      sync.RWMutex
+	writeMu sync.Mutex // serializes vault writes WITHOUT blocking readers
+	audits  map[string]*audit
+	now     func() time.Time
+	newID   func() string
+	vault   *vault.Vault // nil = in-memory only
 }
 
 // New returns an empty in-memory Store (no persistence).
@@ -158,16 +159,20 @@ func (s *Store) load() error {
 	return nil
 }
 
-// persist writes one audit to the vault (caller holds s.mu). No-op in-memory.
-func (s *Store) persist(a *audit) error {
+// marshalAudit serializes an audit (caller holds s.mu for a consistent snapshot).
+func marshalAudit(a *audit) ([]byte, error) {
+	return json.Marshal(persisted{SchemaVersion: currentSchemaVersion, Meta: a.meta, Dataset: a.ds})
+}
+
+// saveBytes encrypts + writes a pre-marshaled audit OUTSIDE the store lock, so the
+// expensive encrypt + disk write never blocks readers. writeMu serializes writes.
+func (s *Store) saveBytes(id string, b []byte) error {
 	if s.vault == nil {
 		return nil
 	}
-	b, err := json.Marshal(persisted{SchemaVersion: currentSchemaVersion, Meta: a.meta, Dataset: a.ds})
-	if err != nil {
-		return err
-	}
-	return s.vault.SaveAudit(a.meta.ID, b)
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	return s.vault.SaveAudit(id, b)
 }
 
 func randomID() string {
@@ -179,15 +184,22 @@ func randomID() string {
 // CreateAudit adds a new, empty audit and returns its metadata.
 func (s *Store) CreateAudit(name, notes string) (AuditMeta, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	now := s.now()
 	a := &audit{meta: AuditMeta{ID: s.newID(), Name: name, Notes: notes, CreatedAt: now, UpdatedAt: now}, ds: model.Dataset{GeneratedAt: now}}
 	s.audits[a.meta.ID] = a
-	if err := s.persist(a); err != nil {
-		delete(s.audits, a.meta.ID) // roll back if it can't be saved
+	meta := a.meta
+	b, err := marshalAudit(a)
+	s.mu.Unlock()
+	if err == nil {
+		err = s.saveBytes(meta.ID, b)
+	}
+	if err != nil {
+		s.mu.Lock()
+		delete(s.audits, meta.ID) // roll back if it can't be saved
+		s.mu.Unlock()
 		return AuditMeta{}, err
 	}
-	return a.meta, nil
+	return meta, nil
 }
 
 // List returns all audits' metadata + counts, newest first.
@@ -246,9 +258,9 @@ func (s *Store) Delete(id string) bool {
 // other domains intact (per-domain web upload).
 func (s *Store) ReplaceDomain(id, domain string, accounts []model.Account) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	a, ok := s.audits[id]
 	if !ok {
+		s.mu.Unlock()
 		return ErrNotFound
 	}
 	kept := make([]model.Account, 0, len(a.ds.Accounts))
@@ -260,15 +272,20 @@ func (s *Store) ReplaceDomain(id, domain string, accounts []model.Account) error
 	a.ds.Accounts = append(kept, accounts...)
 	a.ds.GeneratedAt = s.now()
 	a.meta.UpdatedAt = a.ds.GeneratedAt
-	return s.persist(a)
+	b, err := marshalAudit(a)
+	s.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	return s.saveBytes(id, b) // encrypt + write outside the lock
 }
 
 // Replace swaps an audit's entire dataset (CLI ingest).
 func (s *Store) Replace(id string, ds model.Dataset) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	a, ok := s.audits[id]
 	if !ok {
+		s.mu.Unlock()
 		return ErrNotFound
 	}
 	if ds.GeneratedAt.IsZero() {
@@ -276,7 +293,12 @@ func (s *Store) Replace(id string, ds model.Dataset) error {
 	}
 	a.ds = ds
 	a.meta.UpdatedAt = ds.GeneratedAt
-	return s.persist(a)
+	b, err := marshalAudit(a)
+	s.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	return s.saveBytes(id, b)
 }
 
 // Accounts returns an audit's accounts. Passwords are stripped unless

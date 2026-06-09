@@ -74,9 +74,15 @@ func (e *Engine) ProcessDomain(domain string, cracked, uncracked []secretsdump.P
 		hashUsers[a.Hash]++
 	}
 
-	allPasswords := make([]string, 0, len(cracked))
-	for _, a := range cracked {
-		allPasswords = append(allPasswords, a.Password)
+	// Similarity is an O(n^2) Levenshtein pass; above a cap, skip it (nil disables
+	// the per-account comparison) so a large domain doesn't blow up wall-clock.
+	const similarityCap = 5000
+	var allPasswords []string
+	if len(cracked) <= similarityCap {
+		allPasswords = make([]string, 0, len(cracked))
+		for _, a := range cracked {
+			allPasswords = append(allPasswords, a.Password)
+		}
 	}
 
 	analysisCache := map[string]*pwanalysis.Analysis{}

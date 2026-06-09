@@ -482,6 +482,13 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A big dump + cold HIBP seeks can exceed the server's default read/write
+	// timeouts; extend them for this route so the upload isn't cut mid-flight.
+	if rc := http.NewResponseController(w); rc != nil {
+		_ = rc.SetReadDeadline(time.Now().Add(10 * time.Minute))
+		_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Minute))
+	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, 128<<20) // 128 MiB cap
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid upload: " + err.Error()})
