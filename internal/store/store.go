@@ -179,6 +179,17 @@ func (s *Store) List() []AuditListItem {
 	return out
 }
 
+// Meta returns an audit's metadata.
+func (s *Store) Meta(id string) (AuditMeta, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	a, ok := s.audits[id]
+	if !ok {
+		return AuditMeta{}, false
+	}
+	return a.meta, true
+}
+
 // Has reports whether an audit exists.
 func (s *Store) Has(id string) bool {
 	s.mu.RLock()

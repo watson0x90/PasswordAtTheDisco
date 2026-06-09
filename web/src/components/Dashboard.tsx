@@ -41,7 +41,13 @@ export function Dashboard() {
 
   return (
     <>
-      <div className="section-label">Overview</div>
+      <div className="view-head">
+        <div className="section-label">Overview</div>
+        <div className="export-actions">
+          <a className="btn" href="/api/export/csv">Export CSV</a>
+          <a className="btn" href="/api/export/html">HTML report</a>
+        </div>
+      </div>
       <div className="stat-grid">
         <Stat label="Accounts" value={total} delay={0} />
         <Stat label="Cracked" value={cracked} sub={`${crackPct}% of accounts`} delay={0.06} />

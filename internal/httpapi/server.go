@@ -24,6 +24,7 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/engine"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/report"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/secretsdump"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/store"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/vault"
@@ -93,6 +94,9 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /api/accounts/{username}/secret", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleReveal))))
 	// Web upload of dump files into the active audit (lead)
 	mux.Handle("POST /api/upload", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleAudit)))))
+	// Redacted exports of the active audit (any operator)
+	mux.Handle("GET /api/export/csv", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportCSV))))
+	mux.Handle("GET /api/export/html", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportHTML))))
 	// Per-domain password policies: any operator may read; lead may edit
 	mux.Handle("GET /api/policies", s.requireAuth(http.HandlerFunc(s.handleGetPolicies)))
 	mux.Handle("PUT /api/policies", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleSetPolicies))))
@@ -409,6 +413,60 @@ func optionalUpload(r *http.Request, field, domain string, fn func(io.Reader, st
 // handleListAudits returns all audits' metadata + headline counts.
 func (s *Server) handleListAudits(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.Store.List())
+}
+
+// exportAudit resolves the active audit + its redacted accounts for export.
+func (s *Server) exportAudit(w http.ResponseWriter, r *http.Request) (store.AuditMeta, []model.Account, bool) {
+	sess, _ := sessionFrom(r.Context())
+	id, ok := s.activeAudit(w, sess)
+	if !ok {
+		return store.AuditMeta{}, nil, false
+	}
+	accts, err := s.Store.Accounts(id, false) // redacted -- never cleartext
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		return store.AuditMeta{}, nil, false
+	}
+	meta, _ := s.Store.Meta(id)
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "export", Target: meta.Name, Source: r.RemoteAddr, Result: "ok"})
+	return meta, accts, true
+}
+
+func (s *Server) handleExportCSV(w http.ResponseWriter, r *http.Request) {
+	meta, accts, ok := s.exportAudit(w, r)
+	if !ok {
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+safeFilename(meta.Name)+".csv"+`"`)
+	_ = report.CSV(w, accts)
+}
+
+func (s *Server) handleExportHTML(w http.ResponseWriter, r *http.Request) {
+	meta, accts, ok := s.exportAudit(w, r)
+	if !ok {
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+safeFilename(meta.Name)+".html"+`"`)
+	_ = report.HTML(w, meta.Name, time.Now().UTC(), accts)
+}
+
+// safeFilename keeps only filename-safe characters from an audit name.
+func safeFilename(name string) string {
+	var b strings.Builder
+	for _, r := range strings.TrimSpace(name) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == ' ' || r == '-' || r == '_':
+			b.WriteByte('_')
+		}
+	}
+	if b.Len() == 0 {
+		return "audit"
+	}
+	return b.String()
 }
 
 // handleCreateAudit creates a new (empty) audit and opens it for the creator.
