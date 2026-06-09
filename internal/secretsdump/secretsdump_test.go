@@ -1,9 +1,33 @@
 package secretsdump
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 )
+
+func TestParseUTF16AndBOM(t *testing.T) {
+	line := "alice:1001:aad3b435b51404eeaad3b435b51404ee:NTHASHVALUE:::Welcome1\n"
+
+	// UTF-16LE + BOM (PowerShell Out-File default)
+	var le bytes.Buffer
+	le.Write([]byte{0xFF, 0xFE})
+	for _, r := range line {
+		le.WriteByte(byte(r))
+		le.WriteByte(0)
+	}
+	got, err := ParseCracked(&le, "CORP")
+	if err != nil || len(got) != 1 || got[0].Username != "alice" || got[0].Password != "Welcome1" {
+		t.Fatalf("UTF-16LE+BOM parse failed: %v %+v", err, got)
+	}
+
+	// UTF-8 + BOM
+	utf8b := append([]byte{0xEF, 0xBB, 0xBF}, []byte(line)...)
+	got2, err := ParseCracked(bytes.NewReader(utf8b), "CORP")
+	if err != nil || len(got2) != 1 || got2[0].Username != "alice" {
+		t.Fatalf("UTF-8+BOM parse failed: %v %+v", err, got2)
+	}
+}
 
 // --- decodeHex (ported from TestDecodeHex) ---
 

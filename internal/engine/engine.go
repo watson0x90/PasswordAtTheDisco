@@ -89,7 +89,35 @@ func (e *Engine) ProcessDomain(domain string, cracked, uncracked []secretsdump.P
 	for _, a := range uncracked {
 		out = append(out, e.scoreUncracked(domain, a, hashUsers[a.Hash]-1, now))
 	}
+	escalateSharedWithDA(out)
 	return out
+}
+
+// escalateSharedWithDA raises any account to Critical when it shares a cracked
+// password with an account that has a Domain Admin pathway -- the flagship signal
+// (e.g. a helpdesk account reusing a DA's password). Ported from the legacy
+// apply_shared_password_risk.
+func escalateSharedWithDA(accts []model.Account) {
+	daPasswords := map[string]bool{}
+	for i := range accts {
+		a := &accts[i]
+		if a.Cracked && a.Password != "" && a.HasDAPathway() {
+			daPasswords[a.Password] = true
+		}
+	}
+	if len(daPasswords) == 0 {
+		return
+	}
+	for i := range accts {
+		a := &accts[i]
+		if a.Cracked && a.Password != "" && a.RiskLevel != "Critical" && daPasswords[a.Password] {
+			a.RiskLevel = "Critical"
+			if a.RiskScore < 9.0 {
+				a.RiskScore = 9.0
+			}
+			a.RiskVector += "/SHARED-DA"
+		}
+	}
 }
 
 func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, sharedWith int, allPasswords []string, analysisCache map[string]*pwanalysis.Analysis, simCache map[string]float64, now time.Time) model.Account {

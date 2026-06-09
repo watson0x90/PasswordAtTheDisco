@@ -10,10 +10,12 @@ package secretsdump
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/hex"
 	"io"
 	"os"
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -145,7 +147,40 @@ func decodeBytes(b []byte) string {
 }
 
 func newScanner(r io.Reader) *bufio.Scanner {
-	sc := bufio.NewScanner(r)
+	sc := bufio.NewScanner(decodeText(r))
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024) // tolerate long lines
 	return sc
+}
+
+// decodeText normalizes dump bytes to a UTF-8 reader: it strips a UTF-8 BOM and
+// transcodes UTF-16 (LE/BE, by BOM) using only stdlib. Windows tools (PowerShell
+// Out-File/redirection) default to UTF-16LE+BOM, which would otherwise split into
+// NUL garbage on ':'. On any read error the original reader is returned unchanged.
+func decodeText(r io.Reader) io.Reader {
+	b, err := io.ReadAll(r)
+	if err != nil {
+		return r
+	}
+	switch {
+	case len(b) >= 3 && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF: // UTF-8 BOM
+		return bytes.NewReader(b[3:])
+	case len(b) >= 2 && b[0] == 0xFF && b[1] == 0xFE: // UTF-16 LE
+		return bytes.NewReader(utf16ToUTF8(b[2:], false))
+	case len(b) >= 2 && b[0] == 0xFE && b[1] == 0xFF: // UTF-16 BE
+		return bytes.NewReader(utf16ToUTF8(b[2:], true))
+	default:
+		return bytes.NewReader(b)
+	}
+}
+
+func utf16ToUTF8(b []byte, bigEndian bool) []byte {
+	u := make([]uint16, 0, len(b)/2)
+	for i := 0; i+1 < len(b); i += 2 {
+		if bigEndian {
+			u = append(u, uint16(b[i])<<8|uint16(b[i+1]))
+		} else {
+			u = append(u, uint16(b[i+1])<<8|uint16(b[i]))
+		}
+	}
+	return []byte(string(utf16.Decode(u)))
 }

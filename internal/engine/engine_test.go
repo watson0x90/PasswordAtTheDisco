@@ -1,9 +1,11 @@
 package engine
 
 import (
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/pwanalysis"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/secretsdump"
@@ -120,6 +122,31 @@ func TestProcessDomainUncracked(t *testing.T) {
 	want := "UNCRACKED/DA:N/CO:L/S:0/HIBP:VH"
 	if a.RiskVector != want {
 		t.Errorf("uncracked vector = %q, want %q", a.RiskVector, want)
+	}
+}
+
+func TestEscalateSharedWithDA(t *testing.T) {
+	e := newEngine()
+	e.Enricher = fakeEnricher{
+		normalizeUsername("dauser", "CORP"): {DADomains: []string{"CORP"}},
+	}
+	cracked := []secretsdump.ParsedAccount{
+		{Username: "dauser", Domain: "CORP", Hash: "H1", Password: "SharedPass1", Cracked: true},
+		{Username: "helpdesk", Domain: "CORP", Hash: "H2", Password: "SharedPass1", Cracked: true},
+		{Username: "alice", Domain: "CORP", Hash: "H3", Password: "unique-strong-passphrase", Cracked: true},
+	}
+	byUser := map[string]model.Account{}
+	for _, a := range e.ProcessDomain("CORP", cracked, nil) {
+		byUser[a.Username] = a
+	}
+	if byUser["helpdesk"].RiskLevel != "Critical" {
+		t.Fatalf("helpdesk sharing a DA password should be Critical, got %s", byUser["helpdesk"].RiskLevel)
+	}
+	if !strings.Contains(byUser["helpdesk"].RiskVector, "SHARED-DA") {
+		t.Fatalf("helpdesk should carry the SHARED-DA marker: %q", byUser["helpdesk"].RiskVector)
+	}
+	if byUser["alice"].RiskLevel == "Critical" {
+		t.Fatal("alice (unique strong password) must not be escalated")
 	}
 }
 
