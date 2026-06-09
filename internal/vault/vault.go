@@ -135,7 +135,7 @@ func (v *Vault) wrapAndWrite(dek []byte, passphrase string) error {
 		return err
 	}
 	kek := deriveKEK(passphrase, salt, argonTime, argonMemory, argonThreads)
-	wrapped, err := gcmSeal(kek, dek)
+	wrapped, err := gcmSeal(kek, dek, nil)
 	if err != nil {
 		return err
 	}
@@ -190,7 +190,7 @@ func (v *Vault) Unlock(passphrase string) error {
 		return err
 	}
 	kek := deriveKEK(passphrase, salt, kf.Time, kf.Memory, kf.Threads)
-	dek, err := gcmOpen(kek, wrapped)
+	dek, err := gcmOpen(kek, wrapped, nil)
 	if err != nil {
 		return ErrBadPassphrase
 	}
@@ -199,8 +199,9 @@ func (v *Vault) Unlock(passphrase string) error {
 }
 
 // ChangePassphrase re-wraps the existing DEK under a new passphrase (fresh salt +
-// current argon2 cost). The encrypted audit blobs are untouched. The old keyfile
-// is backed up to keyfile.json.bak. Requires the correct current passphrase.
+// current argon2 cost). The encrypted audit blobs are untouched. A crash-safety
+// .bak is written during the swap and removed on success (keeping it would let the
+// old passphrase still decrypt). Requires the correct current passphrase.
 func (v *Vault) ChangePassphrase(oldPass, newPass string) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -216,7 +217,7 @@ func (v *Vault) ChangePassphrase(oldPass, newPass string) error {
 	if err != nil {
 		return err
 	}
-	dek, err := gcmOpen(deriveKEK(oldPass, salt, kf.Time, kf.Memory, kf.Threads), wrapped)
+	dek, err := gcmOpen(deriveKEK(oldPass, salt, kf.Time, kf.Memory, kf.Threads), wrapped, nil)
 	if err != nil {
 		return ErrBadPassphrase
 	}
@@ -249,7 +250,7 @@ func (v *Vault) SaveAudit(id string, plaintext []byte) error {
 	if dek == nil {
 		return ErrLocked
 	}
-	ct, err := gcmSeal(dek, plaintext)
+	ct, err := gcmSeal(dek, plaintext, blobAAD(id))
 	if err != nil {
 		return err
 	}
@@ -266,7 +267,7 @@ func (v *Vault) SaveIndex(plaintext []byte) error {
 	if dek == nil {
 		return ErrLocked
 	}
-	ct, err := gcmSeal(dek, plaintext)
+	ct, err := gcmSeal(dek, plaintext, indexAAD)
 	if err != nil {
 		return err
 	}
@@ -288,7 +289,8 @@ func (v *Vault) LoadIndex() ([]byte, error) {
 		}
 		return nil, err
 	}
-	return gcmOpen(dek, ct)
+	pt, _, err := gcmOpenWithLegacy(dek, ct, indexAAD)
+	return pt, err
 }
 
 // LoadOne decrypts a single audit blob.
@@ -303,7 +305,8 @@ func (v *Vault) LoadOne(id string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return gcmOpen(dek, ct)
+	pt, _, err := gcmOpenWithLegacy(dek, ct, blobAAD(id))
+	return pt, err
 }
 
 // ListAudits returns the ids of all stored audit blobs (no decryption).
@@ -351,18 +354,19 @@ func (v *Vault) LoadAll() (map[string][]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		pt, err := gcmOpen(dek, ct)
+		id := strings.TrimSuffix(e.Name(), ".enc")
+		pt, _, err := gcmOpenWithLegacy(dek, ct, blobAAD(id))
 		if err != nil {
 			return nil, fmt.Errorf("decrypt %s: %w", e.Name(), err)
 		}
-		out[strings.TrimSuffix(e.Name(), ".enc")] = pt
+		out[id] = pt
 	}
 	return out, nil
 }
 
 // --- crypto + file helpers ---
 
-func gcmSeal(key, plaintext []byte) ([]byte, error) {
+func gcmSeal(key, plaintext, aad []byte) ([]byte, error) {
 	gcm, err := newGCM(key)
 	if err != nil {
 		return nil, err
@@ -371,10 +375,10 @@ func gcmSeal(key, plaintext []byte) ([]byte, error) {
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, err
 	}
-	return gcm.Seal(nonce, nonce, plaintext, nil), nil // nonce || ciphertext
+	return gcm.Seal(nonce, nonce, plaintext, aad), nil // nonce || ciphertext
 }
 
-func gcmOpen(key, blob []byte) ([]byte, error) {
+func gcmOpen(key, blob, aad []byte) ([]byte, error) {
 	gcm, err := newGCM(key)
 	if err != nil {
 		return nil, err
@@ -383,8 +387,27 @@ func gcmOpen(key, blob []byte) ([]byte, error) {
 		return nil, errors.New("ciphertext too short")
 	}
 	nonce, ct := blob[:gcm.NonceSize()], blob[gcm.NonceSize():]
-	return gcm.Open(nil, nonce, ct, nil)
+	return gcm.Open(nil, nonce, ct, aad)
 }
+
+// gcmOpenWithLegacy opens a blob authenticated with aad, falling back to no-AAD
+// for data written before AAD binding (upgrade-on-write re-seals it). The bool
+// reports whether the legacy (no-AAD) path was used.
+func gcmOpenWithLegacy(key, blob, aad []byte) ([]byte, bool, error) {
+	if pt, err := gcmOpen(key, blob, aad); err == nil {
+		return pt, false, nil
+	}
+	pt, err := gcmOpen(key, blob, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	return pt, true, nil
+}
+
+// AAD labels bind a ciphertext to its role/identity so files can't be swapped.
+func blobAAD(id string) []byte { return []byte("patd-audit:" + id) }
+
+var indexAAD = []byte("patd-index")
 
 func newGCM(key []byte) (cipher.AEAD, error) {
 	block, err := aes.NewCipher(key)

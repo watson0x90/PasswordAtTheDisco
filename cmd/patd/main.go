@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -127,13 +128,20 @@ func main() {
 		IdleTimeout:       120 * time.Second,
 	}
 
+	// Fail closed: serving the reveal flow + session cookie over plain HTTP on a
+	// non-loopback address would leak cracked passwords in transit. Plain HTTP is
+	// allowed only when bound to loopback (local dev).
+	if (cert == "" || key == "") && !isLoopbackAddr(addr) {
+		log.Fatalf("refusing to serve plain HTTP on non-loopback address %s: set PATD_TLS_CERT/PATD_TLS_KEY, or bind 127.0.0.1 for local dev", addr)
+	}
+
 	go func() {
 		var err error
 		if cert != "" && key != "" {
 			log.Printf("listening on https://%s", addr)
 			err = srv.ListenAndServeTLS(cert, key)
 		} else {
-			log.Printf("WARNING: serving plain HTTP on %s (set PATD_TLS_CERT/PATD_TLS_KEY for TLS)", addr)
+			log.Printf("WARNING: serving plain HTTP on loopback %s (set PATD_TLS_CERT/PATD_TLS_KEY for TLS)", addr)
 			err = srv.ListenAndServe()
 		}
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -189,6 +197,19 @@ func runReindex() {
 		log.Fatalf("reindex: %v", err)
 	}
 	fmt.Fprintf(os.Stderr, "reindexed %d audit(s)\n", len(s.List()))
+}
+
+// isLoopbackAddr reports whether addr (host:port) binds only loopback.
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	if host == "localhost" || host == "" {
+		return host == "localhost"
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func env(key, def string) string {

@@ -58,10 +58,24 @@ func (l *Limiter) RecordFailure(key string) {
 	defer l.mu.Unlock()
 	a, ok := l.attempts[key]
 	if !ok || l.now().Sub(a.first) >= l.window {
+		if len(l.attempts) > 1024 {
+			l.sweep() // bound memory: drop expired entries before adding a new one
+		}
 		l.attempts[key] = &attempt{count: 1, first: l.now()}
 		return
 	}
 	a.count++
+}
+
+// sweep removes expired entries (caller holds l.mu). Guards against unbounded
+// growth from a distributed spray of unique keys.
+func (l *Limiter) sweep() {
+	now := l.now()
+	for k, a := range l.attempts {
+		if now.Sub(a.first) >= l.window {
+			delete(l.attempts, k)
+		}
+	}
 }
 
 // Reset clears key's record.
