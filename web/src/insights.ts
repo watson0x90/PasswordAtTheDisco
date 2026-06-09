@@ -111,3 +111,61 @@ export function scoreBuckets(accts: Account[]): Bar[] {
   }
   return labels.map((name, i) => ({ name, value: counts[i] }))
 }
+
+export interface Series {
+  name: string
+  color: string
+  points: { x: number; y: number }[]
+}
+
+// HIBP breach count (log10) vs risk score, one series per risk level.
+export function hibpVsRisk(accts: Account[]): Series[] {
+  const levels: [string, string][] = [
+    ["Critical", "#fb7185"],
+    ["High", "#fbbf24"],
+    ["Medium", "#a3e635"],
+    ["Low", "#22d3ee"],
+  ]
+  return levels
+    .map(([name, color]) => ({
+      name,
+      color,
+      points: accts
+        .filter((a) => a.risk_level === name)
+        .map((a) => ({ x: Math.log10((a.hibp_breach_count || 0) + 1), y: a.risk_score })),
+    }))
+    .filter((s) => s.points.length > 0)
+}
+
+// Distribution of how many other accounts each account shares a secret with.
+export function sharingDistribution(accts: Account[]): Bar[] {
+  const labels = ["0", "1", "2", "3–5", "6+"]
+  const c = [0, 0, 0, 0, 0]
+  for (const a of accts) {
+    const n = a.shared_with
+    if (n <= 0) c[0]++
+    else if (n === 1) c[1]++
+    else if (n === 2) c[2]++
+    else if (n <= 5) c[3]++
+    else c[4]++
+  }
+  return labels.map((name, i) => ({ name, value: c[i] }))
+}
+
+// Count of accounts with a Domain Admin pathway, per domain (desc).
+export function daExposureByDomain(accts: Account[]): Bar[] {
+  const m: Record<string, number> = {}
+  for (const a of accts) if (hasDA(a.da_domains)) m[a.domain] = (m[a.domain] || 0) + 1
+  return Object.entries(m)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value)
+}
+
+// Count of cracked accounts per complexity class (desc).
+export function complexityCounts(accts: Account[]): Bar[] {
+  const m: Record<string, number> = {}
+  for (const a of accts) if (a.cracked && a.complexity) m[a.complexity] = (m[a.complexity] || 0) + 1
+  return Object.entries(m)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value)
+}

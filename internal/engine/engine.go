@@ -147,6 +147,7 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 		SharedWith:      sharedWith,
 		Enabled:         derefBool(enr.Enabled),
 		MeetsPolicy:     an.MeetsPolicy,
+		Complexity:      an.ComplexityLabel,
 	}
 }
 

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react"
 import {
   Bar,
   BarChart,
@@ -8,11 +9,14 @@ import {
   RadialBar,
   RadialBarChart,
   ResponsiveContainer,
+  Scatter,
+  ScatterChart,
   Tooltip,
   XAxis,
   YAxis,
+  ZAxis,
 } from "recharts"
-import type { Bar as BarDatum, Slice } from "../insights"
+import type { Bar as BarDatum, Series, Slice } from "../insights"
 
 const AXIS = { fill: "#8a96b2", fontSize: 11 }
 const TOOLTIP = {
@@ -45,6 +49,73 @@ export function Donut({ data, height = 200 }: { data: Slice[]; height?: number }
               {d.value.toLocaleString()}
               {total ? ` · ${Math.round((d.value / total) * 100)}%` : ""}
             </b>
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ChartCard is the standard titled panel wrapper used across the chart views.
+export function ChartCard({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="panel chart-card">
+      <div className="chart-title">{title}</div>
+      {children}
+    </div>
+  )
+}
+
+// HBars: horizontal bars, good for many/long category labels (complexity, domains).
+export function HBars({ data, color = "#38bdf8" }: { data: BarDatum[]; color?: string }) {
+  const height = Math.max(120, data.length * 30 + 30)
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
+        <XAxis type="number" tick={AXIS} tickLine={false} axisLine={false} allowDecimals={false} />
+        <YAxis type="category" dataKey="name" tick={AXIS} tickLine={false} axisLine={false} width={150} />
+        <Tooltip {...TOOLTIP} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+        <Bar dataKey="value" fill={color} radius={[0, 4, 4, 0]} maxBarSize={20} />
+      </BarChart>
+    </ResponsiveContainer>
+  )
+}
+
+function fmtMag(n: number): string {
+  if (n >= 1e6) return `${Math.round(n / 1e6)}M`
+  if (n >= 1e3) return `${Math.round(n / 1e3)}k`
+  return `${Math.round(n)}`
+}
+
+// ScatterPlot: one series per group, x is a log10 magnitude (formatted back to count).
+export function ScatterPlot({ series, xLabel }: { series: Series[]; xLabel?: string }) {
+  return (
+    <div>
+      <ResponsiveContainer width="100%" height={250}>
+        <ScatterChart margin={{ top: 8, right: 14, left: -12, bottom: 16 }}>
+          <XAxis
+            type="number"
+            dataKey="x"
+            tick={AXIS}
+            tickLine={false}
+            axisLine={{ stroke: "#242e46" }}
+            domain={[0, "dataMax"]}
+            tickFormatter={(v: number) => fmtMag(Math.pow(10, v) - 1)}
+            label={xLabel ? { value: xLabel, position: "insideBottom", offset: -8, fill: "#566076", fontSize: 11 } : undefined}
+          />
+          <YAxis type="number" dataKey="y" tick={AXIS} tickLine={false} axisLine={false} domain={[0, 10]} width={34} />
+          <ZAxis range={[40, 40]} />
+          <Tooltip {...TOOLTIP} cursor={{ stroke: "#242e46" }} formatter={(v, n) => (n === "x" ? fmtMag(Math.pow(10, Number(v)) - 1) : v)} />
+          {series.map((s) => (
+            <Scatter key={s.name} name={s.name} data={s.points} fill={s.color} fillOpacity={0.75} />
+          ))}
+        </ScatterChart>
+      </ResponsiveContainer>
+      <div className="chart-legend">
+        {series.map((s) => (
+          <span key={s.name} className="chart-legend-item">
+            <span className="chart-legend-dot" style={{ background: s.color }} />
+            {s.name}
           </span>
         ))}
       </div>

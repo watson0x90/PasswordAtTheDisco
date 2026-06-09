@@ -10,6 +10,7 @@ import { Actionable } from "./components/Actionable"
 import { Domains } from "./components/Domains"
 import { Accounts } from "./components/Accounts"
 import { Ingest } from "./components/Ingest"
+import { Insights } from "./components/Insights"
 import { Policies } from "./components/Policies"
 import { Unlock } from "./components/Unlock"
 
@@ -21,6 +22,8 @@ function viewFor(view: View) {
       return <Domains />
     case "accounts":
       return <Accounts />
+    case "insights":
+      return <Insights />
     case "ingest":
       return <Ingest />
     case "policies":

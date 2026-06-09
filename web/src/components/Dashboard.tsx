@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react"
+import { useState } from "react"
 import { ApiError } from "../api"
 import { useAuth } from "../auth"
 import { useAudits } from "../auditsData"
@@ -6,7 +6,7 @@ import { useAccountsData } from "../accountsData"
 import { useNav } from "../nav"
 import { hasDA } from "../util"
 import { posture, riskDistribution, hibpSplit, lengthBuckets } from "../insights"
-import { Bars, Donut, PostureGauge } from "./Charts"
+import { Bars, ChartCard, Donut, PostureGauge } from "./Charts"
 
 const RATING_COLOR: Record<string, string> = { Strong: "#34d399", Fair: "#fbbf24", Weak: "#fb7185", "No Data": "#8a96b2" }
 const LIKELIHOOD_COLOR: Record<string, string> = {
@@ -98,14 +98,6 @@ function PostureBar({ label, value, max }: { label: string; value: number; max: 
   )
 }
 
-function ChartCard({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div className="panel chart-card">
-      <div className="chart-title">{title}</div>
-      {children}
-    </div>
-  )
-}
 
 // NoAudit is shown when the session has no audit (typically none exist yet).
 function NoAudit() {

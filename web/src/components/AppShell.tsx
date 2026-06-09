@@ -3,13 +3,14 @@ import { useAuth } from "../auth"
 import { useAudits } from "../auditsData"
 import { Logo } from "./Logo"
 
-export type View = "overview" | "actionable" | "domains" | "accounts" | "ingest" | "policies"
+export type View = "overview" | "actionable" | "domains" | "accounts" | "insights" | "ingest" | "policies"
 
 const TABS: { id: View; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "actionable", label: "Actionable" },
   { id: "domains", label: "Domains" },
   { id: "accounts", label: "Accounts" },
+  { id: "insights", label: "Insights" },
 ]
 
 export function AppShell({ view, onNav, children }: { view: View; onNav: (v: View) => void; children: ReactNode }) {

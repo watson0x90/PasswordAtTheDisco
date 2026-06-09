@@ -503,6 +503,7 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 .chart-legend-item { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--dim); }
 .chart-legend-dot { width: 9px; height: 9px; border-radius: 50%; }
 .chart-legend-item b { color: var(--text); font-weight: 600; }
+.chart-empty { font-size: 13px; color: var(--faint); padding: 24px 4px; line-height: 1.5; }
 
 .posture-panel { display: flex; gap: 36px; align-items: center; flex-wrap: wrap; margin-bottom: 38px; }
 .posture-gauge-wrap { flex: 0 0 220px; text-align: center; }

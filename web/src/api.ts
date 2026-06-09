@@ -50,6 +50,7 @@ export interface Account {
   shared_with: number
   enabled: boolean
   meets_policy: boolean
+  complexity: string
 }
 
 export interface PolicyRule {
