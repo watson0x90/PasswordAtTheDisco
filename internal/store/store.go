@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"sort"
 	"sync"
 	"time"
@@ -58,10 +59,33 @@ type persisted struct {
 	Dataset       model.Dataset `json:"dataset"`
 }
 
+// keyedMutex serializes read-modify-write per audit id (so a load-build-swap on
+// one audit can't lose another's concurrent write) without blocking readers.
+type keyedMutex struct {
+	mu    sync.Mutex
+	locks map[string]*sync.Mutex
+}
+
+func (k *keyedMutex) lock(id string) func() {
+	k.mu.Lock()
+	if k.locks == nil {
+		k.locks = map[string]*sync.Mutex{}
+	}
+	m := k.locks[id]
+	if m == nil {
+		m = &sync.Mutex{}
+		k.locks[id] = m
+	}
+	k.mu.Unlock()
+	m.Lock()
+	return m.Unlock
+}
+
 // Store is a thread-safe collection of audits.
 type Store struct {
 	mu      sync.Mutex
 	writeMu sync.Mutex // serializes vault writes without blocking readers
+	mutate  keyedMutex // serializes per-audit read-modify-write
 	index   map[string]AuditListItem
 	cache   map[string]*audit // lazily decrypted datasets (immutable entries)
 	lru     []string          // cache ids, oldest first
@@ -159,27 +183,81 @@ func (s *Store) ChangePassphrase(oldPass, newPass string) error {
 	if s.vault == nil {
 		return nil
 	}
+	// Serialize against in-flight vault writes (load-bearing once the DEK rotates).
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	return s.vault.ChangePassphrase(oldPass, newPass)
 }
 
-// loadIndex populates the metadata index from the vault. If no index exists yet
-// (legacy data), it migrates: decrypt every blob once to build + persist it.
+// loadIndex populates the metadata index. The index is a derived cache, so on
+// ANY failure to read it (absent, corrupt, or unparseable) it is rebuilt from the
+// still-authentic audit blobs and re-persisted -- a corrupt index never bricks
+// intact data. After loading it reconciles against the blobs on disk (drops index
+// entries with no blob; adopts blobs with no entry).
 func (s *Store) loadIndex() error {
-	b, err := s.vault.LoadIndex()
-	if err == nil {
-		var idx map[string]AuditListItem
-		if err := json.Unmarshal(b, &idx); err != nil {
-			return err
-		}
-		s.mu.Lock()
-		s.index, s.cache, s.lru = idx, map[string]*audit{}, nil
-		s.mu.Unlock()
-		return nil
+	idx, ok := s.tryLoadIndex()
+	if !ok {
+		return s.rebuildIndex()
 	}
-	if !errors.Is(err, vault.ErrNoIndex) {
+	if err := s.reconcile(idx); err != nil {
+		if errors.Is(err, errRebuild) {
+			return s.rebuildIndex()
+		}
 		return err
 	}
-	blobs, err := s.vault.LoadAll() // one-time migration
+	s.mu.Lock()
+	s.index, s.cache, s.lru = idx, map[string]*audit{}, nil
+	s.mu.Unlock()
+	return nil
+}
+
+// tryLoadIndex returns the decrypted+parsed index, or ok=false if it is absent or
+// unusable (so the caller rebuilds).
+func (s *Store) tryLoadIndex() (map[string]AuditListItem, bool) {
+	b, err := s.vault.LoadIndex()
+	if err != nil {
+		if !errors.Is(err, vault.ErrNoIndex) {
+			log.Printf("index unreadable (%v); rebuilding from blobs", err)
+		}
+		return nil, false
+	}
+	var idx map[string]AuditListItem
+	if err := json.Unmarshal(b, &idx); err != nil {
+		log.Printf("index corrupt (%v); rebuilding from blobs", err)
+		return nil, false
+	}
+	return idx, true
+}
+
+// reconcile drops index entries whose blob is gone (ghosts). Adopting orphan
+// blobs (entry missing) is handled by a full rebuild, which reconcile triggers.
+func (s *Store) reconcile(idx map[string]AuditListItem) error {
+	ids, err := s.vault.ListAudits()
+	if err != nil {
+		return err
+	}
+	have := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		have[id] = true
+	}
+	changed := false
+	for id := range idx {
+		if !have[id] {
+			delete(idx, id) // ghost: index lists an audit with no blob
+			changed = true
+		}
+	}
+	if len(idx) != len(have) || changed { // an orphan blob exists, or we pruned: rebuild for accuracy
+		return errRebuild
+	}
+	return nil
+}
+
+var errRebuild = errors.New("index needs rebuild")
+
+// rebuildIndex decrypts every blob once to rebuild + persist the index.
+func (s *Store) rebuildIndex() error {
+	blobs, err := s.vault.LoadAll()
 	if err != nil {
 		return err
 	}
@@ -187,7 +265,8 @@ func (s *Store) loadIndex() error {
 	for id, bb := range blobs {
 		var p persisted
 		if err := json.Unmarshal(bb, &p); err != nil {
-			return err
+			log.Printf("skipping unreadable audit blob %s during reindex: %v", id, err)
+			continue // a single bad blob must not abort the whole unlock
 		}
 		if p.SchemaVersion > currentSchemaVersion {
 			return fmt.Errorf("audit %s was written by a newer version (schema %d > %d)", id, p.SchemaVersion, currentSchemaVersion)
@@ -204,6 +283,14 @@ func (s *Store) loadIndex() error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	return s.vault.SaveIndex(ib)
+}
+
+// Reindex forces a rebuild of the index from the audit blobs (admin recovery).
+func (s *Store) Reindex() error {
+	if s.vault == nil {
+		return nil
+	}
+	return s.rebuildIndex()
 }
 
 // --- cache (caller holds s.mu) ---
@@ -327,6 +414,8 @@ func (s *Store) CreateAudit(name, notes string) (AuditMeta, error) {
 // ReplaceDomain replaces all accounts for one domain (per-domain upload),
 // copy-on-write so concurrent readers keep a consistent snapshot.
 func (s *Store) ReplaceDomain(id, domain string, accounts []model.Account) error {
+	unlock := s.mutate.lock(id) // serialize the whole read-modify-write for this audit
+	defer unlock()
 	cur, err := s.ensureLoaded(id)
 	if err != nil {
 		return err
@@ -337,15 +426,19 @@ func (s *Store) ReplaceDomain(id, domain string, accounts []model.Account) error
 			kept = append(kept, acc)
 		}
 	}
+	merged := append(kept, accounts...)
+	model.RecomputeSharing(merged)     // cross-domain reuse counts over the whole audit
+	model.EscalateSharedWithDA(merged) // cross-domain DA-share escalation
 	now := s.now()
 	meta := cur.meta
 	meta.UpdatedAt = now
-	next := &audit{meta: meta, ds: model.Dataset{Name: cur.ds.Name, GeneratedAt: now, Accounts: append(kept, accounts...)}}
-	return s.swap(id, next)
+	return s.swap(id, &audit{meta: meta, ds: model.Dataset{Name: cur.ds.Name, GeneratedAt: now, Accounts: merged}})
 }
 
 // Replace swaps an audit's entire dataset (CLI ingest).
 func (s *Store) Replace(id string, ds model.Dataset) error {
+	unlock := s.mutate.lock(id)
+	defer unlock()
 	cur, err := s.ensureLoaded(id)
 	if err != nil {
 		return err
@@ -353,6 +446,8 @@ func (s *Store) Replace(id string, ds model.Dataset) error {
 	if ds.GeneratedAt.IsZero() {
 		ds.GeneratedAt = s.now()
 	}
+	model.RecomputeSharing(ds.Accounts)
+	model.EscalateSharedWithDA(ds.Accounts)
 	meta := cur.meta
 	meta.UpdatedAt = ds.GeneratedAt
 	return s.swap(id, &audit{meta: meta, ds: ds})
@@ -408,25 +503,31 @@ func (s *Store) Has(id string) bool {
 	return ok
 }
 
-// Delete removes an audit. Returns false if it did not exist.
-func (s *Store) Delete(id string) bool {
+// Delete removes an audit. Returns ErrNotFound if it did not exist. The index is
+// persisted BEFORE the blob is removed, so a crash leaves a harmless reapable
+// orphan blob rather than a ghost index entry; the SaveIndex error is propagated.
+func (s *Store) Delete(id string) error {
+	unlock := s.mutate.lock(id)
+	defer unlock()
 	s.mu.Lock()
 	if _, ok := s.index[id]; !ok {
 		s.mu.Unlock()
-		return false
+		return ErrNotFound
 	}
 	delete(s.index, id)
 	delete(s.cache, id)
 	s.removeLRU(id)
-	ib, _ := s.marshalIndex()
+	ib, err := s.marshalIndex()
 	s.mu.Unlock()
-	if s.vault != nil {
-		s.writeMu.Lock()
-		_ = s.vault.DeleteAudit(id)
-		_ = s.vault.SaveIndex(ib)
-		s.writeMu.Unlock()
+	if s.vault == nil || err != nil {
+		return err
 	}
-	return true
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	if err := s.vault.SaveIndex(ib); err != nil { // index first
+		return err
+	}
+	return s.vault.DeleteAudit(id) // then the blob
 }
 
 // Accounts returns an audit's accounts, redacted unless includeSecrets. The

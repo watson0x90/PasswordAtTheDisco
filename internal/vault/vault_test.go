@@ -104,9 +104,10 @@ func TestChangePassphrase(t *testing.T) {
 	if err := v.ChangePassphrase("first-passphrase-xyz", "second-passphrase-xyz"); err != nil {
 		t.Fatalf("ChangePassphrase: %v", err)
 	}
-	// keyfile.json.bak written
-	if _, err := os.Stat(filepath.Join(dir, "keyfile.json.bak")); err != nil {
-		t.Fatal("expected a keyfile backup after passphrase change")
+	// keyfile.json.bak must NOT survive a rotation -- it still wraps the DEK under
+	// the old passphrase, which would defeat the rotation.
+	if _, err := os.Stat(filepath.Join(dir, "keyfile.json.bak")); !os.IsNotExist(err) {
+		t.Fatal("keyfile.json.bak must be removed after a passphrase change")
 	}
 	// reopen: old fails, new works, data intact
 	v2, err := Open(dir)

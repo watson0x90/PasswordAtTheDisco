@@ -2,11 +2,65 @@ package store
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/vault"
 )
+
+// Logical regression test for the lost-update race: two concurrent per-domain
+// uploads to the same audit must BOTH survive. (go test -race cannot catch this
+// -- the copy-on-write design has no memory race, only last-writer-wins.)
+func TestConcurrentReplaceDomainNoLostUpdate(t *testing.T) {
+	for trial := 0; trial < 50; trial++ {
+		s := New()
+		m, _ := s.CreateAudit("x", "")
+		var wg sync.WaitGroup
+		for i := 0; i < 2; i++ {
+			dom := fmt.Sprintf("D%d", i)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_ = s.ReplaceDomain(m.ID, dom, []model.Account{{Username: "u" + dom, Domain: dom, Cracked: true}})
+			}()
+		}
+		wg.Wait()
+		accts, _ := s.Accounts(m.ID, false)
+		if len(accts) != 2 {
+			t.Fatalf("trial %d: both domains should survive concurrent upload, got %d", trial, len(accts))
+		}
+	}
+}
+
+func TestCorruptIndexRecovers(t *testing.T) {
+	dir := t.TempDir()
+	v, _ := vault.Open(dir)
+	s := NewPersistent(v)
+	if err := s.Initialize("a-strong-passphrase"); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := s.CreateAudit("Eng", "")
+	if err := s.Replace(m.ID, sample()); err != nil {
+		t.Fatal(err)
+	}
+	// Corrupt the index file; the audit blob stays intact.
+	if err := os.WriteFile(filepath.Join(dir, "index.enc"), []byte("garbage-not-gcm"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s2 := NewPersistent(mustReopen(t, dir))
+	if err := s2.Unlock("a-strong-passphrase"); err != nil {
+		t.Fatalf("unlock should recover from a corrupt index, not brick: %v", err)
+	}
+	if len(s2.List()) != 1 {
+		t.Fatalf("rebuilt index should list the audit, got %d", len(s2.List()))
+	}
+	if sum, err := s2.Summary(m.ID); err != nil || sum.TotalAccounts != 2 {
+		t.Fatalf("data must be intact after rebuild: %v %+v", err, sum)
+	}
+}
 
 func TestLazyLoadAndEviction(t *testing.T) {
 	dir := t.TempDir()
@@ -140,8 +194,11 @@ func TestAuditsIsolatedAndListed(t *testing.T) {
 		t.Fatalf("List should return 2 audits, got %d", len(s.List()))
 	}
 	// delete + missing-id errors
-	if !s.Delete(b.ID) || s.Has(b.ID) {
-		t.Fatal("delete failed")
+	if err := s.Delete(b.ID); err != nil || s.Has(b.ID) {
+		t.Fatalf("delete failed: %v", err)
+	}
+	if err := s.Delete(b.ID); err != ErrNotFound {
+		t.Fatalf("deleting a missing audit should be ErrNotFound, got %v", err)
 	}
 	if _, err := s.Summary(b.ID); err != ErrNotFound {
 		t.Fatalf("deleted audit should be ErrNotFound, got %v", err)

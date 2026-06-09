@@ -223,6 +223,10 @@ func (v *Vault) ChangePassphrase(oldPass, newPass string) error {
 	if err := v.wrapAndWrite(dek, newPass); err != nil {
 		return err
 	}
+	// Remove the crash-safety backup: it still wraps the DEK under the OLD
+	// passphrase, so keeping it would defeat the rotation (the old passphrase
+	// could still decrypt via the .bak in any data/ backup).
+	_ = os.Remove(v.keyfilePath() + ".bak")
 	v.dek = dek
 	return nil
 }
@@ -300,6 +304,21 @@ func (v *Vault) LoadOne(id string) ([]byte, error) {
 		return nil, err
 	}
 	return gcmOpen(dek, ct)
+}
+
+// ListAudits returns the ids of all stored audit blobs (no decryption).
+func (v *Vault) ListAudits() ([]string, error) {
+	entries, err := os.ReadDir(filepath.Join(v.dir, auditsSubdir))
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".enc") {
+			ids = append(ids, strings.TrimSuffix(e.Name(), ".enc"))
+		}
+	}
+	return ids, nil
 }
 
 // DeleteAudit removes an audit's encrypted file (no error if already gone).

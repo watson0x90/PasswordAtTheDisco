@@ -656,8 +656,12 @@ func (s *Server) handleDeleteAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	if !s.Store.Delete(id) {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "audit not found"})
+	if err := s.Store.Delete(id); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "audit not found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not delete audit: " + err.Error()})
 		return
 	}
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "audit_delete", Target: id, Source: r.RemoteAddr, Result: "ok"})

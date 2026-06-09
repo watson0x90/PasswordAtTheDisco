@@ -43,6 +43,9 @@ func main() {
 		case "audit":
 			runAudit(os.Args[2:])
 			return
+		case "reindex":
+			runReindex()
+			return
 		}
 	}
 
@@ -163,6 +166,29 @@ func hashpw() {
 		os.Exit(1)
 	}
 	fmt.Println(h)
+}
+
+// runReindex rebuilds the encrypted metadata index from the audit blobs (recovery
+// for a lost/corrupt index.enc). Reads the store passphrase from stdin.
+func runReindex() {
+	dataDir := env("PATD_DATA", "data")
+	vlt, err := vault.Open(dataDir)
+	if err != nil {
+		log.Fatalf("open data dir %s: %v", dataDir, err)
+	}
+	if !vlt.Initialized() {
+		log.Fatalf("no encrypted store at %s", dataDir)
+	}
+	fmt.Fprint(os.Stderr, "Store passphrase: ")
+	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	s := store.NewPersistent(vlt)
+	if err := s.Unlock(strings.TrimRight(line, "\r\n")); err != nil {
+		log.Fatalf("unlock: %v", err)
+	}
+	if err := s.Reindex(); err != nil {
+		log.Fatalf("reindex: %v", err)
+	}
+	fmt.Fprintf(os.Stderr, "reindexed %d audit(s)\n", len(s.List()))
 }
 
 func env(key, def string) string {
