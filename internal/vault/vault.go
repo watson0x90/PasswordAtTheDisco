@@ -13,10 +13,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -62,9 +64,27 @@ type keyfile struct {
 
 // Vault stores encrypted audits under a directory. Safe for concurrent use.
 type Vault struct {
-	dir string
-	mu  sync.RWMutex
-	dek []byte // nil when locked
+	dir          string
+	mu           sync.RWMutex
+	dek          []byte       // nil when locked
+	seals        atomic.Int64 // blob/index seals under the current DEK (nonce odometer)
+	noncesWarned atomic.Bool  // one-shot guard for the nonce-budget warning
+}
+
+// nonceWarnThreshold is a conservative odometer limit for a single DEK. Blobs use
+// AES-256-GCM with random 96-bit nonces; the birthday bound for a non-negligible
+// collision is ~2^48 messages, so this 2^32 line carries an enormous safety margin
+// and is effectively unreachable in normal use (one seal per audit save). It exists
+// only as a tripwire against a pathological write loop. The real mitigation for a
+// genuinely high-volume deployment is DEK rotation (re-keying), which resets the
+// nonce space -- not yet implemented; ChangePassphrase only re-wraps the same DEK.
+const nonceWarnThreshold = 1 << 32
+
+// countSeal advances the nonce odometer and warns once if it crosses the bound.
+func (v *Vault) countSeal() {
+	if v.seals.Add(1) >= nonceWarnThreshold && v.noncesWarned.CompareAndSwap(false, true) {
+		log.Printf("WARNING: %d encryptions under one data key -- approaching the GCM random-nonce budget; rotate the store (new data key) for very high write volumes", nonceWarnThreshold)
+	}
 }
 
 // Open prepares the data directory (creating it if needed). It does not unlock.
@@ -170,6 +190,8 @@ func (v *Vault) Initialize(passphrase string) error {
 		return err
 	}
 	v.dek = dek
+	v.seals.Store(0)
+	v.noncesWarned.Store(false)
 	return nil
 }
 
@@ -195,6 +217,8 @@ func (v *Vault) Unlock(passphrase string) error {
 		return ErrBadPassphrase
 	}
 	v.dek = dek
+	v.seals.Store(0) // per-session odometer (lifetime tracking would need persistence)
+	v.noncesWarned.Store(false)
 	return nil
 }
 
@@ -254,6 +278,7 @@ func (v *Vault) SaveAudit(id string, plaintext []byte) error {
 	if err != nil {
 		return err
 	}
+	v.countSeal()
 	return writeFileAtomic(v.auditPath(id), ct)
 }
 
@@ -271,6 +296,7 @@ func (v *Vault) SaveIndex(plaintext []byte) error {
 	if err != nil {
 		return err
 	}
+	v.countSeal()
 	return writeFileAtomic(v.indexPath(), ct)
 }
 
