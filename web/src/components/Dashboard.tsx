@@ -1,93 +1,109 @@
-import { useEffect, useState } from "react"
-import { api, ApiError, type Summary } from "../api"
+import { useState, type ReactNode } from "react"
+import { ApiError } from "../api"
 import { useAuth } from "../auth"
 import { useAudits } from "../auditsData"
+import { useAccountsData } from "../accountsData"
 import { useNav } from "../nav"
+import { hasDA } from "../util"
+import { posture, riskDistribution, hibpSplit, lengthBuckets } from "../insights"
+import { Bars, Donut, PostureGauge } from "./Charts"
 
-const RISK_ORDER = ["Critical", "High", "Medium", "Low"]
-const RISK_CLASS: Record<string, string> = {
-  Critical: "crit",
-  High: "high",
-  Medium: "med",
-  Low: "low",
+const RATING_COLOR: Record<string, string> = { Strong: "#34d399", Fair: "#fbbf24", Weak: "#fb7185", "No Data": "#8a96b2" }
+const LIKELIHOOD_COLOR: Record<string, string> = {
+  "Very High": "#fb7185",
+  High: "#fb7185",
+  Medium: "#fbbf24",
+  Low: "#34d399",
+  "—": "#8a96b2",
 }
 
 export function Dashboard() {
   const { activeId, audits, loading: auditsLoading } = useAudits()
-  const [summary, setSummary] = useState<Summary | null>(null)
-  const [error, setError] = useState("")
-
-  useEffect(() => {
-    if (!activeId) {
-      setSummary(null)
-      return
-    }
-    let active = true
-    setSummary(null)
-    setError("")
-    api
-      .summary()
-      .then((s) => {
-        if (active) setSummary(s)
-      })
-      .catch((e) => {
-        if (active) setError(e instanceof ApiError ? e.message : "failed to load summary")
-      })
-    return () => {
-      active = false
-    }
-  }, [activeId])
+  const { accounts, error } = useAccountsData()
 
   if (auditsLoading) return <div className="center-state"><div className="spinner">loading</div></div>
   if (!activeId) {
-    // auto-select is in flight if audits exist; otherwise there are none
     if (audits.length > 0) return <div className="center-state"><div className="spinner">opening audit</div></div>
     return <NoAudit />
   }
-  if (error) return <div className="center-state">{error}</div>
-  if (!summary) {
-    return (
-      <div className="center-state">
-        <div className="spinner">loading</div>
-      </div>
-    )
-  }
-  if (summary.total_accounts === 0) return <GetStarted />
+  if (error && !accounts) return <div className="center-state">{error}</div>
+  if (!accounts) return <div className="center-state"><div className="spinner">loading</div></div>
+  if (accounts.length === 0) return <GetStarted />
 
-  const crackPct = summary.total_accounts ? Math.round((summary.cracked / summary.total_accounts) * 100) : 0
-  const maxRisk = Math.max(1, ...RISK_ORDER.map((r) => summary.risk_counts[r] || 0))
+  const total = accounts.length
+  const cracked = accounts.filter((a) => a.cracked).length
+  const breached = accounts.filter((a) => a.hibp_breached).length
+  const da = accounts.filter((a) => hasDA(a.da_domains)).length
+  const crackPct = total ? Math.round((cracked / total) * 100) : 0
+
+  const p = posture(accounts)
+  const pColor = RATING_COLOR[p.rating]
 
   return (
     <>
       <div className="section-label">Overview</div>
       <div className="stat-grid">
-        <Stat label="Accounts" value={summary.total_accounts} delay={0} />
-        <Stat label="Cracked" value={summary.cracked} sub={`${crackPct}% of accounts`} delay={0.06} />
-        <Stat label="HIBP Breached" value={summary.hibp_breached} accent delay={0.12} />
-        <Stat label="DA Pathways" value={summary.da_pathways} crit delay={0.18} />
+        <Stat label="Accounts" value={total} delay={0} />
+        <Stat label="Cracked" value={cracked} sub={`${crackPct}% of accounts`} delay={0.06} />
+        <Stat label="HIBP Breached" value={breached} accent delay={0.12} />
+        <Stat label="DA Pathways" value={da} crit delay={0.18} />
       </div>
 
-      <div className="section-label">Risk Distribution</div>
-      <div className="panel">
-        {RISK_ORDER.map((r) => {
-          const n = summary.risk_counts[r] || 0
-          const cls = RISK_CLASS[r]
-          return (
-            <div className="risk-row" key={r}>
-              <div className="risk-name">
-                <span className={`risk-dot bg-${cls}`} />
-                {r}
-              </div>
-              <div className="risk-track">
-                <div className={`risk-fill bg-${cls}`} style={{ width: `${(n / maxRisk) * 100}%` }} />
-              </div>
-              <div className={`risk-count c-${cls}`}>{n.toLocaleString()}</div>
-            </div>
-          )
-        })}
-        <div className="meta-line">snapshot generated {fmtTime(summary.generated_at)}</div>
+      <div className="section-label">Security Posture</div>
+      <div className="panel posture-panel">
+        <div className="posture-gauge-wrap">
+          <PostureGauge score={p.score} color={pColor} rating={p.rating} />
+          <div className="posture-likelihood">
+            Estimated breach likelihood:{" "}
+            <b style={{ color: LIKELIHOOD_COLOR[p.likelihood] }}>{p.likelihood}</b>
+          </div>
+        </div>
+        <div className="posture-breakdown">
+          <PostureBar label="Risk distribution" value={p.breakdown.risk} max={40} />
+          <PostureBar label="Password strength" value={p.breakdown.strength} max={30} />
+          <PostureBar label="Privilege exposure" value={p.breakdown.privilege} max={15} />
+          <PostureBar label="Policy compliance" value={p.breakdown.compliance} max={15} />
+        </div>
+      </div>
+
+      <div className="section-label">Charts</div>
+      <div className="chart-grid">
+        <ChartCard title="Risk distribution">
+          <Donut data={riskDistribution(accounts)} />
+        </ChartCard>
+        <ChartCard title="HIBP exposure">
+          <Donut data={hibpSplit(accounts)} />
+        </ChartCard>
+        <ChartCard title="Password length (cracked)">
+          <Bars data={lengthBuckets(accounts)} color="#818cf8" />
+        </ChartCard>
       </div>
     </>
+  )
+}
+
+function PostureBar({ label, value, max }: { label: string; value: number; max: number }) {
+  return (
+    <div className="pbar">
+      <div className="pbar-head">
+        <span>{label}</span>
+        <span className="pbar-val">
+          {value} <span className="muted">/ {max}</span>
+        </span>
+      </div>
+      <div className="risk-track">
+        <div className="risk-fill bg-low" style={{ width: `${(value / max) * 100}%` }} />
+      </div>
+    </div>
+  )
+}
+
+function ChartCard({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="panel chart-card">
+      <div className="chart-title">{title}</div>
+      {children}
+    </div>
   )
 }
 
@@ -228,9 +244,4 @@ function Stat({ label, value, sub, accent, crit, delay }: StatProps) {
       {sub && <div className="stat-sub">{sub}</div>}
     </div>
   )
-}
-
-function fmtTime(iso: string): string {
-  const d = new Date(iso)
-  return isNaN(d.getTime()) ? iso : d.toLocaleString()
 }

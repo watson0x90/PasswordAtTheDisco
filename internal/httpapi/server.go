@@ -149,7 +149,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteStrictMode,
 	})
 	s.Audit.Log(audit.Event{Actor: user.Username, Role: string(user.Role), Action: "login", Source: r.RemoteAddr, Result: "ok"})
-	writeJSON(w, http.StatusOK, map[string]string{"username": user.Username, "role": string(user.Role), "csrf_token": csrf})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"username":          user.Username,
+		"role":              string(user.Role),
+		"csrf_token":        csrf,
+		"active_audit":      "", // fresh session
+		"store_initialized": s.Store.Initialized(),
+		"store_unlocked":    s.Store.Unlocked(),
+	})
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
