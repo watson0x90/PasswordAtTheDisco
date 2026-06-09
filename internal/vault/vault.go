@@ -46,6 +46,8 @@ var (
 	ErrNotInitialized = errors.New("vault not initialized")
 	// ErrBadPassphrase is returned when the passphrase fails to unwrap the DEK.
 	ErrBadPassphrase = errors.New("incorrect passphrase")
+	// ErrNoIndex is returned by LoadIndex when no index file exists yet.
+	ErrNoIndex = errors.New("no index file")
 )
 
 type keyfile struct {
@@ -248,6 +250,56 @@ func (v *Vault) SaveAudit(id string, plaintext []byte) error {
 		return err
 	}
 	return writeFileAtomic(v.auditPath(id), ct)
+}
+
+func (v *Vault) indexPath() string { return filepath.Join(v.dir, "index.enc") }
+
+// SaveIndex encrypts + writes the audit metadata index.
+func (v *Vault) SaveIndex(plaintext []byte) error {
+	v.mu.RLock()
+	dek := v.dek
+	v.mu.RUnlock()
+	if dek == nil {
+		return ErrLocked
+	}
+	ct, err := gcmSeal(dek, plaintext)
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(v.indexPath(), ct)
+}
+
+// LoadIndex decrypts the metadata index, or returns ErrNoIndex if absent.
+func (v *Vault) LoadIndex() ([]byte, error) {
+	v.mu.RLock()
+	dek := v.dek
+	v.mu.RUnlock()
+	if dek == nil {
+		return nil, ErrLocked
+	}
+	ct, err := os.ReadFile(v.indexPath())
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, ErrNoIndex
+		}
+		return nil, err
+	}
+	return gcmOpen(dek, ct)
+}
+
+// LoadOne decrypts a single audit blob.
+func (v *Vault) LoadOne(id string) ([]byte, error) {
+	v.mu.RLock()
+	dek := v.dek
+	v.mu.RUnlock()
+	if dek == nil {
+		return nil, ErrLocked
+	}
+	ct, err := os.ReadFile(v.auditPath(id))
+	if err != nil {
+		return nil, err
+	}
+	return gcmOpen(dek, ct)
 }
 
 // DeleteAudit removes an audit's encrypted file (no error if already gone).

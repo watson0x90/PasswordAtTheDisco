@@ -1,11 +1,61 @@
 package store
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/vault"
 )
+
+func TestLazyLoadAndEviction(t *testing.T) {
+	dir := t.TempDir()
+	v, _ := vault.Open(dir)
+	s := NewPersistent(v)
+	s.cap = 2 // tiny cache to force eviction
+	if err := s.Initialize("a-strong-passphrase"); err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for i := 0; i < 5; i++ {
+		m, err := s.CreateAudit(fmt.Sprintf("Audit %d", i), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Replace(m.ID, model.Dataset{Accounts: []model.Account{{Username: fmt.Sprintf("u%d", i), Domain: "D", Cracked: true}}}); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, m.ID)
+	}
+	// cache is bounded; index holds all
+	s.mu.Lock()
+	cached, indexed := len(s.cache), len(s.index)
+	s.mu.Unlock()
+	if cached > s.cap {
+		t.Fatalf("cache should be bounded to %d, got %d", s.cap, cached)
+	}
+	if indexed != 5 {
+		t.Fatalf("index should hold all 5, got %d", indexed)
+	}
+	// every audit is still readable (evicted ones lazily re-decrypt)
+	for i, id := range ids {
+		accts, err := s.Accounts(id, true)
+		if err != nil || len(accts) != 1 || accts[0].Username != fmt.Sprintf("u%d", i) {
+			t.Fatalf("audit %d not readable after eviction: %v %+v", i, err, accts)
+		}
+	}
+	// reopen: the persisted index means List works WITHOUT a full migration
+	s2 := NewPersistent(mustReopen(t, dir))
+	if err := s2.Unlock("a-strong-passphrase"); err != nil {
+		t.Fatal(err)
+	}
+	if len(s2.List()) != 5 {
+		t.Fatalf("reopened List = %d, want 5", len(s2.List()))
+	}
+	if accts, err := s2.Accounts(ids[2], true); err != nil || accts[0].Username != "u2" {
+		t.Fatalf("reopen lazy read: %v %+v", err, accts)
+	}
+}
 
 func sample() model.Dataset {
 	return model.Dataset{Accounts: []model.Account{
