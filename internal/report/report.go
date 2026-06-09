@@ -9,10 +9,74 @@ import (
 	"math"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 )
+
+// DiffAccount references one account in an audit comparison (redacted).
+type DiffAccount struct {
+	Username string `json:"username"`
+	Domain   string `json:"domain"`
+	RiskA    string `json:"risk_a,omitempty"`
+	RiskB    string `json:"risk_b,omitempty"`
+}
+
+// Diff is the comparison of two audits (A = earlier, B = later), keyed by
+// domain+username. All fields are redacted (no cleartext).
+type Diff struct {
+	PostureA      float64       `json:"posture_a"`
+	PostureB      float64       `json:"posture_b"`
+	StillCracked  int           `json:"still_cracked"`
+	NewlyCracked  []DiffAccount `json:"newly_cracked"`
+	Remediated    []DiffAccount `json:"remediated"`
+	NewlyBreached []DiffAccount `json:"newly_breached"`
+	Regressed     []DiffAccount `json:"regressed"`
+}
+
+var riskRank = map[string]int{"Low": 1, "Medium": 2, "High": 3, "Critical": 4}
+
+// ComputeDiff compares two audits' redacted account sets.
+func ComputeDiff(a, b []model.Account) Diff {
+	key := func(x model.Account) string { return strings.ToLower(x.Domain + "\\" + x.Username) }
+	am := make(map[string]model.Account, len(a))
+	for _, x := range a {
+		am[key(x)] = x
+	}
+	bm := make(map[string]model.Account, len(b))
+	for _, x := range b {
+		bm[key(x)] = x
+	}
+	var d Diff
+	d.PostureA, _, _, _ = PostureScore(a)
+	d.PostureB, _, _, _ = PostureScore(b)
+	ref := func(ax, bx model.Account, name model.Account) DiffAccount {
+		return DiffAccount{Username: name.Username, Domain: name.Domain, RiskA: ax.RiskLevel, RiskB: bx.RiskLevel}
+	}
+	for k, bx := range bm {
+		ax, inA := am[k]
+		if bx.Cracked {
+			if !inA || !ax.Cracked {
+				d.NewlyCracked = append(d.NewlyCracked, ref(ax, bx, bx))
+			} else {
+				d.StillCracked++
+			}
+		}
+		if bx.HIBPBreached && (!inA || !ax.HIBPBreached) {
+			d.NewlyBreached = append(d.NewlyBreached, ref(ax, bx, bx))
+		}
+		if inA && riskRank[bx.RiskLevel] > riskRank[ax.RiskLevel] {
+			d.Regressed = append(d.Regressed, ref(ax, bx, bx))
+		}
+	}
+	for k, ax := range am {
+		if bx, inB := bm[k]; ax.Cracked && (!inB || !bx.Cracked) {
+			d.Remediated = append(d.Remediated, ref(ax, bx, ax))
+		}
+	}
+	return d
+}
 
 // CSV writes the accounts as a redacted CSV (no password column).
 func CSV(w io.Writer, accounts []model.Account) error {
@@ -69,32 +133,17 @@ var riskColor = map[string]string{"Critical": "#fb7185", "High": "#fbbf24", "Med
 
 func round1(f float64) float64 { return math.Round(f*10) / 10 }
 
-// HTML writes a self-contained (inline CSS, no scripts/assets) redacted report.
-func HTML(w io.Writer, name string, generated time.Time, accounts []model.Account) error {
-	d := htmlData{Name: name, Generated: generated.UTC().Format("2006-01-02 15:04 UTC"), Accounts: accounts}
-
-	var crit, high, med, cracked, uncracked, viol int
-	riskCounts := map[string]int{}
-	doms := map[string]*domRow{}
+// PostureScore is the executive Security Posture Score (0-100) from the redacted
+// account set: risk distribution (40) + password strength (30) + privilege
+// exposure (15) + policy compliance (15). The single Go source of truth (HTML
+// report + audit diff); it mirrors web/src/insights.ts:posture().
+func PostureScore(accounts []model.Account) (score float64, rating, likelihood string, breakdown [4]float64) {
+	total := len(accounts)
+	if total == 0 {
+		return 0, "No Data", "—", breakdown
+	}
+	var crit, high, med, cracked, uncracked, da, viol int
 	for _, a := range accounts {
-		d.Total++
-		if a.Cracked {
-			cracked++
-		} else {
-			uncracked++
-		}
-		if a.HIBPBreached {
-			d.Breached++
-		}
-		if a.HasDAPathway() {
-			d.DA++
-		}
-		if a.Cracked && !a.MeetsPolicy {
-			viol++
-		}
-		if a.RiskLevel != "" {
-			riskCounts[a.RiskLevel]++
-		}
 		switch a.RiskLevel {
 		case "Critical":
 			crit++
@@ -102,6 +151,65 @@ func HTML(w io.Writer, name string, generated time.Time, accounts []model.Accoun
 			high++
 		case "Medium":
 			med++
+		}
+		if a.Cracked {
+			cracked++
+		} else {
+			uncracked++
+		}
+		if a.HasDAPathway() {
+			da++
+		}
+		if a.Cracked && !a.MeetsPolicy {
+			viol++
+		}
+	}
+	ft := float64(total)
+	risk := math.Max(0, 100-float64(crit)/ft*200-float64(high)/ft*150-float64(med)/ft*50) / 100 * 40
+	strength := 0.0
+	if cracked+uncracked > 0 {
+		strength = float64(uncracked) / float64(cracked+uncracked) * 30
+	}
+	priv := math.Max(0, 15-float64(da)/ft*100)
+	comp := float64(total-viol) / ft * 15
+	score = round1(risk + strength + priv + comp)
+	rating = "Weak"
+	if score >= 85 {
+		rating = "Strong"
+	} else if score >= 70 {
+		rating = "Fair"
+	}
+	likelihood = "Low"
+	if crit > 50 || da > 20 {
+		likelihood = "Very High"
+	} else if crit > 20 || da > 10 {
+		likelihood = "High"
+	} else if crit > 5 || da > 3 {
+		likelihood = "Medium"
+	}
+	breakdown = [4]float64{round1(risk), round1(strength), round1(priv), round1(comp)}
+	return
+}
+
+// HTML writes a self-contained (inline CSS, no scripts/assets) redacted report.
+func HTML(w io.Writer, name string, generated time.Time, accounts []model.Account) error {
+	d := htmlData{Name: name, Generated: generated.UTC().Format("2006-01-02 15:04 UTC"), Accounts: accounts}
+
+	riskCounts := map[string]int{}
+	doms := map[string]*domRow{}
+	for _, a := range accounts {
+		d.Total++
+		if a.Cracked {
+			d.Cracked++
+		}
+		if a.HIBPBreached {
+			d.Breached++
+		}
+		if a.HasDAPathway() {
+			d.DA++
+		}
+		if a.RiskLevel != "" {
+			riskCounts[a.RiskLevel]++
 		}
 		dr := doms[a.Domain]
 		if dr == nil {
@@ -122,38 +230,9 @@ func HTML(w io.Writer, name string, generated time.Time, accounts []model.Accoun
 			dr.DA++
 		}
 	}
-	d.Cracked = cracked
 
-	// Security Posture Score (matches the in-app executive score).
-	ft := float64(d.Total)
-	score, rating, likelihood := 0.0, "No Data", "—"
-	if d.Total > 0 {
-		risk := math.Max(0, 100-float64(crit)/ft*200-float64(high)/ft*150-float64(med)/ft*50) / 100 * 40
-		strength := 0.0
-		if cracked+uncracked > 0 {
-			strength = float64(uncracked) / float64(cracked+uncracked) * 30
-		}
-		priv := math.Max(0, 15-float64(d.DA)/ft*100)
-		comp := float64(d.Total-viol) / ft * 15
-		score = round1(risk + strength + priv + comp)
-		rating = "Weak"
-		if score >= 85 {
-			rating = "Strong"
-		} else if score >= 70 {
-			rating = "Fair"
-		}
-		likelihood = "Low"
-		if crit > 50 || d.DA > 20 {
-			likelihood = "Very High"
-		} else if crit > 20 || d.DA > 10 {
-			likelihood = "High"
-		} else if crit > 5 || d.DA > 3 {
-			likelihood = "Medium"
-		}
-		d.BR = [4]float64{round1(risk), round1(strength), round1(priv), round1(comp)}
-		d.BRPct = [4]int{int(risk / 40 * 100), int(strength / 30 * 100), int(priv / 15 * 100), int(comp / 15 * 100)}
-	}
-	d.Score, d.Rating, d.Likelihood = score, rating, likelihood
+	d.Score, d.Rating, d.Likelihood, d.BR = PostureScore(accounts)
+	d.BRPct = [4]int{int(d.BR[0] / 40 * 100), int(d.BR[1] / 30 * 100), int(d.BR[2] / 15 * 100), int(d.BR[3] / 15 * 100)}
 
 	maxRisk := 1
 	for _, c := range riskCounts {

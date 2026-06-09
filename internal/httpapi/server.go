@@ -97,6 +97,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/audits", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleCreateAudit)))))
 	mux.Handle("DELETE /api/audits/{id}", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleDeleteAudit)))))
 	mux.Handle("POST /api/audits/{id}/open", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleOpenAudit)))))
+	mux.Handle("GET /api/audits/{a}/diff/{b}", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleDiff))))
 	// Views scoped to the session's active audit
 	mux.Handle("GET /api/summary", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleSummary))))
 	mux.Handle("GET /api/accounts", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleAccounts))))
@@ -542,6 +543,20 @@ func optionalUpload(r *http.Request, field, domain string, fn func(io.Reader, st
 // handleListAudits returns all audits' metadata + headline counts.
 func (s *Server) handleListAudits(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.Store.List())
+}
+
+// handleDiff compares two audits (a = earlier, b = later), redacted.
+func (s *Server) handleDiff(w http.ResponseWriter, r *http.Request) {
+	idA, idB := r.PathValue("a"), r.PathValue("b")
+	accA, errA := s.Store.Accounts(idA, false)
+	accB, errB := s.Store.Accounts(idB, false)
+	if errA != nil || errB != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "audit not found"})
+		return
+	}
+	metaA, _ := s.Store.Meta(idA)
+	metaB, _ := s.Store.Meta(idB)
+	writeJSON(w, http.StatusOK, map[string]any{"a": metaA, "b": metaB, "diff": report.ComputeDiff(accA, accB)})
 }
 
 // exportAudit resolves the active audit + its redacted accounts for export.

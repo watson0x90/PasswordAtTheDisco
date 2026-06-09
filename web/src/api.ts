@@ -26,6 +26,29 @@ export interface AuditListItem extends AuditMeta {
   cracked: number
 }
 
+export interface DiffAccount {
+  username: string
+  domain: string
+  risk_a?: string
+  risk_b?: string
+}
+
+export interface AuditDiff {
+  posture_a: number
+  posture_b: number
+  still_cracked: number
+  newly_cracked: DiffAccount[]
+  remediated: DiffAccount[]
+  newly_breached: DiffAccount[]
+  regressed: DiffAccount[]
+}
+
+export interface DiffResult {
+  a: AuditMeta
+  b: AuditMeta
+  diff: AuditDiff
+}
+
 export interface Summary {
   total_accounts: number
   cracked: number
@@ -154,6 +177,9 @@ export const api = {
     }),
 
   listAudits: () => request<AuditListItem[]>("/audits"),
+
+  diff: (a: string, b: string) =>
+    request<DiffResult>(`/audits/${encodeURIComponent(a)}/diff/${encodeURIComponent(b)}`),
 
   createAudit: (name: string, notes: string, csrf: string) =>
     request<AuditMeta>("/audits", {

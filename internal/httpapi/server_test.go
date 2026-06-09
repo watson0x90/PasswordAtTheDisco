@@ -470,6 +470,45 @@ func TestRevealFailsClosedOnAuditError(t *testing.T) {
 	}
 }
 
+func TestExportEndpoints(t *testing.T) {
+	srv := newServer("secret")
+	id := seed(t, srv)
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	openAudit(t, srv, lc, lcsrf, id)
+	for _, path := range []string{"/api/export/csv", "/api/export/html"} {
+		r := do(srv, "GET", path, lc)
+		if r.Code != http.StatusOK {
+			t.Fatalf("%s = %d", path, r.Code)
+		}
+		body := r.Body.String()
+		if strings.Contains(body, "Welcome1") {
+			t.Fatalf("%s LEAKED cleartext", path)
+		}
+		if !strings.Contains(body, "alice") {
+			t.Fatalf("%s missing data", path)
+		}
+		if !strings.Contains(r.Header().Get("Content-Disposition"), "attachment") {
+			t.Fatalf("%s missing attachment disposition", path)
+		}
+	}
+	if r := do(srv, "GET", "/api/export/csv", nil); r.Code != http.StatusUnauthorized {
+		t.Fatalf("export without auth should be 401, got %d", r.Code)
+	}
+}
+
+func TestDiffEndpoint(t *testing.T) {
+	srv := newServer("secret")
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	a := createAudit(t, srv, lc, lcsrf, "Engagement A")
+	b := createAudit(t, srv, lc, lcsrf, "Engagement B")
+	if r := do(srv, "GET", "/api/audits/"+a+"/diff/"+b, lc); r.Code != http.StatusOK || !strings.Contains(r.Body.String(), "posture_a") {
+		t.Fatalf("diff = %d %s", r.Code, r.Body.String())
+	}
+	if r := do(srv, "GET", "/api/audits/nope/diff/"+b, lc); r.Code != http.StatusNotFound {
+		t.Fatalf("diff with a missing audit should be 404, got %d", r.Code)
+	}
+}
+
 func TestAuditsLifecycle(t *testing.T) {
 	srv := newServer("secret")
 
