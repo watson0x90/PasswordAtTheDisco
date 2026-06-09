@@ -75,6 +75,9 @@ jobs:
       - name: Build (tsc + vite)
         run: npm run build
 
+      - name: Test (vitest)
+        run: npm run test
+
   # Weekly run with the LATEST scanners so the pinned green check above doesn't rot
   # as new advisories land. Off the PR path, so it surfaces issues without blocking.
   security-refresh:
