@@ -315,6 +315,8 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 .accounts td { padding: 11px 16px; border-bottom: 1px solid var(--hairline); white-space: nowrap; }
 .accounts tbody tr:last-child td { border-bottom: none; }
 .accounts tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
+/* Uniform 38px rows when the table is virtualized (spacer math depends on it). */
+.table-wrap.virtual .accounts td { height: 38px; box-sizing: border-box; overflow: hidden; }
 .accounts .num { text-align: right; font-variant-numeric: tabular-nums; }
 .muted { color: var(--faint); }
 

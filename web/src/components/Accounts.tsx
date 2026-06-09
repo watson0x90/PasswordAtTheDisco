@@ -1,10 +1,16 @@
-import { useMemo, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { api, ApiError, type Account } from "../api"
 import { useAccountsData } from "../accountsData"
 import { useAuth } from "../auth"
 import { RISK_CLASS, hasDA } from "../util"
 
 const FILTERS = ["All", "Critical", "High", "Medium", "Low"] as const
+
+// Above this many rows, virtualize (window) the table so we don't mount tens of
+// thousands of <tr> nodes. Below it, render all (handles variable-height reveal rows).
+const VIRT_THRESHOLD = 200
+const ROW_H = 38 // px, must match the CSS row height when virtualizing
+const OVERSCAN = 10
 
 export function Accounts() {
   const { me } = useAuth()
@@ -17,6 +23,19 @@ export function Accounts() {
   const [revealing, setRevealing] = useState("")
   const [revealError, setRevealError] = useState("")
   const [selected, setSelected] = useState<Account | null>(null)
+
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewH, setViewH] = useState(560)
+  useEffect(() => {
+    const el = scrollRef.current
+    if (el) setViewH(el.clientHeight)
+  }, [accounts])
+  // reset scroll to top when the filter/search changes
+  useEffect(() => {
+    setScrollTop(0)
+    if (scrollRef.current) scrollRef.current.scrollTop = 0
+  }, [query, risk])
 
   async function copy(text: string) {
     try {
@@ -67,6 +86,13 @@ export function Accounts() {
     )
   }
 
+  const total = filtered.length
+  const virtual = total > VIRT_THRESHOLD
+  const start = virtual ? Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN) : 0
+  const end = virtual ? Math.min(total, Math.ceil((scrollTop + viewH) / ROW_H) + OVERSCAN) : total
+  const visible = filtered.slice(start, end)
+  const cols = isLead ? 9 : 8
+
   return (
     <>
       <div className="section-label">Accounts</div>
@@ -97,7 +123,11 @@ export function Accounts() {
 
       {revealError && <div className="error">{revealError}</div>}
 
-      <div className="table-wrap">
+      <div
+        className={virtual ? "table-wrap virtual" : "table-wrap"}
+        ref={scrollRef}
+        onScroll={(e) => virtual && setScrollTop(e.currentTarget.scrollTop)}
+      >
         <table className="accounts">
           <thead>
             <tr>
@@ -113,8 +143,13 @@ export function Accounts() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((a, i) => (
-              <tr key={`${a.domain}/${a.username}/${i}`}>
+            {virtual && start > 0 && (
+              <tr style={{ height: start * ROW_H }}>
+                <td colSpan={cols} />
+              </tr>
+            )}
+            {visible.map((a, i) => (
+              <tr key={`${a.domain}/${a.username}/${start + i}`}>
                 <td>
                   <button className="link-btn acct-name" onClick={() => setSelected(a)} title="Account details">
                     {a.username}
@@ -162,6 +197,11 @@ export function Accounts() {
                 )}
               </tr>
             ))}
+            {virtual && end < total && (
+              <tr style={{ height: (total - end) * ROW_H }}>
+                <td colSpan={cols} />
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
