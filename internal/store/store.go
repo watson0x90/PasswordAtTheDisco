@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -15,6 +16,10 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/vault"
 )
+
+// currentSchemaVersion versions the on-disk (pre-encryption) audit payload so a
+// future model change can migrate old blobs instead of silently zero-filling.
+const currentSchemaVersion = 1
 
 // ErrNotFound is returned when an audit id does not exist.
 var ErrNotFound = errors.New("audit not found")
@@ -42,8 +47,9 @@ type audit struct {
 
 // persisted is the on-disk (pre-encryption) shape of one audit.
 type persisted struct {
-	Meta    AuditMeta     `json:"meta"`
-	Dataset model.Dataset `json:"dataset"`
+	SchemaVersion int           `json:"schema_version"`
+	Meta          AuditMeta     `json:"meta"`
+	Dataset       model.Dataset `json:"dataset"`
 }
 
 // Store is a thread-safe collection of audits, optionally persisted to an
@@ -109,6 +115,26 @@ func (s *Store) Unlock(passphrase string) error {
 	return s.load()
 }
 
+// Lock drops the encryption key AND clears the decrypted audits from memory, so
+// cleartext no longer resides in the process. No-op for an in-memory store.
+func (s *Store) Lock() {
+	if s.vault == nil {
+		return
+	}
+	s.vault.Lock()
+	s.mu.Lock()
+	s.audits = map[string]*audit{}
+	s.mu.Unlock()
+}
+
+// ChangePassphrase re-wraps the data key under a new passphrase (no-op in-memory).
+func (s *Store) ChangePassphrase(oldPass, newPass string) error {
+	if s.vault == nil {
+		return nil
+	}
+	return s.vault.ChangePassphrase(oldPass, newPass)
+}
+
 func (s *Store) load() error {
 	blobs, err := s.vault.LoadAll()
 	if err != nil {
@@ -120,6 +146,10 @@ func (s *Store) load() error {
 		if err := json.Unmarshal(b, &p); err != nil {
 			return err
 		}
+		if p.SchemaVersion > currentSchemaVersion {
+			return fmt.Errorf("audit %s was written by a newer version (schema %d > %d)", id, p.SchemaVersion, currentSchemaVersion)
+		}
+		// schema 0 (pre-versioning) and 1 share the current shape; add migrations here.
 		loaded[id] = &audit{meta: p.Meta, ds: p.Dataset}
 	}
 	s.mu.Lock()
@@ -133,7 +163,7 @@ func (s *Store) persist(a *audit) error {
 	if s.vault == nil {
 		return nil
 	}
-	b, err := json.Marshal(persisted{Meta: a.meta, Dataset: a.ds})
+	b, err := json.Marshal(persisted{SchemaVersion: currentSchemaVersion, Meta: a.meta, Dataset: a.ds})
 	if err != nil {
 		return err
 	}

@@ -27,10 +27,16 @@ const (
 	dekLen       = 32
 	saltLen      = 16
 
-	// argon2id parameters for deriving the key-encryption key.
-	argonTime    = 3
-	argonMemory  = 64 * 1024 // 64 MiB
+	keyfileVersion = 1
+
+	// argon2id parameters for deriving the key-encryption key. The unlock is rare,
+	// so these are deliberately heavier than an interactive login KDF.
+	argonTime    = 4
+	argonMemory  = 128 * 1024 // 128 MiB
 	argonThreads = 4
+	// Floors accepted when reading an existing keyfile (older keyfiles + tamper guard).
+	minArgonTime   = 2
+	minArgonMemory = 32 * 1024
 )
 
 var (
@@ -60,11 +66,41 @@ type Vault struct {
 }
 
 // Open prepares the data directory (creating it if needed). It does not unlock.
+// If a keyfile is present it is parse-checked so a corrupt/truncated keyfile is
+// surfaced at startup rather than silently treated as "initialized".
 func Open(dir string) (*Vault, error) {
 	if err := os.MkdirAll(filepath.Join(dir, auditsSubdir), 0o700); err != nil {
 		return nil, err
 	}
-	return &Vault{dir: dir}, nil
+	v := &Vault{dir: dir}
+	if v.Initialized() {
+		if _, err := v.readKeyfile(); err != nil {
+			return nil, fmt.Errorf("keyfile present but unreadable (a backup may exist at %s.bak): %w", v.keyfilePath(), err)
+		}
+	}
+	return v, nil
+}
+
+// readKeyfile reads, parses, and validates the keyfile.
+func (v *Vault) readKeyfile() (keyfile, error) {
+	b, err := os.ReadFile(v.keyfilePath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return keyfile{}, ErrNotInitialized
+		}
+		return keyfile{}, err
+	}
+	var kf keyfile
+	if err := json.Unmarshal(b, &kf); err != nil {
+		return keyfile{}, fmt.Errorf("corrupt keyfile: %w", err)
+	}
+	if kf.Version != keyfileVersion || kf.KDF != "argon2id" {
+		return keyfile{}, fmt.Errorf("unsupported keyfile (version %d, kdf %q)", kf.Version, kf.KDF)
+	}
+	if kf.Time < minArgonTime || kf.Memory < minArgonMemory || kf.Threads < 1 {
+		return keyfile{}, errors.New("keyfile argon2 parameters below the accepted minimum")
+	}
+	return kf, nil
 }
 
 func (v *Vault) keyfilePath() string { return filepath.Join(v.dir, keyfileName) }
@@ -89,19 +125,10 @@ func deriveKEK(passphrase string, salt []byte, t, m uint32, p uint8) []byte {
 	return argon2.IDKey([]byte(passphrase), salt, t, m, p, dekLen)
 }
 
-// Initialize sets the store passphrase on first run: it generates a random DEK,
-// wraps it with the passphrase-derived key, writes the keyfile, and unlocks.
-func (v *Vault) Initialize(passphrase string) error {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	if _, err := os.Stat(v.keyfilePath()); err == nil {
-		return errors.New("vault already initialized")
-	}
-	dek := make([]byte, dekLen)
+// wrapAndWrite wraps dek under a fresh-salt KEK from passphrase (current params)
+// and writes the keyfile atomically, backing up any existing keyfile first.
+func (v *Vault) wrapAndWrite(dek []byte, passphrase string) error {
 	salt := make([]byte, saltLen)
-	if _, err := rand.Read(dek); err != nil {
-		return err
-	}
 	if _, err := rand.Read(salt); err != nil {
 		return err
 	}
@@ -111,7 +138,7 @@ func (v *Vault) Initialize(passphrase string) error {
 		return err
 	}
 	kf := keyfile{
-		Version: 1, KDF: "argon2id", Salt: b64(salt),
+		Version: keyfileVersion, KDF: "argon2id", Salt: b64(salt),
 		Time: argonTime, Memory: argonMemory, Threads: argonThreads,
 		WrappedDEK: b64(wrapped),
 	}
@@ -119,7 +146,25 @@ func (v *Vault) Initialize(passphrase string) error {
 	if err != nil {
 		return err
 	}
-	if err := writeFileAtomic(v.keyfilePath(), b); err != nil {
+	if old, err := os.ReadFile(v.keyfilePath()); err == nil {
+		_ = os.WriteFile(v.keyfilePath()+".bak", old, 0o600) // best-effort backup before overwrite
+	}
+	return writeFileAtomic(v.keyfilePath(), b)
+}
+
+// Initialize sets the store passphrase on first run: generates a random DEK,
+// wraps it under the passphrase, writes the keyfile, and unlocks.
+func (v *Vault) Initialize(passphrase string) error {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if _, err := os.Stat(v.keyfilePath()); err == nil {
+		return errors.New("vault already initialized")
+	}
+	dek := make([]byte, dekLen)
+	if _, err := rand.Read(dek); err != nil {
+		return err
+	}
+	if err := v.wrapAndWrite(dek, passphrase); err != nil {
 		return err
 	}
 	v.dek = dek
@@ -130,15 +175,8 @@ func (v *Vault) Initialize(passphrase string) error {
 func (v *Vault) Unlock(passphrase string) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	b, err := os.ReadFile(v.keyfilePath())
+	kf, err := v.readKeyfile()
 	if err != nil {
-		if os.IsNotExist(err) {
-			return ErrNotInitialized
-		}
-		return err
-	}
-	var kf keyfile
-	if err := json.Unmarshal(b, &kf); err != nil {
 		return err
 	}
 	salt, err := unb64(kf.Salt)
@@ -153,6 +191,35 @@ func (v *Vault) Unlock(passphrase string) error {
 	dek, err := gcmOpen(kek, wrapped)
 	if err != nil {
 		return ErrBadPassphrase
+	}
+	v.dek = dek
+	return nil
+}
+
+// ChangePassphrase re-wraps the existing DEK under a new passphrase (fresh salt +
+// current argon2 cost). The encrypted audit blobs are untouched. The old keyfile
+// is backed up to keyfile.json.bak. Requires the correct current passphrase.
+func (v *Vault) ChangePassphrase(oldPass, newPass string) error {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	kf, err := v.readKeyfile()
+	if err != nil {
+		return err
+	}
+	salt, err := unb64(kf.Salt)
+	if err != nil {
+		return err
+	}
+	wrapped, err := unb64(kf.WrappedDEK)
+	if err != nil {
+		return err
+	}
+	dek, err := gcmOpen(deriveKEK(oldPass, salt, kf.Time, kf.Memory, kf.Threads), wrapped)
+	if err != nil {
+		return ErrBadPassphrase
+	}
+	if err := v.wrapAndWrite(dek, newPass); err != nil {
+		return err
 	}
 	v.dek = dek
 	return nil
@@ -256,12 +323,36 @@ func newGCM(key []byte) (cipher.AEAD, error) {
 	return cipher.NewGCM(block)
 }
 
+// writeFileAtomic writes b durably: a temp file is written + fsync'd, then renamed
+// over path, then the directory is fsync'd (best-effort). A crash leaves either the
+// old file or the new file, never a truncated one.
 func writeFileAtomic(path string, b []byte) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+	dir := filepath.Dir(path)
+	f, err := os.CreateTemp(dir, ".keyfile-*.tmp") // 0600 by default
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	tmp := f.Name()
+	defer func() { _ = os.Remove(tmp) }() // no-op once renamed
+	if _, err := f.Write(b); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	if d, err := os.Open(dir); err == nil { // dir fsync; not supported everywhere
+		_ = d.Sync()
+		_ = d.Close()
+	}
+	return nil
 }
 
 func b64(b []byte) string            { return base64.StdEncoding.EncodeToString(b) }

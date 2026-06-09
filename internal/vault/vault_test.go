@@ -90,6 +90,55 @@ func TestDeleteAudit(t *testing.T) {
 	}
 }
 
+func TestChangePassphrase(t *testing.T) {
+	dir := t.TempDir()
+	v, _ := Open(dir)
+	if err := v.Initialize("first-passphrase-xyz"); err != nil {
+		t.Fatal(err)
+	}
+	_ = v.SaveAudit("a1", []byte("data1"))
+
+	if err := v.ChangePassphrase("wrong-old", "second-passphrase-xyz"); err != ErrBadPassphrase {
+		t.Fatalf("wrong old passphrase should be ErrBadPassphrase, got %v", err)
+	}
+	if err := v.ChangePassphrase("first-passphrase-xyz", "second-passphrase-xyz"); err != nil {
+		t.Fatalf("ChangePassphrase: %v", err)
+	}
+	// keyfile.json.bak written
+	if _, err := os.Stat(filepath.Join(dir, "keyfile.json.bak")); err != nil {
+		t.Fatal("expected a keyfile backup after passphrase change")
+	}
+	// reopen: old fails, new works, data intact
+	v2, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := v2.Unlock("first-passphrase-xyz"); err != ErrBadPassphrase {
+		t.Fatalf("old passphrase should no longer unlock, got %v", err)
+	}
+	if err := v2.Unlock("second-passphrase-xyz"); err != nil {
+		t.Fatalf("new passphrase should unlock: %v", err)
+	}
+	all, _ := v2.LoadAll()
+	if string(all["a1"]) != "data1" {
+		t.Fatal("data lost across passphrase change")
+	}
+}
+
+func TestCorruptKeyfileRejected(t *testing.T) {
+	dir := t.TempDir()
+	v, _ := Open(dir)
+	if err := v.Initialize("passphrase-aaaa-bbbb"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "keyfile.json"), []byte("{ not valid json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(dir); err == nil {
+		t.Fatal("Open should reject a corrupt keyfile instead of treating it as initialized")
+	}
+}
+
 func containsSub(b []byte, sub string) bool {
 	s, n := string(b), len(sub)
 	for i := 0; i+n <= len(s); i++ {

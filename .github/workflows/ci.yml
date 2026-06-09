@@ -35,13 +35,14 @@ jobs:
             exit 1
           fi
 
-      - name: Test
-        run: go test ./...
+      - name: Test (race)
+        run: go test -race ./...
 
       # Security gate: fail on any vulnerability the code actually reaches.
+      # Pinned (the project's exact-pin rule applies to the security gate itself).
       - name: govulncheck
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
           govulncheck ./...
 
   web:

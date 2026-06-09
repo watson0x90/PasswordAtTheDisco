@@ -91,6 +91,26 @@ go build -tags embed -o patd ./cmd/patd     # ~11 MB; SPA baked in, zero disk de
   risk-filtered accounts table with role-gated reveal.
 - **CLI:** `patd audit` (run the engine over dumps → ingest), `patd hashpw`.
 
+## ⚠️ Store passphrase & data recovery — read this
+
+Audits are encrypted at rest under a **store passphrase** that is **separate from
+your login password** and is **never written to disk**. There is intentionally
+**no recovery or reset**:
+
+- **If you lose the store passphrase, every audit is permanently unrecoverable.**
+  A lead can rotate it while unlocked (Settings → change passphrase), but cannot
+  recover a forgotten one.
+- **`data/keyfile.json` is as critical as the passphrase** — it holds the
+  passphrase-wrapped data key. Lose it (or `data/`) and the encrypted blobs can't
+  be opened either. **Back up the entire `data/` directory together**, and protect
+  it: anyone with the keyfile can mount an *offline* guess against your passphrase,
+  so choose a strong one (≥12 chars; longer is better).
+
+Operational notes: the store starts **locked** after every restart — a lead
+unlocks it via the UI (`/healthz` returns `503 {"status":"locked"}` until then).
+It **auto-locks after idle** (`PATD_AUTOLOCK_MIN`, default 60; `0` disables),
+dropping the key *and* clearing decrypted data from memory.
+
 ## Security & supply chain
 
 - **Go is stdlib-first** — one external module (`golang.org/x/crypto`, for

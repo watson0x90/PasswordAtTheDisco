@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -66,6 +67,8 @@ func main() {
 		}
 		defer f.Close()
 		auditW = f
+	} else {
+		log.Printf("WARNING: PATD_AUDIT_LOG unset -- audit events go to stdout (ephemeral). Set it to a persistent file for real use.")
 	}
 
 	// Audit engine for web uploads (lead POST /api/audit). Same inputs as the
@@ -93,18 +96,24 @@ func main() {
 	}
 
 	api := &httpapi.Server{
-		Store:        store.NewPersistent(vlt),
-		StaticFS:     webui.FS, // embedded SPA when built with -tags embed; else nil
-		StaticDir:    env("PATD_STATIC_DIR", "web/dist"),
-		IngestToken:  os.Getenv("PATD_INGEST_TOKEN"),
-		Users:        users,
-		Sessions:     auth.NewSessionStore(30*time.Minute, 8*time.Hour),
-		Audit:        audit.New(auditW),
-		LoginLimiter: auth.NewLimiter(10, 15*time.Minute),
-		Engine:       eng,
-		Policies:     policies,
-		PolicyPath:   policyPath,
+		Store:         store.NewPersistent(vlt),
+		StaticFS:      webui.FS, // embedded SPA when built with -tags embed; else nil
+		StaticDir:     env("PATD_STATIC_DIR", "web/dist"),
+		IngestToken:   os.Getenv("PATD_INGEST_TOKEN"),
+		Users:         users,
+		Sessions:      auth.NewSessionStore(30*time.Minute, 8*time.Hour),
+		Audit:         audit.New(auditW),
+		LoginLimiter:  auth.NewLimiter(10, 15*time.Minute),
+		UnlockLimiter: auth.NewLimiter(5, 15*time.Minute),
+		Engine:        eng,
+		Policies:      policies,
+		PolicyPath:    policyPath,
 	}
+
+	// Idle auto-lock: drop the key + clear decrypted data after inactivity so
+	// cleartext doesn't sit in memory indefinitely. PATD_AUTOLOCK_MIN=0 disables.
+	autoLock := time.Duration(envInt("PATD_AUTOLOCK_MIN", 60)) * time.Minute
+	defer api.StartAutoLock(autoLock)()
 
 	srv := &http.Server{
 		Addr:              addr,
@@ -159,6 +168,15 @@ func hashpw() {
 func env(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return def
+}
+
+func envInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
 	}
 	return def
 }

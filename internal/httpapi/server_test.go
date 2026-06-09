@@ -390,6 +390,86 @@ func TestStoreLockAndUnlock(t *testing.T) {
 	}
 }
 
+type failWriter struct{}
+
+func (failWriter) Write(p []byte) (int, error) { return 0, fmt.Errorf("disk full") }
+
+func persistentServer(t *testing.T) *Server {
+	t.Helper()
+	v, err := vault.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := newServer("secret")
+	srv.Store = store.NewPersistent(v)
+	return srv
+}
+
+func TestUnlockRateLimited(t *testing.T) {
+	srv := persistentServer(t)
+	srv.UnlockLimiter = auth.NewLimiter(3, time.Minute)
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	if r := sendJSON(srv, "POST", "/api/unlock", lc, lcsrf, `{"passphrase":"correct-horse-staple"}`); r.Code != http.StatusOK {
+		t.Fatalf("init+unlock: %d %s", r.Code, r.Body.String())
+	}
+	if r := sendJSON(srv, "POST", "/api/lock", lc, lcsrf, ""); r.Code != http.StatusOK {
+		t.Fatalf("lock: %d", r.Code)
+	}
+	got429 := false
+	for i := 0; i < 6; i++ {
+		if r := sendJSON(srv, "POST", "/api/unlock", lc, lcsrf, `{"passphrase":"wrong-passphrase-x"}`); r.Code == http.StatusTooManyRequests {
+			got429 = true
+			break
+		}
+	}
+	if !got429 {
+		t.Fatal("expected /api/unlock to rate-limit repeated wrong passphrases")
+	}
+}
+
+func TestChangePassphraseEndpoint(t *testing.T) {
+	srv := persistentServer(t)
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	sendJSON(srv, "POST", "/api/unlock", lc, lcsrf, `{"passphrase":"initial-passphrase"}`) // init + unlock
+
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	if r := sendJSON(srv, "POST", "/api/passphrase", ac, acsrf, `{"old":"initial-passphrase","new":"another-passphrase"}`); r.Code != http.StatusForbidden {
+		t.Fatalf("analyst change should be 403, got %d", r.Code)
+	}
+	if r := sendJSON(srv, "POST", "/api/passphrase", lc, lcsrf, `{"old":"initial-passphrase","new":"short"}`); r.Code != http.StatusBadRequest {
+		t.Fatalf("short new passphrase should be 400, got %d", r.Code)
+	}
+	if r := sendJSON(srv, "POST", "/api/passphrase", lc, lcsrf, `{"old":"nope","new":"another-passphrase"}`); r.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong old passphrase should be 401, got %d", r.Code)
+	}
+	if r := sendJSON(srv, "POST", "/api/passphrase", lc, lcsrf, `{"old":"initial-passphrase","new":"another-passphrase"}`); r.Code != http.StatusOK {
+		t.Fatalf("valid change should be 200, got %d %s", r.Code, r.Body.String())
+	}
+}
+
+func TestHealthzReadiness(t *testing.T) {
+	if r := do(persistentServer(t), "GET", "/healthz", nil); r.Code != http.StatusServiceUnavailable {
+		t.Fatalf("locked store healthz should be 503, got %d", r.Code)
+	}
+	if r := do(newServer("secret"), "GET", "/healthz", nil); r.Code != http.StatusOK {
+		t.Fatalf("usable store healthz should be 200, got %d", r.Code)
+	}
+}
+
+func TestRevealFailsClosedOnAuditError(t *testing.T) {
+	srv := newServerAudit("secret", failWriter{})
+	id := seed(t, srv)
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	openAudit(t, srv, lc, lcsrf, id)
+	r := do(srv, "GET", "/api/accounts/alice/secret", lc)
+	if r.Code != http.StatusInternalServerError {
+		t.Fatalf("reveal with a failing audit log should be 500, got %d", r.Code)
+	}
+	if strings.Contains(r.Body.String(), "Welcome1") {
+		t.Fatal("CLEARTEXT revealed despite the audit write failing")
+	}
+}
+
 func TestAuditsLifecycle(t *testing.T) {
 	srv := newServer("secret")
 

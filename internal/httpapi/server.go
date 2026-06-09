@@ -17,6 +17,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/audit"
@@ -34,18 +35,25 @@ const sessionCookie = "patd_session"
 
 // Server holds the API's dependencies.
 type Server struct {
-	Store        *store.Store
-	StaticFS     fs.FS  // embedded SPA; if nil, served from StaticDir on disk
-	StaticDir    string // disk fallback for the SPA (e.g. web/dist)
-	IngestToken  string // bearer token the analysis engine uses to push data
-	Users        auth.Users
-	Sessions     *auth.SessionStore
-	Audit        *audit.Logger
-	LoginLimiter *auth.Limiter  // per-IP failed-login throttle
-	Engine       *engine.Engine // optional: enables lead web uploads (POST /api/audit)
-	Policies     *policy.Set    // shared with Engine; exposed/edited via /api/policies
-	PolicyPath   string         // where to persist policy edits (empty = in-memory only)
+	Store         *store.Store
+	StaticFS      fs.FS  // embedded SPA; if nil, served from StaticDir on disk
+	StaticDir     string // disk fallback for the SPA (e.g. web/dist)
+	IngestToken   string // bearer token the analysis engine uses to push data
+	Users         auth.Users
+	Sessions      *auth.SessionStore
+	Audit         *audit.Logger
+	LoginLimiter  *auth.Limiter  // per-IP failed-login throttle
+	UnlockLimiter *auth.Limiter  // per-IP failed-unlock throttle (brute-force guard)
+	Engine        *engine.Engine // optional: enables lead web uploads (POST /api/upload)
+	Policies      *policy.Set    // shared with Engine; exposed/edited via /api/policies
+	PolicyPath    string         // where to persist policy edits (empty = in-memory only)
+
+	lastActivity atomic.Int64 // unix-nano of the last unlocked data access (auto-lock)
 }
+
+// minStorePassphrase is the floor for a new/changed store passphrase. The keyfile
+// is offline-attackable, so this is higher than a typical login minimum.
+const minStorePassphrase = 12
 
 // staticFS resolves the SPA filesystem: the embedded FS if present, else the
 // on-disk StaticDir, else nil.
@@ -80,8 +88,10 @@ func (s *Server) Routes() http.Handler {
 	// Authenticated operators (any role) -- redacted data only
 	mux.Handle("POST /api/logout", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleLogout))))
 	mux.Handle("GET /api/me", s.requireAuth(http.HandlerFunc(s.handleMe)))
-	// Unlock / first-run passphrase for the encrypted store (lead)
+	// Unlock / first-run passphrase / change-passphrase / re-lock (lead)
 	mux.Handle("POST /api/unlock", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleUnlock))))
+	mux.Handle("POST /api/lock", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleLock))))
+	mux.Handle("POST /api/passphrase", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleChangePassphrase))))
 	// Audit (engagement) management + selection -- needs an unlocked store
 	mux.Handle("GET /api/audits", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleListAudits))))
 	mux.Handle("POST /api/audits", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleCreateAudit)))))
@@ -105,7 +115,13 @@ func (s *Server) Routes() http.Handler {
 	return securityHeaders(logRequests(mux))
 }
 
+// handleHealthz is a readiness probe: 200 when the store is usable, 503 while the
+// encrypted store is locked (the server is up but can't serve data yet).
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
+	if !s.Store.Unlocked() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "locked"})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -199,6 +215,15 @@ func (s *Server) handleUnlock(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
 		return
 	}
+	ip := clientIP(r)
+	if s.UnlockLimiter != nil {
+		if ok, retry := s.UnlockLimiter.Allowed(ip); !ok {
+			s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "store_unlock", Source: r.RemoteAddr, Result: "rate_limited"})
+			w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())+1))
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many unlock attempts, try again later"})
+			return
+		}
+	}
 	defer r.Body.Close()
 	var body struct {
 		Passphrase string `json:"passphrase"`
@@ -216,8 +241,8 @@ func (s *Server) handleUnlock(w http.ResponseWriter, r *http.Request) {
 	action := "store_unlock"
 	var err error
 	if first {
-		if len(body.Passphrase) < 8 {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "store passphrase must be at least 8 characters"})
+		if len(body.Passphrase) < minStorePassphrase {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("store passphrase must be at least %d characters", minStorePassphrase)})
 			return
 		}
 		action = "store_initialize"
@@ -226,6 +251,9 @@ func (s *Server) handleUnlock(w http.ResponseWriter, r *http.Request) {
 		err = s.Store.Unlock(body.Passphrase)
 	}
 	if err != nil {
+		if s.UnlockLimiter != nil {
+			s.UnlockLimiter.RecordFailure(ip)
+		}
 		s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: action, Source: r.RemoteAddr, Result: "failed"})
 		if errors.Is(err, vault.ErrBadPassphrase) {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "incorrect passphrase"})
@@ -234,8 +262,96 @@ func (s *Server) handleUnlock(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	if s.UnlockLimiter != nil {
+		s.UnlockLimiter.Reset(ip)
+	}
+	s.touch()
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: action, Source: r.RemoteAddr, Result: "ok"})
 	writeJSON(w, http.StatusOK, map[string]bool{"unlocked": true, "initialized": true})
+}
+
+// handleLock re-locks the store: drops the key and clears decrypted data (lead).
+func (s *Server) handleLock(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	s.Store.Lock()
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "store_lock", Source: r.RemoteAddr, Result: "ok"})
+	writeJSON(w, http.StatusOK, map[string]bool{"unlocked": false})
+}
+
+// handleChangePassphrase re-wraps the data key under a new passphrase (lead).
+func (s *Server) handleChangePassphrase(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	if !s.Store.Unlocked() {
+		writeJSON(w, http.StatusLocked, map[string]string{"error": "unlock the store before changing its passphrase"})
+		return
+	}
+	defer r.Body.Close()
+	var body struct {
+		Old string `json:"old"`
+		New string `json:"new"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16))
+	if err := dec.Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+	if len(body.New) < minStorePassphrase {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("new passphrase must be at least %d characters", minStorePassphrase)})
+		return
+	}
+	if err := s.Store.ChangePassphrase(body.Old, body.New); err != nil {
+		s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "store_passphrase_change", Source: r.RemoteAddr, Result: "failed"})
+		if errors.Is(err, vault.ErrBadPassphrase) {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "current passphrase is incorrect"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "store_passphrase_change", Source: r.RemoteAddr, Result: "ok"})
+	writeJSON(w, http.StatusOK, map[string]bool{"changed": true})
+}
+
+// touch records activity for the idle auto-lock timer.
+func (s *Server) touch() { s.lastActivity.Store(time.Now().UnixNano()) }
+
+// StartAutoLock locks the store after d of inactivity (no-op if d <= 0). Returns
+// a stop function. Activity is any unlocked, authenticated data access.
+func (s *Server) StartAutoLock(d time.Duration) func() {
+	if d <= 0 {
+		return func() {}
+	}
+	s.touch()
+	stop := make(chan struct{})
+	go func() {
+		t := time.NewTicker(time.Minute)
+		defer t.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-t.C:
+				if !s.Store.Unlocked() {
+					continue
+				}
+				last := time.Unix(0, s.lastActivity.Load())
+				if time.Since(last) >= d {
+					s.Store.Lock()
+					s.Audit.Log(audit.Event{Action: "store_lock", Source: "auto", Result: "ok"})
+					log.Printf("auto-locked encrypted store after %s idle", d)
+				}
+			}
+		}
+	}()
+	return func() { close(stop) }
 }
 
 // requireUnlocked rejects requests when the encrypted store is locked (423).
@@ -245,6 +361,7 @@ func (s *Server) requireUnlocked(next http.Handler) http.Handler {
 			writeJSON(w, http.StatusLocked, map[string]string{"error": "data store is locked"})
 			return
 		}
+		s.touch() // activity resets the idle auto-lock timer
 		next.ServeHTTP(w, r)
 	})
 }
@@ -336,7 +453,12 @@ func (s *Server) handleReveal(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "account not found"})
 		return
 	}
-	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "reveal_secret", Target: username, Source: r.RemoteAddr, Result: "ok"})
+	// Fail-closed: if the audit record can't be written, do NOT reveal the secret.
+	if err := s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "reveal_secret", Target: username, Source: r.RemoteAddr, Result: "ok"}); err != nil {
+		log.Printf("reveal blocked: audit write failed: %v", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not record the audit event; reveal denied"})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"username": acct.Username, "password": acct.Password})
 }
 
@@ -701,7 +823,15 @@ func logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		next.ServeHTTP(w, r)
-		log.Printf("%s %s %s", r.Method, r.URL.Path, time.Since(start).Round(time.Millisecond))
+		// Log the matched route TEMPLATE (set during routing), not the substituted
+		// path -- otherwise the reveal route would leak the target username here,
+		// outside the access-controlled audit log. Fall back to the path for
+		// unmatched requests (which carry no path parameters).
+		route := r.Pattern
+		if route == "" {
+			route = r.URL.Path
+		}
+		log.Printf("%s %s %s", r.Method, route, time.Since(start).Round(time.Millisecond))
 	})
 }
 

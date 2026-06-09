@@ -29,16 +29,19 @@ type Logger struct {
 // New returns a Logger writing to w.
 func New(w io.Writer) *Logger { return &Logger{w: w} }
 
-// Log writes an event (timestamped if not already).
-func (l *Logger) Log(e Event) {
+// Log writes an event (timestamped if not already). It returns an error if the
+// event could not be persisted so callers can fail-closed where the audit record
+// is a security control (e.g. cleartext reveal).
+func (l *Logger) Log(e Event) error {
 	if e.Time.IsZero() {
 		e.Time = time.Now().UTC()
 	}
 	b, err := json.Marshal(e)
 	if err != nil {
-		return
+		return err
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	_, _ = l.w.Write(append(b, '\n'))
+	_, err = l.w.Write(append(b, '\n'))
+	return err
 }
