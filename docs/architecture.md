@@ -43,11 +43,43 @@ legacy-python/       v1 reference, deleted as parity is reached
   access-controlled store and is served only by authenticated, authorized,
   **audit-logged** endpoints. Redacted-by-default; cleartext is an explicit,
   role-gated, logged action.
-- **TLS-only** in production (`PATD_TLS_CERT` / `PATD_TLS_KEY`).
+- **TLS-only** in production (`PATD_TLS_CERT` / `PATD_TLS_KEY`): the server
+  **refuses to start** on a non-loopback address without TLS (plain HTTP is allowed
+  only on loopback for local dev); HSTS is set when serving over TLS.
 - **Strict CSP** + security headers; same-origin only (no external CDNs — assets
   are self-hosted, consistent with the v1 offline vendoring).
 - **Isolated build.** `npm` runs only on a build host with **no secrets/creds**
   present (the 2025 npm worms steal exactly those).
+
+## Persistence & recovery
+
+Audits are encrypted at rest under a random 32-byte data-encryption key (DEK). The
+DEK is wrapped by an argon2id key derived from the store passphrase. Everything
+lives under `PATD_DATA` (default `data/`):
+
+| File | Contents | If lost |
+|---|---|---|
+| `keyfile.json` | the DEK wrapped under the passphrase | **total loss** — the DEK (and thus every audit) is unrecoverable; there is no reset or escrow |
+| `audits/<id>.enc` | one encrypted audit dataset (AES-256-GCM, AAD = `patd-audit:<id>`) | that audit is lost; others are unaffected |
+| `index.enc` | encrypted metadata index (names/counts) — a **derived cache** (AAD = `patd-index`) | self-heals: on unlock the server rebuilds it from the blobs; `patd reindex` forces a rebuild |
+| `keyfile.json.bak` | **transient** crash-safety copy written only during a passphrase rotation and removed on success | should never persist — it wraps the DEK under the *old* passphrase |
+
+Operational rules:
+- **Back up `data/` as a unit** (a consistent snapshot). The files reference each
+  other; a torn backup (new index, old blobs) is reconciled on load but avoid it.
+- **The passphrase is unrecoverable.** Losing it (or `keyfile.json`) loses all
+  audits — there is no recovery key. Store it in a team password manager.
+- **Rotation revokes the old passphrase.** `Change passphrase` re-wraps the DEK and
+  deletes `keyfile.json.bak`, so old backups' passphrases stop working going
+  forward (already-taken snapshots of the *old* keyfile remain decryptable with the
+  old passphrase — rotate *and* re-snapshot if a passphrase leaks).
+- **Tamper resistance.** Each blob is AEAD-bound to its audit id and the index to
+  its role, so an attacker with write access to `data/` cannot swap one ciphertext
+  for another. (A full-snapshot rollback still requires external integrity
+  anchoring, which is out of scope.)
+- **Idle auto-lock** (`PATD_AUTOLOCK_MIN`, default 60) drops the DEK + clears
+  decrypted data from memory after inactivity; a lead re-enters the passphrase. A
+  restart always starts locked.
 
 ## Supply-chain controls (hard gate)
 

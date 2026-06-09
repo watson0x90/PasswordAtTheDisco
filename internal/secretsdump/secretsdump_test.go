@@ -6,6 +6,18 @@ import (
 	"testing"
 )
 
+func TestParseSkipsMachineAccounts(t *testing.T) {
+	in := "alice:1001:aad3b435b51404eeaad3b435b51404ee:NTHASH:::Welcome1\n" +
+		"WK01$:1002:aad3b435b51404eeaad3b435b51404ee:NTHASH:::Random120CharMachinePw\n"
+	got, err := ParseCracked(strings.NewReader(in), "CORP")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Username != "alice" {
+		t.Fatalf("machine account (WK01$) should be filtered: %+v", got)
+	}
+}
+
 func TestParseUTF16AndBOM(t *testing.T) {
 	line := "alice:1001:aad3b435b51404eeaad3b435b51404ee:NTHASHVALUE:::Welcome1\n"
 

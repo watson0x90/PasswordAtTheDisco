@@ -39,6 +39,9 @@ func ParseCracked(r io.Reader, domain string) ([]ParsedAccount, error) {
 	sc := newScanner(r)
 	for sc.Scan() {
 		parts := strings.Split(strings.TrimSpace(sc.Text()), ":")
+		if len(parts) > 0 && skipAccount(parts[0]) {
+			continue
+		}
 		switch {
 		case len(parts) >= 7:
 			pw := joinPassword(parts)
@@ -67,6 +70,9 @@ func ParseUncracked(r io.Reader, domain string) ([]ParsedAccount, error) {
 	sc := newScanner(r)
 	for sc.Scan() {
 		parts := strings.Split(strings.TrimSpace(sc.Text()), ":")
+		if len(parts) > 0 && skipAccount(parts[0]) {
+			continue
+		}
 		switch {
 		case len(parts) >= 7:
 			out = append(out, ParsedAccount{Username: parts[0], Domain: domain, Hash: parts[3]})
@@ -75,6 +81,15 @@ func ParseUncracked(r io.Reader, domain string) ([]ParsedAccount, error) {
 		}
 	}
 	return out, sc.Err()
+}
+
+// skipAccount filters machine/computer accounts (trailing '$'): their passwords
+// are random machine-generated, not user-chosen, so including them would inflate
+// account counts and skew the posture score in a password audit. Secretsdump
+// "_history" entries are intentionally KEPT -- they are real prior user passwords
+// relevant to reuse analysis.
+func skipAccount(username string) bool {
+	return strings.HasSuffix(username, "$")
 }
 
 // ParseDomain parses the cracked and uncracked files for a domain.

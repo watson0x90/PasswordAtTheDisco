@@ -49,6 +49,7 @@ type Server struct {
 	PolicyPath    string         // where to persist policy edits (empty = in-memory only)
 
 	lastActivity atomic.Int64 // unix-nano of the last unlocked data access (auto-lock)
+	inFlight     atomic.Int64 // in-flight data requests; auto-lock waits for zero
 }
 
 // minStorePassphrase is the floor for a new/changed store passphrase. The keyfile
@@ -340,11 +341,8 @@ func (s *Server) StartAutoLock(d time.Duration) func() {
 			case <-stop:
 				return
 			case <-t.C:
-				if !s.Store.Unlocked() {
-					continue
-				}
 				last := time.Unix(0, s.lastActivity.Load())
-				if time.Since(last) >= d {
+				if shouldAutoLock(s.Store.Unlocked(), s.inFlight.Load(), last, d, time.Now()) {
 					s.Store.Lock()
 					s.Audit.Log(audit.Event{Action: "store_lock", Source: "auto", Result: "ok"})
 					log.Printf("auto-locked encrypted store after %s idle", d)
@@ -362,9 +360,17 @@ func (s *Server) requireUnlocked(next http.Handler) http.Handler {
 			writeJSON(w, http.StatusLocked, map[string]string{"error": "data store is locked"})
 			return
 		}
-		s.touch() // activity resets the idle auto-lock timer
+		s.touch()         // activity resets the idle auto-lock timer
+		s.inFlight.Add(1) // count in-flight data ops so auto-lock won't fire mid-upload/reveal
+		defer s.inFlight.Add(-1)
 		next.ServeHTTP(w, r)
 	})
+}
+
+// shouldAutoLock decides whether the idle auto-lock should fire now: the store is
+// unlocked, no data request is in flight, and idle has elapsed since last activity.
+func shouldAutoLock(unlocked bool, inFlight int64, last time.Time, idle time.Duration, now time.Time) bool {
+	return unlocked && inFlight == 0 && now.Sub(last) >= idle
 }
 
 // activeAudit resolves the session's selected audit, writing a 409 if none is

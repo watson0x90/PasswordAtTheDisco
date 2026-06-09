@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 import { api } from "../api"
 import { useAuth } from "../auth"
 import { useAudits } from "../auditsData"
@@ -79,6 +79,13 @@ function AuditSwitcher() {
   const [name, setName] = useState("")
   const [busy, setBusy] = useState(false)
 
+  useEffect(() => {
+    if (!menu) return
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenu(false)
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [menu])
+
   async function doCreate() {
     if (!name.trim()) return
     setBusy(true)
@@ -94,7 +101,7 @@ function AuditSwitcher() {
 
   return (
     <div className="audit-switcher">
-      <button className="audit-current" onClick={() => setMenu((o) => !o)}>
+      <button className="audit-current" onClick={() => setMenu((o) => !o)} aria-haspopup="menu" aria-expanded={menu}>
         <span className="audit-dot" />
         <span className="audit-name">{active ? active.name : "No audit"}</span>
         <span className="audit-caret">▾</span>

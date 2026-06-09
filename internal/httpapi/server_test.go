@@ -470,6 +470,25 @@ func TestRevealFailsClosedOnAuditError(t *testing.T) {
 	}
 }
 
+func TestShouldAutoLock(t *testing.T) {
+	now := time.Now()
+	idle := 30 * time.Minute
+	stale := now.Add(-31 * time.Minute)
+	fresh := now.Add(-5 * time.Minute)
+	if !shouldAutoLock(true, 0, stale, idle, now) {
+		t.Fatal("idle + unlocked + no in-flight should auto-lock")
+	}
+	if shouldAutoLock(true, 1, stale, idle, now) {
+		t.Fatal("must not lock while a data request is in flight")
+	}
+	if shouldAutoLock(false, 0, stale, idle, now) {
+		t.Fatal("must not lock when already locked")
+	}
+	if shouldAutoLock(true, 0, fresh, idle, now) {
+		t.Fatal("must not lock before the idle window elapses")
+	}
+}
+
 func TestExportEndpoints(t *testing.T) {
 	srv := newServer("secret")
 	id := seed(t, srv)
