@@ -2,10 +2,14 @@ import { useEffect, useState, type FormEvent } from "react"
 import { api, ApiError, type AuditResult } from "../api"
 import { useAuth } from "../auth"
 import { useAudits } from "../auditsData"
+import { useAccountsData } from "../accountsData"
+import { useNav } from "../nav"
 
 export function Ingest() {
   const { me } = useAuth()
   const { activeId, active } = useAudits()
+  const { refresh } = useAccountsData()
+  const nav = useNav()
   const [domain, setDomain] = useState("")
   const [cracked, setCracked] = useState<File | null>(null)
   const [uncracked, setUncracked] = useState<File | null>(null)
@@ -88,8 +92,15 @@ export function Ingest() {
           <div className="ingest-ok">
             ✓ ingested {result.accounts.toLocaleString()} account{result.accounts === 1 ? "" : "s"} for <b>{domain.trim()}</b>{" "}
             ({result.cracked} cracked{result.uncracked ? `, ${result.uncracked} uncracked` : ""}).
-            <button type="button" className="btn" onClick={() => location.reload()}>
-              Reload to view
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                refresh()
+                nav("overview")
+              }}
+            >
+              View results →
             </button>
           </div>
         )}

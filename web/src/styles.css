@@ -517,6 +517,33 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 .export-actions { display: flex; gap: 8px; }
 .export-actions .btn { text-decoration: none; }
 
+/* ---- account detail drawer ---- */
+
+.acct-name { color: var(--text); font-weight: 500; }
+.acct-name:hover { color: var(--accent); }
+.drawer-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 70; }
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 380px;
+  max-width: 90vw;
+  z-index: 71;
+  background: #121a2e;
+  border-left: 1px solid var(--glass-border);
+  box-shadow: -24px 0 60px -24px rgba(0, 0, 0, 0.85);
+  padding: 22px 24px;
+  overflow-y: auto;
+}
+.drawer-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.drawer-title { font-size: 17px; font-weight: 700; letter-spacing: -0.2px; }
+.drawer-fields { margin: 0; }
+.drawer-row { display: flex; justify-content: space-between; gap: 16px; padding: 9px 0; border-bottom: 1px solid var(--hairline); font-size: 13px; }
+.drawer-row dt { color: var(--dim); }
+.drawer-row dd { margin: 0; text-align: right; }
+.vector { font-family: var(--mono); font-size: 11px; color: var(--dim); word-break: break-all; }
+
 .posture-panel { display: flex; gap: 36px; align-items: center; flex-wrap: wrap; margin-bottom: 38px; }
 .posture-gauge-wrap { flex: 0 0 220px; text-align: center; }
 .posture-likelihood { font-size: 12px; color: var(--dim); margin-top: 4px; }

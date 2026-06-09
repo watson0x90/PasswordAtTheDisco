@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import { useState, type ReactNode } from "react"
 import { useAccountsData } from "../accountsData"
 import { RISK_CLASS, hasDA } from "../util"
 import type { Account } from "../api"
@@ -62,6 +62,8 @@ interface SectionProps {
 }
 
 function Section({ title, action, items, tone, metricHead, metric }: SectionProps) {
+  const [showAll, setShowAll] = useState(false)
+  const shown = showAll ? items : items.slice(0, TOP)
   return (
     <div className="action-section">
       <div className="action-head">
@@ -86,7 +88,7 @@ function Section({ title, action, items, tone, metricHead, metric }: SectionProp
               </tr>
             </thead>
             <tbody>
-              {items.slice(0, TOP).map((a, i) => (
+              {shown.map((a, i) => (
                 <tr key={`${a.domain}/${a.username}/${i}`}>
                   <td>{a.username}</td>
                   <td className="muted">{a.domain}</td>
@@ -99,7 +101,14 @@ function Section({ title, action, items, tone, metricHead, metric }: SectionProp
               ))}
             </tbody>
           </table>
-          {items.length > TOP && <div className="meta-line">showing top {TOP} of {items.length.toLocaleString()}</div>}
+          {items.length > TOP && (
+            <div className="meta-line">
+              showing {shown.length.toLocaleString()} of {items.length.toLocaleString()}{" "}
+              <button className="link-btn" onClick={() => setShowAll((v) => !v)}>
+                {showAll ? "show top 50" : "show all"}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

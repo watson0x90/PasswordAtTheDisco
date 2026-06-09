@@ -1,10 +1,11 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react"
 import { api, ApiError, type Account } from "./api"
 import { useAudits } from "./auditsData"
 
 interface AccountsState {
   accounts: Account[] | null
   error: string
+  refresh: () => void
 }
 
 const Ctx = createContext<AccountsState | null>(null)
@@ -16,6 +17,8 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
   const { activeId } = useAudits()
   const [accounts, setAccounts] = useState<Account[] | null>(null)
   const [error, setError] = useState("")
+  const [nonce, setNonce] = useState(0)
+  const refresh = useCallback(() => setNonce((n) => n + 1), [])
 
   useEffect(() => {
     if (!activeId) {
@@ -36,9 +39,9 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false
     }
-  }, [activeId])
+  }, [activeId, nonce])
 
-  return <Ctx.Provider value={{ accounts, error }}>{children}</Ctx.Provider>
+  return <Ctx.Provider value={{ accounts, error, refresh }}>{children}</Ctx.Provider>
 }
 
 export function useAccountsData(): AccountsState {

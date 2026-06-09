@@ -143,6 +143,16 @@ export const api = {
       body: JSON.stringify({ passphrase }),
     }),
 
+  lock: (csrf: string) =>
+    request<{ unlocked: boolean }>("/lock", { method: "POST", headers: { "X-CSRF-Token": csrf } }),
+
+  changePassphrase: (oldPass: string, newPass: string, csrf: string) =>
+    request<{ changed: boolean }>("/passphrase", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+      body: JSON.stringify({ old: oldPass, new: newPass }),
+    }),
+
   listAudits: () => request<AuditListItem[]>("/audits"),
 
   createAudit: (name: string, notes: string, csrf: string) =>

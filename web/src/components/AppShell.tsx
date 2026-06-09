@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react"
+import { api } from "../api"
 import { useAuth } from "../auth"
 import { useAudits } from "../auditsData"
 import { Logo } from "./Logo"
@@ -14,7 +15,15 @@ const TABS: { id: View; label: string }[] = [
 ]
 
 export function AppShell({ view, onNav, children }: { view: View; onNav: (v: View) => void; children: ReactNode }) {
-  const { me, logout } = useAuth()
+  const { me, logout, refresh } = useAuth()
+  async function lockStore() {
+    if (!me) return
+    try {
+      await api.lock(me.csrf_token)
+    } finally {
+      await refresh() // store_unlocked becomes false -> the unlock screen reappears
+    }
+  }
   // Ingest (web upload) and Policies editing are lead-only.
   const tabs =
     me?.role === "lead"
@@ -44,6 +53,11 @@ export function AppShell({ view, onNav, children }: { view: View; onNav: (v: Vie
               <span className="r">operator</span>
             </div>
             <span className={me.role === "lead" ? "role-badge lead" : "role-badge"}>{me.role}</span>
+            {me.role === "lead" && (
+              <button className="btn" onClick={() => void lockStore()} title="Lock the encrypted store">
+                Lock
+              </button>
+            )}
             <button className="btn" onClick={() => void logout()}>
               Sign Out
             </button>

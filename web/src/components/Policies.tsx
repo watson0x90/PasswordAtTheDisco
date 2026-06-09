@@ -154,6 +154,65 @@ export function Policies() {
           </button>
         </div>
       </div>
+
+      <div className="section-label">Store passphrase</div>
+      <ChangePassphrase csrf={me.csrf_token} />
     </>
+  )
+}
+
+function ChangePassphrase({ csrf }: { csrf: string }) {
+  const [oldPass, setOld] = useState("")
+  const [newPass, setNew] = useState("")
+  const [confirm, setConfirm] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState("")
+  const [ok, setOk] = useState(false)
+
+  async function submit() {
+    setErr("")
+    setOk(false)
+    if (newPass !== confirm) {
+      setErr("new passphrases do not match")
+      return
+    }
+    setBusy(true)
+    try {
+      await api.changePassphrase(oldPass, newPass, csrf)
+      setOk(true)
+      setOld("")
+      setNew("")
+      setConfirm("")
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : "change failed")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="panel ingest-form">
+      <p className="ingest-note">
+        Rotate the store passphrase (re-wraps the data key; audits are not re-encrypted). The passphrase is
+        unrecoverable — there is no reset.
+      </p>
+      <div className="field">
+        <label htmlFor="op">Current passphrase</label>
+        <input id="op" type="password" value={oldPass} onChange={(e) => setOld(e.target.value)} />
+      </div>
+      <div className="field">
+        <label htmlFor="np">New passphrase</label>
+        <input id="np" type="password" value={newPass} onChange={(e) => setNew(e.target.value)} autoComplete="new-password" />
+      </div>
+      <div className="field">
+        <label htmlFor="cp">Confirm new passphrase</label>
+        <input id="cp" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />
+      </div>
+      {err && <div className="error">{err}</div>}
+      {ok && <div className="ingest-ok">✓ store passphrase changed</div>}
+      <button type="button" className="btn btn-primary" onClick={submit} disabled={busy || !oldPass || !newPass}>
+        {busy ? "Changing…" : "Change passphrase"}
+      </button>
+    </div>
   )
 }

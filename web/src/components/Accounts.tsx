@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react"
-import { api, ApiError } from "../api"
+import { useMemo, useState, type ReactNode } from "react"
+import { api, ApiError, type Account } from "../api"
 import { useAccountsData } from "../accountsData"
 import { useAuth } from "../auth"
 import { RISK_CLASS, hasDA } from "../util"
@@ -16,6 +16,15 @@ export function Accounts() {
   const [revealed, setRevealed] = useState<Record<string, string>>({})
   const [revealing, setRevealing] = useState("")
   const [revealError, setRevealError] = useState("")
+  const [selected, setSelected] = useState<Account | null>(null)
+
+  async function copy(text: string) {
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      /* clipboard may be unavailable; ignore */
+    }
+  }
 
   const filtered = useMemo(() => {
     if (!accounts) return []
@@ -33,6 +42,7 @@ export function Accounts() {
     try {
       const r = await api.revealSecret(username)
       setRevealed((prev) => ({ ...prev, [username]: r.password }))
+      window.setTimeout(() => hide(username), 45000) // auto-hide after 45s
     } catch (e) {
       setRevealError(e instanceof ApiError ? `reveal failed: ${e.message}` : "reveal failed")
     } finally {
@@ -105,7 +115,11 @@ export function Accounts() {
           <tbody>
             {filtered.map((a, i) => (
               <tr key={`${a.domain}/${a.username}/${i}`}>
-                <td>{a.username}</td>
+                <td>
+                  <button className="link-btn acct-name" onClick={() => setSelected(a)} title="Account details">
+                    {a.username}
+                  </button>
+                </td>
                 <td className="muted">{a.domain}</td>
                 <td>
                   <span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span>
@@ -132,6 +146,9 @@ export function Accounts() {
                     ) : a.username in revealed ? (
                       <span className="secret">
                         <span className="mono-pw">{revealed[a.username]}</span>
+                        <button className="link-btn" onClick={() => copy(revealed[a.username])} title="Copy">
+                          copy
+                        </button>
                         <button className="link-btn" onClick={() => hide(a.username)}>
                           hide
                         </button>
@@ -152,6 +169,47 @@ export function Accounts() {
       {isLead && (
         <div className="meta-line">⚠ revealing a credential is recorded in the audit log — operator, account, and timestamp.</div>
       )}
+
+      {selected && <AccountDrawer account={selected} onClose={() => setSelected(null)} />}
+    </>
+  )
+}
+
+function AccountDrawer({ account: a, onClose }: { account: Account; onClose: () => void }) {
+  const rows: [string, ReactNode][] = [
+    ["Domain", a.domain],
+    ["Status", a.cracked ? "Cracked" : "Uncracked"],
+    ["Risk level", <span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span>],
+    ["Risk score", a.risk_score.toFixed(1)],
+    ["Risk vector", <code className="vector">{a.risk_vector || "—"}</code>],
+    ["HIBP breaches", a.hibp_breached ? a.hibp_breach_count.toLocaleString() : "—"],
+    ["Complexity", a.cracked ? a.complexity : "—"],
+    ["Password length", a.cracked ? a.password_length : "—"],
+    ["Meets policy", a.cracked ? (a.meets_policy ? "Yes" : "No") : "—"],
+    ["Shared with", a.shared_with],
+    ["DA pathway", hasDA(a.da_domains) ? a.da_domains : "—"],
+    ["Controlled objects", a.controlled_object_count],
+    ["Enabled", a.enabled ? "Yes" : "No"],
+  ]
+  return (
+    <>
+      <div className="drawer-backdrop" onClick={onClose} />
+      <aside className="drawer">
+        <div className="drawer-head">
+          <span className="drawer-title">{a.username}</span>
+          <button className="link-btn" onClick={onClose}>
+            close
+          </button>
+        </div>
+        <dl className="drawer-fields">
+          {rows.map(([k, v]) => (
+            <div className="drawer-row" key={k}>
+              <dt>{k}</dt>
+              <dd>{v}</dd>
+            </div>
+          ))}
+        </dl>
+      </aside>
     </>
   )
 }
