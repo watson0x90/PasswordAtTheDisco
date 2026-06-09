@@ -93,6 +93,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/unlock", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleUnlock))))
 	mux.Handle("POST /api/lock", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleLock))))
 	mux.Handle("POST /api/passphrase", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleChangePassphrase))))
+	mux.Handle("POST /api/rekey", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleRekey))))
 	// Audit (engagement) management + selection -- needs an unlocked store
 	mux.Handle("GET /api/audits", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleListAudits))))
 	mux.Handle("POST /api/audits", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleCreateAudit)))))
@@ -320,6 +321,40 @@ func (s *Server) handleChangePassphrase(w http.ResponseWriter, r *http.Request) 
 	}
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "store_passphrase_change", Source: r.RemoteAddr, Result: "ok"})
 	writeJSON(w, http.StatusOK, map[string]bool{"changed": true})
+}
+
+// handleRekey rotates the data-encryption key (re-encrypts every audit under a
+// fresh DEK). Lead-only; requires the current passphrase to re-wrap the new key.
+func (s *Server) handleRekey(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	if !s.Store.Unlocked() {
+		writeJSON(w, http.StatusLocked, map[string]string{"error": "unlock the store before rotating its data key"})
+		return
+	}
+	defer r.Body.Close()
+	var body struct {
+		Passphrase string `json:"passphrase"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16))
+	if err := dec.Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+	if err := s.Store.Rekey(body.Passphrase); err != nil {
+		s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "store_rekey", Source: r.RemoteAddr, Result: "failed"})
+		if errors.Is(err, vault.ErrBadPassphrase) {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "current passphrase is incorrect"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "store_rekey", Source: r.RemoteAddr, Result: "ok"})
+	writeJSON(w, http.StatusOK, map[string]bool{"rekeyed": true})
 }
 
 // touch records activity for the idle auto-lock timer.

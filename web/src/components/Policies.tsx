@@ -157,7 +157,51 @@ export function Policies() {
 
       <div className="section-label">Store passphrase</div>
       <ChangePassphrase csrf={me.csrf_token} />
+
+      <div className="section-label">Data key</div>
+      <RotateDataKey csrf={me.csrf_token} />
     </>
+  )
+}
+
+function RotateDataKey({ csrf }: { csrf: string }) {
+  const [pass, setPass] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState("")
+  const [ok, setOk] = useState(false)
+
+  async function submit() {
+    setErr("")
+    setOk(false)
+    setBusy(true)
+    try {
+      await api.rekey(pass, csrf)
+      setOk(true)
+      setPass("")
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : "rotation failed")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="panel ingest-form">
+      <p className="ingest-note">
+        Generate a new data-encryption key and re-encrypt every audit under it — use after a suspected key
+        exposure or for periodic hygiene. The passphrase is unchanged. Crash-safe (resumable); may take a
+        moment for large stores.
+      </p>
+      <div className="field">
+        <label htmlFor="rk">Current passphrase</label>
+        <input id="rk" type="password" value={pass} onChange={(e) => setPass(e.target.value)} autoComplete="current-password" />
+      </div>
+      {err && <div className="error">{err}</div>}
+      {ok && <div className="ingest-ok">✓ data key rotated — all audits re-encrypted</div>}
+      <button type="button" className="btn btn-primary" onClick={submit} disabled={busy || !pass}>
+        {busy ? "Rotating…" : "Rotate data key"}
+      </button>
+    </div>
   )
 }
 

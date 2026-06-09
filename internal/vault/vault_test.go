@@ -126,6 +126,49 @@ func TestChangePassphrase(t *testing.T) {
 	}
 }
 
+func TestRekeyRotatesDataKey(t *testing.T) {
+	dir := t.TempDir()
+	v, _ := Open(dir)
+	if err := v.Initialize("the-current-passphrase"); err != nil {
+		t.Fatal(err)
+	}
+	_ = v.SaveAudit("aud1", []byte("audit-one-plaintext"))
+	_ = v.SaveIndex([]byte(`{"aud1":{}}`))
+
+	// capture the old ciphertext so we can prove the key actually changed
+	oldCT, _ := os.ReadFile(filepath.Join(dir, auditsSubdir, "aud1.enc"))
+
+	if err := v.Rekey("wrong-passphrase"); err != ErrBadPassphrase {
+		t.Fatalf("rekey with wrong passphrase should be ErrBadPassphrase, got %v", err)
+	}
+	if err := v.Rekey("the-current-passphrase"); err != nil {
+		t.Fatalf("Rekey: %v", err)
+	}
+
+	// data still readable + intact under the new key
+	if got, err := v.LoadOne("aud1"); err != nil || string(got) != "audit-one-plaintext" {
+		t.Fatalf("audit unreadable after rekey: %v %q", err, got)
+	}
+	// ciphertext actually changed (new DEK / nonce)
+	newCT, _ := os.ReadFile(filepath.Join(dir, auditsSubdir, "aud1.enc"))
+	if string(oldCT) == string(newCT) {
+		t.Fatal("ciphertext unchanged after rekey -- key did not rotate")
+	}
+	// keyfile no longer carries a previous DEK
+	if kf, _ := v.readKeyfile(); kf.WrappedPrevDEK != "" {
+		t.Fatal("wrapped_prev_dek should be cleared after a completed rekey")
+	}
+	// lock + reopen + unlock: still works under the same passphrase, new key on disk
+	v.Lock()
+	v2, _ := Open(dir)
+	if err := v2.Unlock("the-current-passphrase"); err != nil {
+		t.Fatalf("unlock after rekey: %v", err)
+	}
+	if got, err := v2.LoadOne("aud1"); err != nil || string(got) != "audit-one-plaintext" {
+		t.Fatalf("audit unreadable after rekey+reopen: %v %q", err, got)
+	}
+}
+
 func TestCorruptKeyfileRejected(t *testing.T) {
 	dir := t.TempDir()
 	v, _ := Open(dir)

@@ -68,10 +68,18 @@ Operational rules:
   other; a torn backup (new index, old blobs) is reconciled on load but avoid it.
 - **The passphrase is unrecoverable.** Losing it (or `keyfile.json`) loses all
   audits — there is no recovery key. Store it in a team password manager.
-- **Rotation revokes the old passphrase.** `Change passphrase` re-wraps the DEK and
-  deletes `keyfile.json.bak`, so old backups' passphrases stop working going
-  forward (already-taken snapshots of the *old* keyfile remain decryptable with the
-  old passphrase — rotate *and* re-snapshot if a passphrase leaks).
+- **Two rotations are available (lead, Policies tab):**
+  - *Change passphrase* re-wraps the **same** DEK under a new passphrase and deletes
+    `keyfile.json.bak`, so the old passphrase stops working going forward.
+  - *Rotate data key* generates a **new DEK** and re-encrypts every audit + the
+    index under it (passphrase unchanged). Use after a suspected key exposure, or to
+    reset the GCM nonce space. It is crash-safe: the keyfile holds **both** keys
+    during the migration (so an interruption leaves every blob readable) and a
+    re-run **resumes**; the old key is dropped only once all blobs are re-sealed.
+  - Either way, snapshots taken *before* the rotation remain decryptable with the
+    old credential/key — to truly retire a leaked one, rotate **and** re-snapshot,
+    discarding old backups. A data-key rotation makes pre-rotation blob backups
+    cryptographically stale (they can't be read with the new DEK).
 - **Tamper resistance.** Each blob is AEAD-bound to its audit id and the index to
   its role, so an attacker with write access to `data/` cannot swap one ciphertext
   for another. (A full-snapshot rollback still requires external integrity

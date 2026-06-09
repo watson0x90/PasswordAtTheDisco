@@ -189,6 +189,13 @@ export const api = {
       body: JSON.stringify({ old: oldPass, new: newPass }),
     }),
 
+  rekey: (passphrase: string, csrf: string) =>
+    request<{ rekeyed: boolean }>("/rekey", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+      body: JSON.stringify({ passphrase }),
+    }),
+
   listAudits: () => request<AuditListItem[]>("/audits"),
 
   diff: (a: string, b: string) =>

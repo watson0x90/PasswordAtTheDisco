@@ -515,6 +515,44 @@ func TestExportEndpoints(t *testing.T) {
 	}
 }
 
+func postJSON(srv *Server, path string, cookie *http.Cookie, csrf, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest("POST", path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
+	if csrf != "" {
+		req.Header.Set("X-CSRF-Token", csrf)
+	}
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	return rec
+}
+
+// TestRekeyEndpoint checks route wiring/role/CSRF (the passphrase + actual key
+// rotation are covered by vault.TestRekeyRotatesDataKey; the in-memory test store
+// has no vault, so Rekey is a no-op here).
+func TestRekeyEndpoint(t *testing.T) {
+	srv := newServer("secret")
+	id := seed(t, srv)
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	openAudit(t, srv, lc, lcsrf, id)
+
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	if r := postJSON(srv, "/api/rekey", ac, acsrf, `{"passphrase":"x"}`); r.Code != http.StatusForbidden {
+		t.Fatalf("analyst rekey should be 403, got %d", r.Code)
+	}
+	if r := postJSON(srv, "/api/rekey", lc, "", `{"passphrase":"x"}`); r.Code != http.StatusForbidden {
+		t.Fatalf("rekey without CSRF should be 403, got %d", r.Code)
+	}
+	if r := postJSON(srv, "/api/rekey", lc, lcsrf, `{"passphrase":"x"}`); r.Code != http.StatusOK {
+		t.Fatalf("lead rekey = %d %s", r.Code, r.Body.String())
+	}
+	if r := do(srv, "GET", "/api/accounts", lc); r.Code != http.StatusOK || !strings.Contains(r.Body.String(), "alice") {
+		t.Fatalf("accounts unreadable after rekey: %d %s", r.Code, r.Body.String())
+	}
+}
+
 func TestDiffEndpoint(t *testing.T) {
 	srv := newServer("secret")
 	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")

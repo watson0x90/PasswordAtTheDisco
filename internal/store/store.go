@@ -189,6 +189,16 @@ func (s *Store) ChangePassphrase(oldPass, newPass string) error {
 	return s.vault.ChangePassphrase(oldPass, newPass)
 }
 
+// Rekey rotates the data-encryption key, re-encrypting every audit under a fresh
+// DEK (the passphrase is unchanged). In-memory plaintext is unaffected. No-op
+// in-memory. The vault holds an exclusive lock for the duration.
+func (s *Store) Rekey(passphrase string) error {
+	if s.vault == nil {
+		return nil
+	}
+	return s.vault.Rekey(passphrase)
+}
+
 // loadIndex populates the metadata index. The index is a derived cache, so on
 // ANY failure to read it (absent, corrupt, or unparseable) it is rebuilt from the
 // still-authentic audit blobs and re-persisted -- a corrupt index never bricks

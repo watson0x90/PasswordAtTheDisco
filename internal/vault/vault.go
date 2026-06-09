@@ -60,13 +60,17 @@ type keyfile struct {
 	Memory     uint32 `json:"memory"`
 	Threads    uint8  `json:"threads"`
 	WrappedDEK string `json:"wrapped_dek"`
+	// WrappedPrevDEK is the previous DEK, present only while a Rekey is mid-flight
+	// (so blobs not yet re-sealed remain readable). Wrapped under the same KEK.
+	WrappedPrevDEK string `json:"wrapped_prev_dek,omitempty"`
 }
 
 // Vault stores encrypted audits under a directory. Safe for concurrent use.
 type Vault struct {
 	dir          string
 	mu           sync.RWMutex
-	dek          []byte       // nil when locked
+	dek          []byte       // primary DEK; nil when locked
+	prevDEK      []byte       // previous DEK during a rekey; reads fall back to it
 	seals        atomic.Int64 // blob/index seals under the current DEK (nonce odometer)
 	noncesWarned atomic.Bool  // one-shot guard for the nonce-budget warning
 }
@@ -147,9 +151,16 @@ func deriveKEK(passphrase string, salt []byte, t, m uint32, p uint8) []byte {
 	return argon2.IDKey([]byte(passphrase), salt, t, m, p, dekLen)
 }
 
-// wrapAndWrite wraps dek under a fresh-salt KEK from passphrase (current params)
-// and writes the keyfile atomically, backing up any existing keyfile first.
+// wrapAndWrite wraps dek under a fresh-salt KEK from passphrase and writes the
+// keyfile atomically (no previous DEK).
 func (v *Vault) wrapAndWrite(dek []byte, passphrase string) error {
+	return v.wrapAndWriteBoth(dek, nil, passphrase)
+}
+
+// wrapAndWriteBoth writes the keyfile wrapping dek as primary and, if prevDEK is
+// non-nil, also the previous DEK (used mid-rekey so unprocessed blobs stay
+// readable). Backs up any existing keyfile first.
+func (v *Vault) wrapAndWriteBoth(dek, prevDEK []byte, passphrase string) error {
 	salt := make([]byte, saltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return err
@@ -163,6 +174,13 @@ func (v *Vault) wrapAndWrite(dek []byte, passphrase string) error {
 		Version: keyfileVersion, KDF: "argon2id", Salt: b64(salt),
 		Time: argonTime, Memory: argonMemory, Threads: argonThreads,
 		WrappedDEK: b64(wrapped),
+	}
+	if prevDEK != nil {
+		wprev, err := gcmSeal(kek, prevDEK, nil)
+		if err != nil {
+			return err
+		}
+		kf.WrappedPrevDEK = b64(wprev)
 	}
 	b, err := json.MarshalIndent(kf, "", "  ")
 	if err != nil {
@@ -217,6 +235,14 @@ func (v *Vault) Unlock(passphrase string) error {
 		return ErrBadPassphrase
 	}
 	v.dek = dek
+	v.prevDEK = nil
+	if kf.WrappedPrevDEK != "" { // a rekey was interrupted; keep the old DEK for reads
+		if wp, err := unb64(kf.WrappedPrevDEK); err == nil {
+			if pd, err := gcmOpen(kek, wp, nil); err == nil {
+				v.prevDEK = pd
+			}
+		}
+	}
 	v.seals.Store(0) // per-session odometer (lifetime tracking would need persistence)
 	v.noncesWarned.Store(false)
 	return nil
@@ -256,14 +282,133 @@ func (v *Vault) ChangePassphrase(oldPass, newPass string) error {
 	return nil
 }
 
-// Lock zeroes and drops the DEK.
+// Rekey rotates the data-encryption key: it generates a fresh DEK, re-encrypts
+// every audit blob + the index under it, and re-wraps it under the (unchanged)
+// passphrase. Crash-safe: the keyfile holds BOTH keys during the migration, so an
+// interruption leaves every blob readable, and a re-run RESUMES (re-sealing the
+// remainder under the in-progress key) rather than starting over. Requires the
+// correct current passphrase; holds an exclusive lock for the whole operation.
+func (v *Vault) Rekey(passphrase string) error {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.dek == nil {
+		return ErrLocked
+	}
+	kf, err := v.readKeyfile()
+	if err != nil {
+		return err
+	}
+	salt, err := unb64(kf.Salt)
+	if err != nil {
+		return err
+	}
+	kek := deriveKEK(passphrase, salt, kf.Time, kf.Memory, kf.Threads)
+	wrapped, err := unb64(kf.WrappedDEK)
+	if err != nil {
+		return err
+	}
+	primary, err := gcmOpen(kek, wrapped, nil)
+	if err != nil {
+		return ErrBadPassphrase
+	}
+
+	// Pick the target DEK + the keys blobs may currently be sealed under.
+	var target, prev []byte
+	if kf.WrappedPrevDEK != "" {
+		// Resume an interrupted rekey: re-seal under the existing primary. Blobs are
+		// under primary (already done) or the recorded prev (still pending).
+		target = primary
+		if wp, err := unb64(kf.WrappedPrevDEK); err == nil {
+			prev, _ = gcmOpen(kek, wp, nil)
+		}
+	} else {
+		// Fresh rekey: a new random DEK; persist [new, old] BEFORE touching blobs so
+		// a crash mid-migration still has both keys.
+		target = make([]byte, dekLen)
+		if _, err := rand.Read(target); err != nil {
+			return err
+		}
+		if err := v.wrapAndWriteBoth(target, primary, passphrase); err != nil {
+			return err
+		}
+		prev = primary
+	}
+	v.dek, v.prevDEK = target, prev
+	keys := [][]byte{target, prev}
+
+	ids, err := v.ListAudits()
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		ct, err := os.ReadFile(v.auditPath(id))
+		if err != nil {
+			return err
+		}
+		pt, err := openMany(keys, ct, blobAAD(id))
+		if err != nil {
+			return fmt.Errorf("rekey: cannot decrypt audit %s: %w", id, err)
+		}
+		nct, err := gcmSeal(target, pt, blobAAD(id))
+		if err != nil {
+			return err
+		}
+		if err := writeFileAtomic(v.auditPath(id), nct); err != nil {
+			return err
+		}
+	}
+	if ict, err := os.ReadFile(v.indexPath()); err == nil {
+		pt, err := openMany(keys, ict, indexAAD)
+		if err != nil {
+			return fmt.Errorf("rekey: cannot decrypt index: %w", err)
+		}
+		nct, err := gcmSeal(target, pt, indexAAD)
+		if err != nil {
+			return err
+		}
+		if err := writeFileAtomic(v.indexPath(), nct); err != nil {
+			return err
+		}
+	}
+
+	// Finalize: keyfile with only the new DEK; drop the old.
+	if err := v.wrapAndWrite(target, passphrase); err != nil {
+		return err
+	}
+	_ = os.Remove(v.keyfilePath() + ".bak")
+	v.prevDEK = nil
+	v.seals.Store(0)
+	v.noncesWarned.Store(false)
+	return nil
+}
+
+// Lock zeroes and drops the DEK(s).
 func (v *Vault) Lock() {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	for i := range v.dek {
 		v.dek[i] = 0
 	}
+	for i := range v.prevDEK {
+		v.prevDEK[i] = 0
+	}
 	v.dek = nil
+	v.prevDEK = nil
+}
+
+// openMany decrypts ct by trying each key in order (AAD first, then a no-AAD
+// legacy fallback). Used so reads succeed under the primary DEK or, during/after
+// an interrupted rekey, the previous DEK.
+func openMany(keys [][]byte, ct, aad []byte) ([]byte, error) {
+	for _, k := range keys {
+		if k == nil {
+			continue
+		}
+		if pt, _, err := gcmOpenWithLegacy(k, ct, aad); err == nil {
+			return pt, nil
+		}
+	}
+	return nil, errors.New("vault: no key could decrypt the blob")
 }
 
 // SaveAudit encrypts plaintext under the DEK and writes it atomically.
@@ -303,7 +448,7 @@ func (v *Vault) SaveIndex(plaintext []byte) error {
 // LoadIndex decrypts the metadata index, or returns ErrNoIndex if absent.
 func (v *Vault) LoadIndex() ([]byte, error) {
 	v.mu.RLock()
-	dek := v.dek
+	dek, prev := v.dek, v.prevDEK
 	v.mu.RUnlock()
 	if dek == nil {
 		return nil, ErrLocked
@@ -315,14 +460,13 @@ func (v *Vault) LoadIndex() ([]byte, error) {
 		}
 		return nil, err
 	}
-	pt, _, err := gcmOpenWithLegacy(dek, ct, indexAAD)
-	return pt, err
+	return openMany([][]byte{dek, prev}, ct, indexAAD)
 }
 
 // LoadOne decrypts a single audit blob.
 func (v *Vault) LoadOne(id string) ([]byte, error) {
 	v.mu.RLock()
-	dek := v.dek
+	dek, prev := v.dek, v.prevDEK
 	v.mu.RUnlock()
 	if dek == nil {
 		return nil, ErrLocked
@@ -331,8 +475,7 @@ func (v *Vault) LoadOne(id string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	pt, _, err := gcmOpenWithLegacy(dek, ct, blobAAD(id))
-	return pt, err
+	return openMany([][]byte{dek, prev}, ct, blobAAD(id))
 }
 
 // ListAudits returns the ids of all stored audit blobs (no decryption).
@@ -362,7 +505,7 @@ func (v *Vault) DeleteAudit(id string) error {
 // LoadAll decrypts every stored audit, returning id -> plaintext.
 func (v *Vault) LoadAll() (map[string][]byte, error) {
 	v.mu.RLock()
-	dek := v.dek
+	dek, prev := v.dek, v.prevDEK
 	v.mu.RUnlock()
 	if dek == nil {
 		return nil, ErrLocked
@@ -381,7 +524,7 @@ func (v *Vault) LoadAll() (map[string][]byte, error) {
 			return nil, err
 		}
 		id := strings.TrimSuffix(e.Name(), ".enc")
-		pt, _, err := gcmOpenWithLegacy(dek, ct, blobAAD(id))
+		pt, err := openMany([][]byte{dek, prev}, ct, blobAAD(id))
 		if err != nil {
 			return nil, fmt.Errorf("decrypt %s: %w", e.Name(), err)
 		}
