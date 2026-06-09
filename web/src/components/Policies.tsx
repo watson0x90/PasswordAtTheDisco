@@ -169,9 +169,15 @@ function ChangePassphrase({ csrf }: { csrf: string }) {
   const [err, setErr] = useState("")
   const [ok, setOk] = useState(false)
 
+  const MIN = 12
+
   async function submit() {
     setErr("")
     setOk(false)
+    if (newPass.length < MIN) {
+      setErr(`new passphrase must be at least ${MIN} characters`)
+      return
+    }
     if (newPass !== confirm) {
       setErr("new passphrases do not match")
       return
@@ -203,6 +209,7 @@ function ChangePassphrase({ csrf }: { csrf: string }) {
       <div className="field">
         <label htmlFor="np">New passphrase</label>
         <input id="np" type="password" value={newPass} onChange={(e) => setNew(e.target.value)} autoComplete="new-password" />
+        <span className="field-hint">at least {MIN} characters</span>
       </div>
       <div className="field">
         <label htmlFor="cp">Confirm new passphrase</label>

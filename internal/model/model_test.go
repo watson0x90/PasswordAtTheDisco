@@ -5,6 +5,22 @@ import (
 	"testing"
 )
 
+func TestPostureScoreGolden(t *testing.T) {
+	// Pins the formula; web/src/insights.ts:posture() must match. 2 accounts:
+	// 1 Critical cracked+breached non-compliant, 1 Low cracked compliant.
+	p := PostureScore([]Account{
+		{RiskLevel: "Critical", Cracked: true, HIBPBreached: true, MeetsPolicy: false},
+		{RiskLevel: "Low", Cracked: true, MeetsPolicy: true},
+	})
+	// risk: max(0,100-(1/2)*200)=0 ; strength 0 ; priv 15 ; compliance (2-1)/2*15=7.5
+	if p.Score != 22.5 || p.Rating != "Weak" {
+		t.Fatalf("posture = %.1f %s, want 22.5 Weak", p.Score, p.Rating)
+	}
+	if p.Breakdown != (PostureBreakdown{Risk: 0, Strength: 0, Privilege: 15, Compliance: 7.5}) {
+		t.Fatalf("breakdown = %+v, want {0 0 15 7.5}", p.Breakdown)
+	}
+}
+
 func TestRecomputeSharingCrossDomain(t *testing.T) {
 	accts := []Account{
 		{Username: "a", Domain: "CORP", Password: "Reused1", Cracked: true},

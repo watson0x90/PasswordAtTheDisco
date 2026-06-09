@@ -6,6 +6,7 @@ type Status = "loading" | "authenticated" | "anonymous"
 interface AuthState {
   status: Status
   me: Me | null
+  autoLocked: boolean // store auto-locked for inactivity (drives the unlock banner)
   login: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
   refresh: () => Promise<void>
@@ -16,6 +17,18 @@ const AuthContext = createContext<AuthState | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>("loading")
   const [me, setMe] = useState<Me | null>(null)
+  const [autoLocked, setAutoLocked] = useState(false)
+
+  // The API layer broadcasts patd:locked on any 423 (idle auto-lock). Reflect it
+  // so the app returns to the unlock screen instead of stranding a raw error.
+  useEffect(() => {
+    const onLocked = () => {
+      setMe((prev) => (prev ? { ...prev, store_unlocked: false } : prev))
+      setAutoLocked(true)
+    }
+    window.addEventListener("patd:locked", onLocked)
+    return () => window.removeEventListener("patd:locked", onLocked)
+  }, [])
 
   // Bootstrap: ask the server who we are (valid session cookie?).
   useEffect(() => {
@@ -46,6 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const m = await api.login(username, password)
     setMe(m)
     setStatus("authenticated")
+    setAutoLocked(false)
   }, [])
 
   const logout = useCallback(async () => {
@@ -60,10 +74,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // refresh re-reads /me (e.g. after unlocking the store, to pick up the new state).
   const refresh = useCallback(async () => {
     setMe(await api.me())
+    setAutoLocked(false)
   }, [])
 
   return (
-    <AuthContext.Provider value={{ status, me, login, logout, refresh }}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={{ status, me, autoLocked, login, logout, refresh }}>{children}</AuthContext.Provider>
   )
 }
 

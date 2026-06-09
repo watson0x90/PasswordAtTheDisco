@@ -585,5 +585,6 @@ func (s *Store) Summary(id string) (model.Summary, error) {
 			sum.RiskCounts[acc.RiskLevel]++
 		}
 	}
+	sum.Posture = model.PostureScore(a.ds.Accounts) // single source for the dashboard gauge
 	return sum, nil
 }

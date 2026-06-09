@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { api, ApiError, type DiffAccount, type DiffResult } from "../api"
 import { useAudits } from "../auditsData"
+import { RISK_CLASS } from "../util"
 
 export function Compare() {
   const { audits } = useAudits()
@@ -109,6 +110,8 @@ function DiffView({ res }: { res: DiffResult }) {
 
 function CohortCard({ title, tone, items: raw }: { title: string; tone: string; items: DiffAccount[] | null }) {
   const items = raw ?? []
+  const [showAll, setShowAll] = useState(false)
+  const shown = showAll ? items : items.slice(0, 50)
   return (
     <div className="panel chart-card">
       <div className="chart-title">
@@ -118,13 +121,27 @@ function CohortCard({ title, tone, items: raw }: { title: string; tone: string; 
         <div className="chart-empty">none</div>
       ) : (
         <div className="cohort-list">
-          {items.slice(0, 50).map((x, i) => (
+          {shown.map((x, i) => (
             <div className="cohort-row" key={i}>
               <span>{x.username}</span>
-              <span className="muted">{x.domain}</span>
+              <span className="cohort-meta">
+                {x.risk_a && x.risk_b && x.risk_a !== x.risk_b ? (
+                  <span className="risk-transition">
+                    <span className={`badge ${RISK_CLASS[x.risk_a] || ""}`}>{x.risk_a}</span>
+                    <span className="arrow">→</span>
+                    <span className={`badge ${RISK_CLASS[x.risk_b] || ""}`}>{x.risk_b}</span>
+                  </span>
+                ) : (
+                  <span className="muted">{x.domain}</span>
+                )}
+              </span>
             </div>
           ))}
-          {items.length > 50 && <div className="meta-line">+{(items.length - 50).toLocaleString()} more</div>}
+          {items.length > 50 && (
+            <button className="link-btn" onClick={() => setShowAll((v) => !v)}>
+              {showAll ? "show top 50" : `show all ${items.length.toLocaleString()}`}
+            </button>
+          )}
         </div>
       )}
     </div>

@@ -561,6 +561,20 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 .cohort-list { display: flex; flex-direction: column; }
 .cohort-row { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 6px 0; border-top: 1px solid var(--hairline); }
 .cohort-row:first-child { border-top: none; }
+.cohort-meta { display: flex; align-items: center; gap: 8px; }
+.risk-transition { display: inline-flex; align-items: center; gap: 6px; }
+.risk-transition .arrow { color: var(--faint); }
+
+.notice {
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  color: #fcd34d;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+.field-hint { font-size: 11px; color: var(--dim); margin-top: 4px; }
 
 .posture-panel { display: flex; gap: 36px; align-items: center; flex-wrap: wrap; margin-bottom: 38px; }
 .posture-gauge-wrap { flex: 0 0 220px; text-align: center; }

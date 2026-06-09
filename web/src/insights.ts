@@ -14,8 +14,11 @@ export interface Posture {
 
 const r1 = (n: number) => Math.round(n * 10) / 10
 
-// posture reproduces the legacy executive Security Posture Score:
-//   risk distribution (40) + password strength (30) + privilege (15) + compliance (15)
+// posture computes the score for an arbitrary account subset (used by the
+// per-domain mini-dashboards, which have no server endpoint). The authoritative
+// WHOLE-AUDIT posture is served by /api/summary (Go model.PostureScore) and drives
+// the Overview, HTML export, and Compare -- keep this formula in sync with it
+// (Go's golden test pins that side).
 export function posture(accts: Account[]): Posture {
   const total = accts.length
   if (!total) return { score: 0, rating: "No Data", breakdown: { risk: 0, strength: 0, privilege: 0, compliance: 0 }, likelihood: "—" }

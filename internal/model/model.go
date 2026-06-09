@@ -2,9 +2,89 @@
 package model
 
 import (
+	"math"
 	"strings"
 	"time"
 )
+
+// Posture is the executive Security Posture Score and its components.
+type Posture struct {
+	Score      float64          `json:"score"`
+	Rating     string           `json:"rating"`
+	Likelihood string           `json:"likelihood"`
+	Breakdown  PostureBreakdown `json:"breakdown"`
+}
+
+// PostureBreakdown is each posture component's weighted contribution.
+type PostureBreakdown struct {
+	Risk       float64 `json:"risk"`       // /40
+	Strength   float64 `json:"strength"`   // /30
+	Privilege  float64 `json:"privilege"`  // /15
+	Compliance float64 `json:"compliance"` // /15
+}
+
+func round1(f float64) float64 { return math.Round(f*10) / 10 }
+
+// PostureScore is the executive Security Posture Score (0-100) from the redacted
+// account set: risk distribution (40) + password strength (30) + privilege
+// exposure (15) + policy compliance (15). THIS IS THE SINGLE SOURCE OF TRUTH --
+// the HTML report, audit diff, and the /api/summary the dashboard renders all use
+// it, so the on-screen gauge can never drift from the exported report.
+func PostureScore(accounts []Account) Posture {
+	total := len(accounts)
+	if total == 0 {
+		return Posture{Rating: "No Data", Likelihood: "—"}
+	}
+	var crit, high, med, cracked, uncracked, da, viol int
+	for _, a := range accounts {
+		switch a.RiskLevel {
+		case "Critical":
+			crit++
+		case "High":
+			high++
+		case "Medium":
+			med++
+		}
+		if a.Cracked {
+			cracked++
+		} else {
+			uncracked++
+		}
+		if a.HasDAPathway() {
+			da++
+		}
+		if a.Cracked && !a.MeetsPolicy {
+			viol++
+		}
+	}
+	ft := float64(total)
+	risk := math.Max(0, 100-float64(crit)/ft*200-float64(high)/ft*150-float64(med)/ft*50) / 100 * 40
+	strength := 0.0
+	if cracked+uncracked > 0 {
+		strength = float64(uncracked) / float64(cracked+uncracked) * 30
+	}
+	priv := math.Max(0, 15-float64(da)/ft*100)
+	comp := float64(total-viol) / ft * 15
+	p := Posture{
+		Score:     round1(risk + strength + priv + comp),
+		Rating:    "Weak",
+		Breakdown: PostureBreakdown{Risk: round1(risk), Strength: round1(strength), Privilege: round1(priv), Compliance: round1(comp)},
+	}
+	if p.Score >= 85 {
+		p.Rating = "Strong"
+	} else if p.Score >= 70 {
+		p.Rating = "Fair"
+	}
+	p.Likelihood = "Low"
+	if crit > 50 || da > 20 {
+		p.Likelihood = "Very High"
+	} else if crit > 20 || da > 10 {
+		p.Likelihood = "High"
+	} else if crit > 5 || da > 3 {
+		p.Likelihood = "Medium"
+	}
+	return p
+}
 
 // Account is a single audited AD account. Password holds the cracked cleartext
 // -- the sensitive field that must never leave the process unredacted without
@@ -102,5 +182,6 @@ type Summary struct {
 	HIBPBreached  int            `json:"hibp_breached"`
 	DAPathways    int            `json:"da_pathways"`
 	RiskCounts    map[string]int `json:"risk_counts"`
+	Posture       Posture        `json:"posture"`
 	GeneratedAt   time.Time      `json:"generated_at"`
 }

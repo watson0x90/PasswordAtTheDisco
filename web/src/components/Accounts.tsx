@@ -29,7 +29,11 @@ export function Accounts() {
   const [viewH, setViewH] = useState(560)
   useEffect(() => {
     const el = scrollRef.current
-    if (el) setViewH(el.clientHeight)
+    if (!el) return
+    setViewH(el.clientHeight)
+    const ro = new ResizeObserver(() => setViewH(el.clientHeight)) // keep the window correct on resize
+    ro.observe(el)
+    return () => ro.disconnect()
   }, [accounts])
   // reset scroll to top when the filter/search changes
   useEffect(() => {
@@ -216,6 +220,11 @@ export function Accounts() {
 }
 
 function AccountDrawer({ account: a, onClose }: { account: Account; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose()
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [onClose])
   const rows: [string, ReactNode][] = [
     ["Domain", a.domain],
     ["Status", a.cracked ? "Cracked" : "Uncracked"],
@@ -234,7 +243,7 @@ function AccountDrawer({ account: a, onClose }: { account: Account; onClose: () 
   return (
     <>
       <div className="drawer-backdrop" onClick={onClose} />
-      <aside className="drawer">
+      <aside className="drawer" role="dialog" aria-modal="true" aria-label={`Account ${a.username}`}>
         <div className="drawer-head">
           <span className="drawer-title">{a.username}</span>
           <button className="link-btn" onClick={onClose}>

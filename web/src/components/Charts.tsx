@@ -57,11 +57,11 @@ export function Donut({ data, height = 200 }: { data: Slice[]; height?: number }
 }
 
 // ChartCard is the standard titled panel wrapper used across the chart views.
-export function ChartCard({ title, children }: { title: string; children: ReactNode }) {
+export function ChartCard({ title, summary, children }: { title: string; summary?: string; children: ReactNode }) {
   return (
     <div className="panel chart-card">
       <div className="chart-title">{title}</div>
-      {children}
+      <div role="img" aria-label={summary ? `${title}: ${summary}` : title}>{children}</div>
     </div>
   )
 }

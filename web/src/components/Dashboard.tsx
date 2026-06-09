@@ -1,11 +1,11 @@
-import { useState } from "react"
-import { ApiError } from "../api"
+import { useEffect, useState } from "react"
+import { api, ApiError, type Summary } from "../api"
 import { useAuth } from "../auth"
 import { useAudits } from "../auditsData"
 import { useAccountsData } from "../accountsData"
 import { useNav } from "../nav"
 import { hasDA } from "../util"
-import { posture, riskDistribution, hibpSplit, lengthBuckets } from "../insights"
+import { riskDistribution, hibpSplit, lengthBuckets } from "../insights"
 import { Bars, ChartCard, Donut, PostureGauge } from "./Charts"
 
 const RATING_COLOR: Record<string, string> = { Strong: "#34d399", Fair: "#fbbf24", Weak: "#fb7185", "No Data": "#8a96b2" }
@@ -20,6 +20,21 @@ const LIKELIHOOD_COLOR: Record<string, string> = {
 export function Dashboard() {
   const { activeId, audits, loading: auditsLoading } = useAudits()
   const { accounts, error } = useAccountsData()
+  // Posture comes from the server (single source of truth shared with the HTML
+  // export + Compare), so the gauge can never drift from the exported report.
+  const [summary, setSummary] = useState<Summary | null>(null)
+  useEffect(() => {
+    if (!activeId) {
+      setSummary(null)
+      return
+    }
+    let live = true
+    setSummary(null)
+    api.summary().then((s) => live && setSummary(s)).catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [activeId])
 
   if (auditsLoading) return <div className="center-state"><div className="spinner">loading</div></div>
   if (!activeId) {
@@ -36,8 +51,7 @@ export function Dashboard() {
   const da = accounts.filter((a) => hasDA(a.da_domains)).length
   const crackPct = total ? Math.round((cracked / total) * 100) : 0
 
-  const p = posture(accounts)
-  const pColor = RATING_COLOR[p.rating]
+  const p = summary?.posture
 
   return (
     <>
@@ -57,19 +71,25 @@ export function Dashboard() {
 
       <div className="section-label">Security Posture</div>
       <div className="panel posture-panel">
-        <div className="posture-gauge-wrap">
-          <PostureGauge score={p.score} color={pColor} rating={p.rating} />
-          <div className="posture-likelihood">
-            Estimated breach likelihood:{" "}
-            <b style={{ color: LIKELIHOOD_COLOR[p.likelihood] }}>{p.likelihood}</b>
-          </div>
-        </div>
-        <div className="posture-breakdown">
-          <PostureBar label="Risk distribution" value={p.breakdown.risk} max={40} />
-          <PostureBar label="Password strength" value={p.breakdown.strength} max={30} />
-          <PostureBar label="Privilege exposure" value={p.breakdown.privilege} max={15} />
-          <PostureBar label="Policy compliance" value={p.breakdown.compliance} max={15} />
-        </div>
+        {p ? (
+          <>
+            <div className="posture-gauge-wrap">
+              <PostureGauge score={p.score} color={RATING_COLOR[p.rating]} rating={p.rating} />
+              <div className="posture-likelihood">
+                Estimated breach likelihood:{" "}
+                <b style={{ color: LIKELIHOOD_COLOR[p.likelihood] }}>{p.likelihood}</b>
+              </div>
+            </div>
+            <div className="posture-breakdown">
+              <PostureBar label="Risk distribution" value={p.breakdown.risk} max={40} />
+              <PostureBar label="Password strength" value={p.breakdown.strength} max={30} />
+              <PostureBar label="Privilege exposure" value={p.breakdown.privilege} max={15} />
+              <PostureBar label="Policy compliance" value={p.breakdown.compliance} max={15} />
+            </div>
+          </>
+        ) : (
+          <div className="center-state"><div className="spinner">scoring</div></div>
+        )}
       </div>
 
       <div className="section-label">Charts</div>

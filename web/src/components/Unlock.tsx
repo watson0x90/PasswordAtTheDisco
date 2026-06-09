@@ -4,7 +4,7 @@ import { useAuth } from "../auth"
 import { Logo } from "./Logo"
 
 export function Unlock() {
-  const { me, refresh, logout } = useAuth()
+  const { me, autoLocked, refresh, logout } = useAuth()
   const firstRun = me ? !me.store_initialized : false
   const isLead = me?.role === "lead"
 
@@ -68,6 +68,9 @@ export function Unlock() {
           </span>
         </div>
         <div className="login-tag">{firstRun ? "set store passphrase" : "unlock data store"}</div>
+        {autoLocked && !firstRun && (
+          <div className="notice">🔒 Session auto-locked for inactivity — re-enter the passphrase to continue.</div>
+        )}
         <p className="ingest-note">
           {firstRun
             ? "First run: choose a passphrase that encrypts every audit on this server. It is never stored — if you lose it, the data cannot be recovered."

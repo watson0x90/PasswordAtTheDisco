@@ -6,7 +6,6 @@ import (
 	"encoding/csv"
 	"html/template"
 	"io"
-	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -55,8 +54,8 @@ func ComputeDiff(a, b []model.Account) Diff {
 		NewlyBreached: []DiffAccount{},
 		Regressed:     []DiffAccount{},
 	}
-	d.PostureA, _, _, _ = PostureScore(a)
-	d.PostureB, _, _, _ = PostureScore(b)
+	d.PostureA = model.PostureScore(a).Score
+	d.PostureB = model.PostureScore(b).Score
 	ref := func(ax, bx model.Account, name model.Account) DiffAccount {
 		return DiffAccount{Username: name.Username, Domain: name.Domain, RiskA: ax.RiskLevel, RiskB: bx.RiskLevel}
 	}
@@ -137,66 +136,6 @@ type htmlData struct {
 
 var riskColor = map[string]string{"Critical": "#fb7185", "High": "#fbbf24", "Medium": "#a3e635", "Low": "#22d3ee"}
 
-func round1(f float64) float64 { return math.Round(f*10) / 10 }
-
-// PostureScore is the executive Security Posture Score (0-100) from the redacted
-// account set: risk distribution (40) + password strength (30) + privilege
-// exposure (15) + policy compliance (15). The single Go source of truth (HTML
-// report + audit diff); it mirrors web/src/insights.ts:posture().
-func PostureScore(accounts []model.Account) (score float64, rating, likelihood string, breakdown [4]float64) {
-	total := len(accounts)
-	if total == 0 {
-		return 0, "No Data", "—", breakdown
-	}
-	var crit, high, med, cracked, uncracked, da, viol int
-	for _, a := range accounts {
-		switch a.RiskLevel {
-		case "Critical":
-			crit++
-		case "High":
-			high++
-		case "Medium":
-			med++
-		}
-		if a.Cracked {
-			cracked++
-		} else {
-			uncracked++
-		}
-		if a.HasDAPathway() {
-			da++
-		}
-		if a.Cracked && !a.MeetsPolicy {
-			viol++
-		}
-	}
-	ft := float64(total)
-	risk := math.Max(0, 100-float64(crit)/ft*200-float64(high)/ft*150-float64(med)/ft*50) / 100 * 40
-	strength := 0.0
-	if cracked+uncracked > 0 {
-		strength = float64(uncracked) / float64(cracked+uncracked) * 30
-	}
-	priv := math.Max(0, 15-float64(da)/ft*100)
-	comp := float64(total-viol) / ft * 15
-	score = round1(risk + strength + priv + comp)
-	rating = "Weak"
-	if score >= 85 {
-		rating = "Strong"
-	} else if score >= 70 {
-		rating = "Fair"
-	}
-	likelihood = "Low"
-	if crit > 50 || da > 20 {
-		likelihood = "Very High"
-	} else if crit > 20 || da > 10 {
-		likelihood = "High"
-	} else if crit > 5 || da > 3 {
-		likelihood = "Medium"
-	}
-	breakdown = [4]float64{round1(risk), round1(strength), round1(priv), round1(comp)}
-	return
-}
-
 // HTML writes a self-contained (inline CSS, no scripts/assets) redacted report.
 func HTML(w io.Writer, name string, generated time.Time, accounts []model.Account) error {
 	d := htmlData{Name: name, Generated: generated.UTC().Format("2006-01-02 15:04 UTC"), Accounts: accounts}
@@ -237,7 +176,9 @@ func HTML(w io.Writer, name string, generated time.Time, accounts []model.Accoun
 		}
 	}
 
-	d.Score, d.Rating, d.Likelihood, d.BR = PostureScore(accounts)
+	p := model.PostureScore(accounts)
+	d.Score, d.Rating, d.Likelihood = p.Score, p.Rating, p.Likelihood
+	d.BR = [4]float64{p.Breakdown.Risk, p.Breakdown.Strength, p.Breakdown.Privilege, p.Breakdown.Compliance}
 	d.BRPct = [4]int{int(d.BR[0] / 40 * 100), int(d.BR[1] / 30 * 100), int(d.BR[2] / 15 * 100), int(d.BR[3] / 15 * 100)}
 
 	maxRisk := 1

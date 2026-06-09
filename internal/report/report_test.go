@@ -9,23 +9,6 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 )
 
-func TestPostureScoreGolden(t *testing.T) {
-	// Pins the Go formula; mirror of web/src/insights.ts:posture(). 2 accounts:
-	// 1 Critical cracked+breached non-compliant, 1 Low cracked compliant.
-	accts := []model.Account{
-		{RiskLevel: "Critical", Cracked: true, HIBPBreached: true, MeetsPolicy: false},
-		{RiskLevel: "Low", Cracked: true, MeetsPolicy: true},
-	}
-	score, rating, _, br := PostureScore(accts)
-	// risk: max(0,100-(1/2)*200)=0 ->0 ; strength 0 ; priv 15 ; compliance (2-1)/2*15=7.5
-	if score != 22.5 || rating != "Weak" {
-		t.Fatalf("posture = %.1f %s, want 22.5 Weak", score, rating)
-	}
-	if br != [4]float64{0, 0, 15, 7.5} {
-		t.Fatalf("breakdown = %v, want [0 0 15 7.5]", br)
-	}
-}
-
 func TestComputeDiff(t *testing.T) {
 	a := []model.Account{
 		{Username: "alice", Domain: "CORP", Cracked: true, RiskLevel: "High"},

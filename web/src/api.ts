@@ -49,12 +49,20 @@ export interface DiffResult {
   diff: AuditDiff
 }
 
+export interface Posture {
+  score: number
+  rating: string
+  likelihood: string
+  breakdown: { risk: number; strength: number; privilege: number; compliance: number }
+}
+
 export interface Summary {
   total_accounts: number
   cracked: number
   hibp_breached: number
   da_pathways: number
   risk_counts: Record<string, number>
+  posture: Posture
   generated_at: string
 }
 
@@ -109,6 +117,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const text = await res.text()
   const body = text ? safeParse(text) : null
   if (!res.ok) {
+    // 423 = the store auto-locked for inactivity. Broadcast so the app can return
+    // to the unlock screen instead of stranding the operator on a raw error.
+    if (res.status === 423) {
+      window.dispatchEvent(new CustomEvent("patd:locked"))
+    }
     let msg = `request failed (${res.status})`
     if (body && typeof body === "object" && "error" in body) {
       const e = (body as { error?: unknown }).error
