@@ -402,6 +402,13 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 .dstat-v { font-family: var(--mono); font-size: 20px; font-weight: 600; line-height: 1.1; }
 .dstat-l { font-size: 9px; letter-spacing: 0.6px; text-transform: uppercase; color: var(--faint); margin-top: 4px; }
 
+.domain-card-btn { font: inherit; color: inherit; text-align: left; width: 100%; cursor: pointer; transition: border-color 0.15s, transform 0.15s; }
+.domain-card-btn:hover { border-color: rgba(129, 140, 248, 0.45); transform: translateY(-2px); }
+.domain-open { font-size: 11px; color: var(--accent); margin-top: 14px; }
+.domain-back { display: inline-block; margin-bottom: 14px; color: var(--dim); font-size: 13px; }
+.domain-back:hover { color: var(--text); }
+.domain-detail-stats { flex: 1; min-width: 280px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+
 /* ---- ingest (web upload) ---- */
 
 .ingest-form { max-width: 560px; }
