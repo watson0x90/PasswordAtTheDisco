@@ -675,3 +675,22 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 .audit-new:hover { color: #7dd3fc; }
 .audit-create-form { display: flex; gap: 8px; padding: 8px; }
 .audit-create-form .search { flex: 1; width: auto; padding: 8px 11px; }
+
+/* HIBP / Pwned Passwords page */
+.pwned-build { margin-top: 14px; }
+.pwned-output {
+  margin-top: 10px;
+  max-height: 340px;
+  overflow: auto;
+  padding: 12px 14px;
+  background: #0c1322;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--dim);
+}
+.pwned-build .stat-sub { font-family: var(--mono); word-break: break-all; }

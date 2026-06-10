@@ -10,6 +10,7 @@ import { Accounts } from "./components/Accounts"
 import { Compare } from "./components/Compare"
 import { Ingest } from "./components/Ingest"
 import { Policies } from "./components/Policies"
+import { PwnedPasswords } from "./components/PwnedPasswords"
 import { Unlock } from "./components/Unlock"
 
 // Recharts is heavy (~180KB) and only the chart views need it. Lazy-load them so
@@ -34,6 +35,8 @@ function viewFor(view: View) {
       return <Ingest />
     case "policies":
       return <Policies />
+    case "pwned":
+      return <PwnedPasswords />
     default:
       return <Dashboard />
   }

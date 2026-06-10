@@ -100,9 +100,11 @@ export interface PoliciesPayload {
 
 export class ApiError extends Error {
   status: number
-  constructor(status: number, message: string) {
+  body: unknown // parsed response body, when present (e.g. build output on a failed build)
+  constructor(status: number, message: string, body?: unknown) {
     super(message)
     this.status = status
+    this.body = body
     this.name = "ApiError"
   }
 }
@@ -127,7 +129,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       const e = (body as { error?: unknown }).error
       if (typeof e === "string" && e) msg = e
     }
-    throw new ApiError(res.status, msg)
+    throw new ApiError(res.status, msg, body)
   }
   return body as T
 }
@@ -228,6 +230,40 @@ export const api = {
       headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
       body: JSON.stringify(payload),
     }),
+
+  pwnedStatus: () => request<PwnedStatus>("/pwned/status"),
+
+  pwnedBuild: (csrf: string) =>
+    request<PwnedBuild>("/pwned/build", { method: "POST", headers: { "X-CSRF-Token": csrf } }),
+
+  pwnedProbe: (csrf: string) =>
+    request<PwnedProbe>("/pwned/probe", { method: "POST", headers: { "X-CSRF-Token": csrf } }),
+}
+
+export interface PwnedStatus {
+  source_dir: string
+  source_present: boolean
+  dotnet_version?: string
+  built: boolean
+  exe_path?: string
+  data_file?: string
+  data_bytes: number
+}
+
+export interface PwnedBuild {
+  ok: boolean
+  exe_path?: string
+  output: string
+  elapsed: string
+}
+
+export interface PwnedProbe {
+  ok: boolean
+  url: string
+  status: number
+  suffixes: number
+  sample?: string
+  elapsed: string
 }
 
 export interface AuditResult {

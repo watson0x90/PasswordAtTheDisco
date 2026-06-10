@@ -4,7 +4,7 @@ import { useAuth } from "../auth"
 import { useAudits } from "../auditsData"
 import { Logo } from "./Logo"
 
-export type View = "overview" | "actionable" | "domains" | "accounts" | "insights" | "compare" | "ingest" | "policies"
+export type View = "overview" | "actionable" | "domains" | "accounts" | "insights" | "compare" | "ingest" | "policies" | "pwned"
 
 const TABS: { id: View; label: string }[] = [
   { id: "overview", label: "Overview" },
@@ -28,7 +28,7 @@ export function AppShell({ view, onNav, children }: { view: View; onNav: (v: Vie
   // Ingest (web upload) and Policies editing are lead-only.
   const tabs =
     me?.role === "lead"
-      ? [...TABS, { id: "ingest" as View, label: "Upload" }, { id: "policies" as View, label: "Policies" }]
+      ? [...TABS, { id: "ingest" as View, label: "Upload" }, { id: "policies" as View, label: "Policies" }, { id: "pwned" as View, label: "HIBP" }]
       : TABS
   return (
     <div className="shell">

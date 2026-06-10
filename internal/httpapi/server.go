@@ -25,6 +25,7 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/engine"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/pwned"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/report"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/secretsdump"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/store"
@@ -48,6 +49,8 @@ type Server struct {
 	Engine        *engine.Engine // optional: enables lead web uploads (POST /api/upload)
 	Policies      *policy.Set    // shared with Engine; exposed/edited via /api/policies
 	PolicyPath    string         // where to persist policy edits (empty = in-memory only)
+	PwnedDir      string         // PwnedPasswordsDownloader source dir (HIBP NTLM tool)
+	HIBPPath      string         // configured HIBP NTLM index path (for the Pwned page status)
 
 	lastActivity atomic.Int64 // unix-nano of the last unlocked data access (auto-lock)
 	inFlight     atomic.Int64 // in-flight data requests; auto-lock waits for zero
@@ -95,6 +98,10 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/lock", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleLock))))
 	mux.Handle("POST /api/passphrase", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleChangePassphrase))))
 	mux.Handle("POST /api/rekey", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleRekey))))
+	// HIBP / Pwned Passwords downloader (lead): build the .NET tool + probe the source
+	mux.Handle("GET /api/pwned/status", s.requireAuth(http.HandlerFunc(s.handlePwnedStatus)))
+	mux.Handle("POST /api/pwned/build", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handlePwnedBuild))))
+	mux.Handle("POST /api/pwned/probe", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handlePwnedProbe))))
 	// Audit (engagement) management + selection -- needs an unlocked store
 	mux.Handle("GET /api/audits", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleListAudits))))
 	mux.Handle("POST /api/audits", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleCreateAudit)))))
@@ -437,6 +444,65 @@ func (s *Server) handleRekey(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "store_rekey", Source: r.RemoteAddr, Result: "ok"})
 	writeJSON(w, http.StatusOK, map[string]bool{"rekeyed": true})
+}
+
+// handlePwnedStatus reports the local downloader/data state (lead).
+func (s *Server) handlePwnedStatus(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	writeJSON(w, http.StatusOK, pwned.Stat(s.PwnedDir, s.HIBPPath))
+}
+
+// handlePwnedBuild compiles the bundled PwnedPasswordsDownloader via `dotnet build`
+// (lead). Fixed args, no user input -> no command injection.
+func (s *Server) handlePwnedBuild(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	if rc := http.NewResponseController(w); rc != nil { // a build can exceed the default write timeout
+		_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Minute))
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Minute)
+	defer cancel()
+	res, err := pwned.Build(ctx, s.PwnedDir)
+	logResult := "ok"
+	if err != nil {
+		logResult = "failed"
+	}
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "pwned_build", Source: r.RemoteAddr, Result: logResult})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error(), "output": res.Output})
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// handlePwnedProbe makes a single HIBP NTLM range request to confirm the download
+// source is reachable (lead). Does NOT start the full download.
+func (s *Server) handlePwnedProbe(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	res, err := pwned.Probe(ctx)
+	logResult := "ok"
+	if err != nil {
+		logResult = "failed"
+	}
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "pwned_probe", Source: r.RemoteAddr, Result: logResult})
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error(), "url": res.URL})
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 // touch records activity for the idle auto-lock timer.

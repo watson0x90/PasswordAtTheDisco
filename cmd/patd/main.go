@@ -78,8 +78,10 @@ func main() {
 	// Audit engine for web uploads (lead POST /api/audit). Same inputs as the
 	// `audit` CLI, from env. cleanup closes the HIBP searcher on shutdown.
 	policyPath := env("PATD_POLICY", "lists/password_policy.json")
+	hibpPath := env("PATD_HIBP", "PwnedPasswordsDownloader/pwnedpasswords_ntlm.txt")
+	pwnedDir := env("PATD_PWNED_DIR", "PwnedPasswordsDownloader")
 	eng, policies, cleanup := buildEngine(
-		env("PATD_HIBP", "PwnedPasswordsDownloader/pwnedpasswords_ntlm.txt"),
+		hibpPath,
 		env("PATD_LISTS", "lists"),
 		env("PATD_BHE", "config/bloodhound.json"),
 		policyPath,
@@ -113,6 +115,8 @@ func main() {
 		Engine:        eng,
 		Policies:      policies,
 		PolicyPath:    policyPath,
+		PwnedDir:      pwnedDir,
+		HIBPPath:      hibpPath,
 	}
 
 	// Idle auto-lock: drop the key + clear decrypted data after inactivity so
