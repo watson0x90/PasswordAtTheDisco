@@ -44,6 +44,7 @@ type Server struct {
 	Audit         *audit.Logger
 	LoginLimiter  *auth.Limiter  // per-IP failed-login throttle
 	UnlockLimiter *auth.Limiter  // per-IP failed-unlock throttle (brute-force guard)
+	RekeyLimiter  *auth.Limiter  // per-IP failed-rekey throttle (separate so it can't lock out unlock)
 	Engine        *engine.Engine // optional: enables lead web uploads (POST /api/upload)
 	Policies      *policy.Set    // shared with Engine; exposed/edited via /api/policies
 	PolicyPath    string         // where to persist policy edits (empty = in-memory only)
@@ -367,8 +368,8 @@ func (s *Server) handleRekey(w http.ResponseWriter, r *http.Request) {
 	// The passphrase is verified here (argon2id), so rate-limit like unlock to blunt
 	// guessing + the DoS amplification (each correct guess re-encrypts the store).
 	ip := clientIP(r)
-	if s.UnlockLimiter != nil {
-		if ok, retry := s.UnlockLimiter.Allowed(ip); !ok {
+	if s.RekeyLimiter != nil {
+		if ok, retry := s.RekeyLimiter.Allowed(ip); !ok {
 			w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())+1))
 			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, try again later"})
 			return
@@ -397,8 +398,8 @@ func (s *Server) handleRekey(w http.ResponseWriter, r *http.Request) {
 		s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "store_rekey", Source: r.RemoteAddr, Result: "failed"})
 		switch {
 		case errors.Is(err, vault.ErrBadPassphrase):
-			if s.UnlockLimiter != nil {
-				s.UnlockLimiter.RecordFailure(ip)
+			if s.RekeyLimiter != nil {
+				s.RekeyLimiter.RecordFailure(ip)
 			}
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "current passphrase is incorrect"})
 		case errors.Is(err, vault.ErrRekeyInProgress):
@@ -408,8 +409,8 @@ func (s *Server) handleRekey(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if s.UnlockLimiter != nil {
-		s.UnlockLimiter.Reset(ip)
+	if s.RekeyLimiter != nil {
+		s.RekeyLimiter.Reset(ip)
 	}
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "store_rekey", Source: r.RemoteAddr, Result: "ok"})
 	writeJSON(w, http.StatusOK, map[string]bool{"rekeyed": true})

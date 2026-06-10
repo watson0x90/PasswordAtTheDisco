@@ -109,6 +109,7 @@ func main() {
 		Audit:         audit.New(auditW),
 		LoginLimiter:  auth.NewLimiter(10, 15*time.Minute),
 		UnlockLimiter: auth.NewLimiter(5, 15*time.Minute),
+		RekeyLimiter:  auth.NewLimiter(5, 15*time.Minute),
 		Engine:        eng,
 		Policies:      policies,
 		PolicyPath:    policyPath,

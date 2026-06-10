@@ -214,7 +214,7 @@ function RotateDataKey({ csrf }: { csrf: string }) {
             <button type="button" className="btn" onClick={() => setArmed(false)} disabled={busy}>
               Cancel
             </button>
-            <button type="button" className="btn btn-primary" onClick={submit} disabled={busy}>
+            <button type="button" className="btn btn-primary" onClick={submit} disabled={busy || !pass}>
               {busy ? "Rotating…" : "Yes, rotate now"}
             </button>
           </div>

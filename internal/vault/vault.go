@@ -296,10 +296,6 @@ func (v *Vault) ChangePassphrase(oldPass, newPass string) error {
 // remainder under the in-progress key) rather than starting over. Requires the
 // correct current passphrase; holds an exclusive lock for the whole operation.
 func (v *Vault) Rekey(passphrase string) error {
-	if !v.rekeying.CompareAndSwap(false, true) {
-		return ErrRekeyInProgress
-	}
-	defer v.rekeying.Store(false)
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if v.dek == nil {
@@ -322,6 +318,14 @@ func (v *Vault) Rekey(passphrase string) error {
 	if err != nil {
 		return ErrBadPassphrase
 	}
+	// Mark in-progress only AFTER the passphrase verifies, so a wrong-passphrase
+	// attempt doesn't flip the flag (which would 503 all readers + report
+	// "rekeying" on /healthz for nothing). store.writeMu already serializes rekeys;
+	// this CAS just rejects a redundant concurrent one.
+	if !v.rekeying.CompareAndSwap(false, true) {
+		return ErrRekeyInProgress
+	}
+	defer v.rekeying.Store(false)
 
 	// Pick the target DEK + the keys blobs may currently be sealed under.
 	var target, prev []byte
