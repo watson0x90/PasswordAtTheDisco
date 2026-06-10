@@ -85,7 +85,9 @@ type Vault struct {
 func (v *Vault) Rekeying() bool { return v.rekeying.Load() }
 
 // RekeyElapsed reports how long the in-progress rekey has been running (0 if none),
-// so a monitor can alert on a wedged rotation without the server self-killing.
+// so a monitor can alert on a wedged rotation without the server self-killing. This
+// is a wall-clock delta (UnixNano), advisory only: an NTP step could momentarily
+// skew it -- acceptable for a health hint, don't use it for anything load-bearing.
 func (v *Vault) RekeyElapsed() time.Duration {
 	start := v.rekeyStartedN.Load()
 	if start == 0 {
@@ -314,13 +316,12 @@ func (v *Vault) ChangePassphrase(oldPass, newPass string) error {
 // passphrase. Crash-safe: the keyfile holds BOTH keys during the migration, so an
 // interruption leaves every blob readable, and a re-run RESUMES (re-sealing the
 // remainder under the in-progress key) rather than starting over. Requires the
-// correct current passphrase; holds an exclusive lock for the whole operation.
+// correct current passphrase; holds the exclusive lock only for the re-seal phase.
 func (v *Vault) Rekey(passphrase string) error {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	if v.dek == nil {
-		return ErrLocked
-	}
+	// Verify the passphrase + load the keys WITHOUT the exclusive lock: this reads
+	// only the on-disk keyfile (not v.dek/v.prevDEK), so a wrong/slow guess
+	// (argon2id ~100ms) doesn't stall every reader on v.mu. store.writeMu already
+	// serializes rekeys against writes, so the keyfile is stable here.
 	kf, err := v.readKeyfile()
 	if err != nil {
 		return err
@@ -329,24 +330,29 @@ func (v *Vault) Rekey(passphrase string) error {
 	if err != nil {
 		return err
 	}
-	kek := deriveKEK(passphrase, salt, kf.Time, kf.Memory, kf.Threads)
 	wrapped, err := unb64(kf.WrappedDEK)
 	if err != nil {
 		return err
 	}
+	kek := deriveKEK(passphrase, salt, kf.Time, kf.Memory, kf.Threads)
 	primary, err := gcmOpen(kek, wrapped, nil)
 	if err != nil {
 		return ErrBadPassphrase
 	}
-	// Mark in-progress only AFTER the passphrase verifies, so a wrong-passphrase
-	// attempt doesn't flip the flag (which would 503 all readers + report
-	// "rekeying" on /healthz for nothing). store.writeMu already serializes rekeys;
-	// this CAS just rejects a redundant concurrent one.
+
+	// Passphrase good -> mark in-progress (rejecting a redundant concurrent rekey)
+	// BEFORE taking the exclusive lock, so readers fast-fail with 503 during the
+	// slow O(n) re-seal rather than stalling on v.mu.
 	if !v.rekeying.CompareAndSwap(false, true) {
 		return ErrRekeyInProgress
 	}
 	v.rekeyStartedN.Store(time.Now().UnixNano())
 	defer func() { v.rekeying.Store(false); v.rekeyStartedN.Store(0) }()
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.dek == nil { // auto-lock could have raced in between (HTTP layer guards via inFlight)
+		return ErrLocked
+	}
 
 	// Pick the target DEK + the keys blobs may currently be sealed under.
 	var target, prev []byte
