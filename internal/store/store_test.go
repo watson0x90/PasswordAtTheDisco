@@ -35,6 +35,52 @@ func TestConcurrentReplaceDomainNoLostUpdate(t *testing.T) {
 	}
 }
 
+// Regression for the panel-3 data-loss race: writes hammering the store while a
+// rekey runs must not lose or brick any audit. (-race also checks memory safety;
+// the assertion that every audit still decrypts after reopen is the logical guard
+// that store.Rekey holds writeMu.)
+func TestRekeyConcurrentWritesNoLoss(t *testing.T) {
+	dir := t.TempDir()
+	v, _ := vault.Open(dir)
+	s := NewPersistent(v)
+	if err := s.Initialize("rekey-race-passphrase"); err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for i := 0; i < 6; i++ {
+		m, _ := s.CreateAudit(fmt.Sprintf("A%d", i), "")
+		if err := s.Replace(m.ID, model.Dataset{Accounts: []model.Account{{Username: fmt.Sprintf("u%d", i), Domain: "D", Cracked: true}}}); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, m.ID)
+	}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() { defer wg.Done(); _ = s.Rekey("rekey-race-passphrase") }()
+	for _, id := range ids {
+		wg.Add(1)
+		go func(id string) {
+			defer wg.Done()
+			_ = s.ReplaceDomain(id, "D", []model.Account{{Username: "x", Domain: "D", Cracked: true}})
+		}(id)
+	}
+	wg.Wait()
+
+	// Reopen as on restart: every audit must still decrypt under the (rotated) key.
+	s2 := NewPersistent(mustReopen(t, dir))
+	if err := s2.Unlock("rekey-race-passphrase"); err != nil {
+		t.Fatalf("unlock after concurrent rekey: %v", err)
+	}
+	if len(s2.List()) != len(ids) {
+		t.Fatalf("audits lost across rekey race: %d/%d", len(s2.List()), len(ids))
+	}
+	for _, id := range ids {
+		if _, err := s2.Accounts(id, true); err != nil {
+			t.Fatalf("audit %s undecryptable after rekey race: %v", id, err)
+		}
+	}
+}
+
 func TestCorruptIndexRecovers(t *testing.T) {
 	dir := t.TempDir()
 	v, _ := vault.Open(dir)

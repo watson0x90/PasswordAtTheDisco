@@ -1,6 +1,7 @@
 package vault
 
 import (
+	"crypto/rand"
 	"os"
 	"path/filepath"
 	"testing"
@@ -166,6 +167,55 @@ func TestRekeyRotatesDataKey(t *testing.T) {
 	}
 	if got, err := v2.LoadOne("aud1"); err != nil || string(got) != "audit-one-plaintext" {
 		t.Fatalf("audit unreadable after rekey+reopen: %v %q", err, got)
+	}
+}
+
+// TestRekeyResumesAfterInterruption simulates a crash mid-rekey: the keyfile holds
+// BOTH keys and blobs are split across the old and new DEK. A re-run must resume,
+// re-seal everything under the (new) primary, drop the prev, and keep all data.
+func TestRekeyResumesAfterInterruption(t *testing.T) {
+	dir := t.TempDir()
+	v, _ := Open(dir)
+	if err := v.Initialize("pp-resume-test"); err != nil {
+		t.Fatal(err)
+	}
+	// "done" blob already sealed under the (new) primary; "pending" still under old.
+	_ = v.SaveAudit("done", []byte("done-plaintext"))
+	_ = v.SaveAudit("pending", []byte("pending-plaintext"))
+
+	// Forge a mid-rekey keyfile: primary = a fresh DEK, prev = the current DEK.
+	v.mu.Lock()
+	oldDEK := append([]byte(nil), v.dek...)
+	newDEK := make([]byte, dekLen)
+	_, _ = rand.Read(newDEK)
+	// re-seal only "done" under the new DEK (as a partial rekey would have)
+	doneCT, _ := gcmSeal(newDEK, []byte("done-plaintext"), blobAAD("done"))
+	_ = writeFileAtomic(v.auditPath("done"), doneCT)
+	if err := v.wrapAndWriteBoth(newDEK, oldDEK, "pp-resume-test"); err != nil {
+		v.mu.Unlock()
+		t.Fatal(err)
+	}
+	v.mu.Unlock()
+
+	// Reopen fresh (as on restart) and unlock: prev DEK must load so both read.
+	v2, _ := Open(dir)
+	if err := v2.Unlock("pp-resume-test"); err != nil {
+		t.Fatalf("unlock interrupted-rekey store: %v", err)
+	}
+	if got, err := v2.LoadOne("pending"); err != nil || string(got) != "pending-plaintext" {
+		t.Fatalf("pending blob (old DEK) unreadable mid-rekey: %v %q", err, got)
+	}
+	// Resume: re-run Rekey; it must finish under the existing primary.
+	if err := v2.Rekey("pp-resume-test"); err != nil {
+		t.Fatalf("resume rekey: %v", err)
+	}
+	for id, want := range map[string]string{"done": "done-plaintext", "pending": "pending-plaintext"} {
+		if got, err := v2.LoadOne(id); err != nil || string(got) != want {
+			t.Fatalf("after resume, %s = %v %q", id, err, got)
+		}
+	}
+	if kf, _ := v2.readKeyfile(); kf.WrappedPrevDEK != "" {
+		t.Fatal("wrapped_prev_dek should be cleared after resume completes")
 	}
 }
 

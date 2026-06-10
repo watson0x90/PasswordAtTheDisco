@@ -318,8 +318,12 @@ func (v *Vault) Rekey(passphrase string) error {
 		// Resume an interrupted rekey: re-seal under the existing primary. Blobs are
 		// under primary (already done) or the recorded prev (still pending).
 		target = primary
-		if wp, err := unb64(kf.WrappedPrevDEK); err == nil {
-			prev, _ = gcmOpen(kek, wp, nil)
+		wp, err := unb64(kf.WrappedPrevDEK)
+		if err != nil {
+			return fmt.Errorf("rekey: corrupt wrapped_prev_dek: %w", err)
+		}
+		if prev, err = gcmOpen(kek, wp, nil); err != nil {
+			return fmt.Errorf("rekey: cannot unwrap previous DEK (interrupted rekey): %w", err)
 		}
 	} else {
 		// Fresh rekey: a new random DEK; persist [new, old] BEFORE touching blobs so
@@ -526,7 +530,10 @@ func (v *Vault) LoadAll() (map[string][]byte, error) {
 		id := strings.TrimSuffix(e.Name(), ".enc")
 		pt, err := openMany([][]byte{dek, prev}, ct, blobAAD(id))
 		if err != nil {
-			return nil, fmt.Errorf("decrypt %s: %w", e.Name(), err)
+			// One undecryptable blob must not brick the whole store: skip it (the
+			// index rebuild simply omits that audit) and log loudly.
+			log.Printf("WARNING: skipping undecryptable audit blob %s during LoadAll: %v", e.Name(), err)
+			continue
 		}
 		out[id] = pt
 	}

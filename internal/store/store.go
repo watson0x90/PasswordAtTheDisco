@@ -191,11 +191,18 @@ func (s *Store) ChangePassphrase(oldPass, newPass string) error {
 
 // Rekey rotates the data-encryption key, re-encrypting every audit under a fresh
 // DEK (the passphrase is unchanged). In-memory plaintext is unaffected. No-op
-// in-memory. The vault holds an exclusive lock for the duration.
+// in-memory.
+//
+// It MUST hold writeMu for the whole operation: otherwise a SaveAudit that
+// captured the old DEK and has a still-pending writeFileAtomic could land AFTER
+// rekey drops the old key, leaving that blob sealed under a key no longer on disk
+// -- permanently undecryptable (and, via reconcile->rebuild, bricking unlock).
 func (s *Store) Rekey(passphrase string) error {
 	if s.vault == nil {
 		return nil
 	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	return s.vault.Rekey(passphrase)
 }
 
