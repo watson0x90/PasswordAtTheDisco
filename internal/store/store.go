@@ -216,6 +216,14 @@ func (s *Store) Rekeying() bool {
 	return s.vault != nil && s.vault.Rekeying()
 }
 
+// RekeyElapsed reports how long an in-progress rekey has run (0 if none).
+func (s *Store) RekeyElapsed() time.Duration {
+	if s.vault == nil {
+		return 0
+	}
+	return s.vault.RekeyElapsed()
+}
+
 // loadIndex populates the metadata index. The index is a derived cache, so on
 // ANY failure to read it (absent, corrupt, or unparseable) it is rebuilt from the
 // still-authentic audit blobs and re-persisted -- a corrupt index never bricks

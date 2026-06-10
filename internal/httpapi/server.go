@@ -144,7 +144,9 @@ func recoverPanic(next http.Handler) http.Handler {
 // encrypted store is locked (the server is up but can't serve data yet).
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	if s.Store.Rekeying() { // lock-free: stays live while a rekey holds the vault lock
-		writeJSON(w, http.StatusOK, map[string]string{"status": "rekeying"})
+		// 200 keeps the process alive (a kill mid-rekey is safe but wasteful); the
+		// elapsed time lets a monitor alert on a wedged rotation.
+		writeJSON(w, http.StatusOK, map[string]any{"status": "rekeying", "elapsed_seconds": int(s.Store.RekeyElapsed().Seconds())})
 		return
 	}
 	if !s.Store.Unlocked() {

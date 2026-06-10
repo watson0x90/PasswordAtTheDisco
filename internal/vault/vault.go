@@ -19,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -69,18 +70,29 @@ type keyfile struct {
 
 // Vault stores encrypted audits under a directory. Safe for concurrent use.
 type Vault struct {
-	dir          string
-	mu           sync.RWMutex
-	dek          []byte       // primary DEK; nil when locked
-	prevDEK      []byte       // previous DEK during a rekey; reads fall back to it
-	seals        atomic.Int64 // blob/index seals under the current DEK (nonce odometer)
-	noncesWarned atomic.Bool  // one-shot guard for the nonce-budget warning
-	rekeying     atomic.Bool  // true while Rekey holds the exclusive lock (lock-free probe)
+	dir           string
+	mu            sync.RWMutex
+	dek           []byte       // primary DEK; nil when locked
+	prevDEK       []byte       // previous DEK during a rekey; reads fall back to it
+	seals         atomic.Int64 // blob/index seals under the current DEK (nonce odometer)
+	noncesWarned  atomic.Bool  // one-shot guard for the nonce-budget warning
+	rekeying      atomic.Bool  // true while Rekey holds the exclusive lock (lock-free probe)
+	rekeyStartedN atomic.Int64 // unix-nano a rekey began (0 = none); for /healthz observability
 }
 
 // Rekeying reports whether a data-key rotation is in progress (lock-free, so it
 // stays responsive while Rekey holds the exclusive lock).
 func (v *Vault) Rekeying() bool { return v.rekeying.Load() }
+
+// RekeyElapsed reports how long the in-progress rekey has been running (0 if none),
+// so a monitor can alert on a wedged rotation without the server self-killing.
+func (v *Vault) RekeyElapsed() time.Duration {
+	start := v.rekeyStartedN.Load()
+	if start == 0 {
+		return 0
+	}
+	return time.Duration(time.Now().UnixNano() - start)
+}
 
 // nonceWarnThreshold is a conservative PER-SESSION sanity tripwire (the counter
 // resets on each Unlock, so it is not lifetime accounting). Blobs use AES-256-GCM
@@ -325,7 +337,8 @@ func (v *Vault) Rekey(passphrase string) error {
 	if !v.rekeying.CompareAndSwap(false, true) {
 		return ErrRekeyInProgress
 	}
-	defer v.rekeying.Store(false)
+	v.rekeyStartedN.Store(time.Now().UnixNano())
+	defer func() { v.rekeying.Store(false); v.rekeyStartedN.Store(0) }()
 
 	// Pick the target DEK + the keys blobs may currently be sealed under.
 	var target, prev []byte
