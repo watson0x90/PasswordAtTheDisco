@@ -83,13 +83,16 @@ go build -tags embed -o patd ./cmd/patd     # ~10 MB; SPA baked in, zero disk de
 
 ## Deploy
 
-Guided, full-setup deploy scripts (build → first operator → TLS → service → start):
+Guided setup (build → first operator → TLS → config), then install a service as a
+separate, opt-in step:
 
 ```bash
-./deploy/deploy.sh        # Linux / macOS  (systemd / launchd)
+./deploy/deploy.sh                                   # Linux/macOS: guided setup (no service)
+sudo ./deploy/deploy.sh --install-service            # then, optionally: systemd / launchd
 ```
 ```powershell
-.\deploy\deploy.ps1       # Windows  (startup Scheduled Task)
+.\deploy\deploy.ps1                                  # Windows: guided setup (no service)
+.\deploy\deploy.ps1 -InstallService                  # then, elevated: startup Scheduled Task
 ```
 
 Static CGO-free binary → runs on **Linux / macOS / Windows (amd64 + arm64)**. Full

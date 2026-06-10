@@ -17,6 +17,10 @@ Built and verified to cross-compile (CGO-free, static):
 
 Other Go targets (FreeBSD, etc.) build too; just not packaged by the scripts.
 
+Deployment is **two steps**: (1) guided setup, then (2) — optionally — install a
+background service. Setup never touches the system service manager, so you can run
+it unprivileged and decide on a service afterward.
+
 ## Quick start
 
 ### Linux / macOS
@@ -24,18 +28,29 @@ Other Go targets (FreeBSD, etc.) build too; just not packaged by the scripts.
 ```bash
 git clone https://github.com/watson0x90/PasswordAtTheDisco
 cd PasswordAtTheDisco
-./deploy/deploy.sh           # guided: build -> operator -> TLS -> service -> start
+
+# 1) setup: build -> operator -> TLS -> config + run.sh launcher  (no service)
+./deploy/deploy.sh
+
+# 2) run it now in the foreground …
+<install-dir>/run.sh
+# … or install + start it as a service (usually needs root):
+sudo ./deploy/deploy.sh --install-service --install-dir <install-dir>
+sudo ./deploy/deploy.sh --uninstall-service --install-dir <install-dir>   # to remove
 ```
 
-Run as root to install a system-wide systemd service (under a dedicated `patd`
-user); run as a normal user for a `--user` systemd service or launchd agent.
+As root the service is a system-wide systemd unit under a dedicated `patd` user;
+unprivileged, it's a `--user` systemd service or a launchd agent. Setup prints the
+exact `--install-service` command (with the right `--install-dir` and `sudo`) when
+it finishes.
 
-**Non-interactive** (e.g. CI / config management):
+**Non-interactive setup** (e.g. CI / config management):
 
 ```bash
 INSTALL_DIR=/opt/patd PATD_BIND=0.0.0.0:8443 \
 PATD_OPERATOR=lead1 PATD_OPERATOR_PW='…' PATD_ASSUME_YES=1 \
-sudo -E ./deploy/deploy.sh
+./deploy/deploy.sh
+sudo ./deploy/deploy.sh --install-service --install-dir /opt/patd
 ```
 
 **Credential-bearing host?** Build the binary on a clean box and deploy that one
@@ -53,10 +68,14 @@ CGO_ENABLED=0 go build -tags embed -trimpath -ldflags="-s -w" -o patd ./cmd/patd
 ### Windows
 
 ```powershell
-# elevated PowerShell registers a startup Scheduled Task running as SYSTEM
-.\deploy\deploy.ps1
-# or with a prebuilt binary:
-.\deploy\deploy.ps1 -Binary C:\path\to\patd.exe
+# 1) setup (no service): build -> operator -> TLS -> config + run.ps1 launcher
+.\deploy\deploy.ps1                      # or: -Binary C:\path\to\patd.exe
+
+# 2) run it now …
+& '<install-dir>\run.ps1'
+# … or, in an ELEVATED PowerShell, register a startup Scheduled Task (runs as SYSTEM):
+.\deploy\deploy.ps1 -InstallService -InstallDir '<install-dir>'
+.\deploy\deploy.ps1 -UninstallService                              # to remove
 ```
 
 ## What the scripts configure
