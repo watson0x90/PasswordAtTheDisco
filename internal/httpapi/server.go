@@ -126,6 +126,7 @@ func (s *Server) Routes() http.Handler {
 // which could carry a username).
 func recoverPanic(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rw := &recordingWriter{ResponseWriter: w}
 		defer func() {
 			if rec := recover(); rec != nil {
 				route := r.Pattern
@@ -133,12 +134,32 @@ func recoverPanic(next http.Handler) http.Handler {
 					route = r.Method
 				}
 				log.Printf("PANIC recovered in handler %s: %v", route, rec)
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+				// Only synthesize a 500 if nothing was written yet -- otherwise a
+				// panic mid-response (e.g. a streaming export) would append a second
+				// JSON body / superfluous header onto the partial response.
+				if !rw.wrote {
+					writeJSON(rw, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+				}
 			}
 		}()
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(rw, r)
 	})
 }
+
+// recordingWriter tracks whether a response has begun, so recoverPanic doesn't
+// double-write. Unwrap exposes the underlying writer so http.ResponseController
+// (deadline extension on upload/rekey) and flushing still work through it.
+type recordingWriter struct {
+	http.ResponseWriter
+	wrote bool
+}
+
+func (w *recordingWriter) WriteHeader(code int) { w.wrote = true; w.ResponseWriter.WriteHeader(code) }
+func (w *recordingWriter) Write(b []byte) (int, error) {
+	w.wrote = true
+	return w.ResponseWriter.Write(b)
+}
+func (w *recordingWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 // handleHealthz is a readiness probe: 200 when the store is usable, 503 while the
 // encrypted store is locked (the server is up but can't serve data yet).

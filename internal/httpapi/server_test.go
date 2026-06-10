@@ -470,6 +470,74 @@ func TestRevealFailsClosedOnAuditError(t *testing.T) {
 	}
 }
 
+func TestRecoverPanic(t *testing.T) {
+	// Panic before any write -> clean 500 + inner defer still ran during unwind.
+	deferRan := false
+	h := recoverPanic(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		defer func() { deferRan = true }()
+		panic("boom")
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/x", nil))
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("panic-before-write: want 500, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "internal error") {
+		t.Fatalf("want error body, got %q", rec.Body.String())
+	}
+	if !deferRan {
+		t.Fatal("inner defer must run during the panic unwind")
+	}
+
+	// Write a 200 body THEN panic -> must NOT clobber it with a second body/header.
+	h2 := recoverPanic(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+		panic("late")
+	}))
+	rec2 := httptest.NewRecorder()
+	h2.ServeHTTP(rec2, httptest.NewRequest("GET", "/y", nil))
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("already-written status should stay 200, got %d", rec2.Code)
+	}
+	if strings.Contains(rec2.Body.String(), "internal error") {
+		t.Fatalf("must not append an error body after a write, got %q", rec2.Body.String())
+	}
+}
+
+func TestRekeyRateLimited(t *testing.T) {
+	dir := t.TempDir()
+	v, _ := vault.Open(dir)
+	st := store.NewPersistent(v)
+	if err := st.Initialize("the-real-passphrase-xyz"); err != nil {
+		t.Fatal(err)
+	}
+	srv := newServer("secret")
+	srv.Store = st
+	srv.RekeyLimiter = auth.NewLimiter(2, time.Minute)
+	srv.UnlockLimiter = auth.NewLimiter(2, time.Minute)
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+
+	// Happy path returns 200 (and resets the rekey limiter).
+	if r := postJSON(srv, "/api/rekey", lc, lcsrf, `{"passphrase":"the-real-passphrase-xyz"}`); r.Code != http.StatusOK {
+		t.Fatalf("valid rekey: want 200, got %d (%s)", r.Code, r.Body.String())
+	}
+	// Two wrong-passphrase attempts -> 401 each (and count against the rekey limiter).
+	for i := 0; i < 2; i++ {
+		if r := postJSON(srv, "/api/rekey", lc, lcsrf, `{"passphrase":"wrong"}`); r.Code != http.StatusUnauthorized {
+			t.Fatalf("wrong-pass attempt %d: want 401, got %d", i, r.Code)
+		}
+	}
+	// Limit reached -> 429.
+	if r := postJSON(srv, "/api/rekey", lc, lcsrf, `{"passphrase":"wrong"}`); r.Code != http.StatusTooManyRequests {
+		t.Fatalf("want 429 after the rekey limit, got %d", r.Code)
+	}
+	// The dedicated rekey limiter did NOT consume the unlock budget for the same IP.
+	if ok, _ := srv.UnlockLimiter.Allowed("192.0.2.1"); !ok {
+		t.Fatal("rekey failures must not lock out unlock (separate limiter)")
+	}
+}
+
 func TestShouldAutoLock(t *testing.T) {
 	now := time.Now()
 	idle := 30 * time.Minute
