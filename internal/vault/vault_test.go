@@ -11,6 +11,39 @@ import (
 
 // A corrupt wrapped_prev_dek (interrupted-rekey marker that won't unwrap) must be
 // surfaced, not swallowed into a confusing per-blob "cannot decrypt" error.
+// Unlock must FAIL (not silently unlock with prevDEK=nil) when an interrupted
+// rekey left a corrupt wrapped_prev_dek -- otherwise a later rebuild would
+// quarantine the still-recoverable prev-sealed blobs as "corrupt".
+func TestUnlockRejectsCorruptPrevDEK(t *testing.T) {
+	dir := t.TempDir()
+	v, _ := Open(dir)
+	if err := v.Initialize("unlock-prevdek-pass"); err != nil {
+		t.Fatal(err)
+	}
+	_ = v.SaveAudit("a", []byte("data"))
+	// Forge an interrupted-rekey keyfile with a garbage wrapped_prev_dek, then lock.
+	v.mu.Lock()
+	kf, _ := v.readKeyfile()
+	kf.WrappedPrevDEK = b64([]byte("garbage-not-a-wrapped-dek"))
+	b, _ := json.MarshalIndent(kf, "", "  ")
+	_ = writeFileAtomic(v.keyfilePath(), b)
+	v.mu.Unlock()
+	v.Lock()
+
+	v2, _ := Open(dir)
+	err := v2.Unlock("unlock-prevdek-pass")
+	if err == nil || !strings.Contains(err.Error(), "previous DEK") {
+		t.Fatalf("unlock with corrupt wrapped_prev_dek must fail loud, got %v", err)
+	}
+	if v2.Unlocked() {
+		t.Fatal("vault must stay locked after a failed prev-DEK unwrap (no half-unlocked state)")
+	}
+	// the blob is NOT quarantined (still .enc), so it remains recoverable
+	if _, err := os.Stat(filepath.Join(dir, auditsSubdir, "a.enc")); err != nil {
+		t.Fatalf("blob should remain (not quarantined) after a failed unlock: %v", err)
+	}
+}
+
 func TestRekeyRejectsCorruptPrevDEK(t *testing.T) {
 	dir := t.TempDir()
 	v, _ := Open(dir)

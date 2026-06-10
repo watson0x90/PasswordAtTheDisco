@@ -253,15 +253,23 @@ func (v *Vault) Unlock(passphrase string) error {
 	if err != nil {
 		return ErrBadPassphrase
 	}
-	v.dek = dek
-	v.prevDEK = nil
-	if kf.WrappedPrevDEK != "" { // a rekey was interrupted; keep the old DEK for reads
-		if wp, err := unb64(kf.WrappedPrevDEK); err == nil {
-			if pd, err := gcmOpen(kek, wp, nil); err == nil {
-				v.prevDEK = pd
-			}
+	// If a rekey was interrupted, the previous DEK MUST load -- otherwise the
+	// prev-sealed blobs are unreadable. Fail LOUD rather than silently unlocking
+	// with prevDEK=nil: a later rebuild would then quarantine those (recoverable!)
+	// blobs as "corrupt", destroying them. The operator can restore a good keyfile,
+	// or deliberately drop wrapped_prev_dek to accept the loss. Mirrors Rekey.
+	var prev []byte
+	if kf.WrappedPrevDEK != "" {
+		wp, err := unb64(kf.WrappedPrevDEK)
+		if err != nil {
+			return fmt.Errorf("unlock: corrupt wrapped_prev_dek (interrupted rekey): %w", err)
+		}
+		if prev, err = gcmOpen(kek, wp, nil); err != nil {
+			return fmt.Errorf("unlock: cannot unwrap previous DEK (interrupted rekey) -- restore a good keyfile or drop wrapped_prev_dek to accept the loss: %w", err)
 		}
 	}
+	v.dek = dek
+	v.prevDEK = prev
 	v.seals.Store(0) // per-session odometer (lifetime tracking would need persistence)
 	v.noncesWarned.Store(false)
 	return nil
