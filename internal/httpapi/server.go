@@ -115,7 +115,28 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("PUT /api/policies", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleSetPolicies))))
 	// SPA
 	mux.Handle("/", spaHandler(s.staticFS()))
-	return securityHeaders(logRequests(mux))
+	return securityHeaders(logRequests(recoverPanic(mux)))
+}
+
+// recoverPanic turns a handler panic into a 500 + log instead of letting it abort
+// the request mid-flight. Inner deferred cleanups (e.g. inFlight) still run as the
+// stack unwinds; this just prevents a panic from poisoning shared server state or
+// leaking a stack trace to the client. The route template is logged (not the path,
+// which could carry a username).
+func recoverPanic(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				route := r.Pattern
+				if route == "" {
+					route = r.Method
+				}
+				log.Printf("PANIC recovered in handler %s: %v", route, rec)
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
 }
 
 // handleHealthz is a readiness probe: 200 when the store is usable, 503 while the
@@ -370,9 +391,8 @@ func (s *Server) handleRekey(w http.ResponseWriter, r *http.Request) {
 	}
 	s.touch()
 	s.inFlight.Add(1)
+	defer func() { s.inFlight.Add(-1); s.touch() }() // survives a panic, so auto-lock can't get wedged off
 	err := s.Store.Rekey(body.Passphrase)
-	s.inFlight.Add(-1)
-	s.touch()
 	if err != nil {
 		s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "store_rekey", Source: r.RemoteAddr, Result: "failed"})
 		switch {

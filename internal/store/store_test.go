@@ -81,6 +81,61 @@ func TestRekeyConcurrentWritesNoLoss(t *testing.T) {
 	}
 }
 
+// An undecryptable blob (e.g. sealed under a lost key) must be quarantined, not
+// repeatedly re-skipped: unlock recovers + drops it, and a second unlock does not
+// re-trigger the rebuild loop (index now matches the on-disk .enc count).
+func TestUndecryptableBlobQuarantined(t *testing.T) {
+	dir := t.TempDir()
+	v, _ := vault.Open(dir)
+	s := NewPersistent(v)
+	if err := s.Initialize("quarantine-passphrase"); err != nil {
+		t.Fatal(err)
+	}
+	var badID string
+	for i := 0; i < 3; i++ {
+		m, _ := s.CreateAudit(fmt.Sprintf("A%d", i), "")
+		if err := s.Replace(m.ID, sample()); err != nil {
+			t.Fatal(err)
+		}
+		if i == 1 {
+			badID = m.ID
+		}
+	}
+	blob := filepath.Join(dir, "audits", badID+".enc")
+	if err := os.WriteFile(blob, []byte("not-valid-gcm-ciphertext-garbage"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Invalidate the index so unlock must rebuild from blobs (the path that reaches
+	// LoadAll + the quarantine), as it would after a reconcile mismatch.
+	if err := os.WriteFile(filepath.Join(dir, "index.enc"), []byte("garbage-index"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// First unlock recovers, drops + quarantines the corrupt audit.
+	s2 := NewPersistent(mustReopen(t, dir))
+	if err := s2.Unlock("quarantine-passphrase"); err != nil {
+		t.Fatalf("unlock with one corrupt blob should recover, not brick: %v", err)
+	}
+	if len(s2.List()) != 2 {
+		t.Fatalf("corrupt audit should be dropped: List=%d, want 2", len(s2.List()))
+	}
+	if _, err := os.Stat(blob + ".corrupt"); err != nil {
+		t.Fatalf("corrupt blob should be quarantined to .corrupt: %v", err)
+	}
+	if _, err := os.Stat(blob); !os.IsNotExist(err) {
+		t.Fatal("original .enc should be gone after quarantine")
+	}
+
+	// Second unlock must converge (index 2 == .enc count 2), no rebuild loop.
+	s3 := NewPersistent(mustReopen(t, dir))
+	if err := s3.Unlock("quarantine-passphrase"); err != nil {
+		t.Fatal(err)
+	}
+	if len(s3.List()) != 2 {
+		t.Fatalf("second unlock List=%d, want 2", len(s3.List()))
+	}
+}
+
 func TestCorruptIndexRecovers(t *testing.T) {
 	dir := t.TempDir()
 	v, _ := vault.Open(dir)

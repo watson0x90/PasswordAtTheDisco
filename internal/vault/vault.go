@@ -541,9 +541,17 @@ func (v *Vault) LoadAll() (map[string][]byte, error) {
 		id := strings.TrimSuffix(e.Name(), ".enc")
 		pt, err := openMany([][]byte{dek, prev}, ct, blobAAD(id))
 		if err != nil {
-			// One undecryptable blob must not brick the whole store: skip it (the
-			// index rebuild simply omits that audit) and log loudly.
-			log.Printf("WARNING: skipping undecryptable audit blob %s during LoadAll: %v", e.Name(), err)
+			// One undecryptable blob must not brick the whole store. QUARANTINE it
+			// (rename out of the .enc namespace) rather than just skip: otherwise it
+			// stays in ListAudits, so reconcile keeps seeing more blobs than index
+			// entries and re-rebuilds on EVERY unlock forever. Quarantining converges
+			// that loop and leaves the loss visible on disk (+ a loud log line).
+			full := filepath.Join(v.dir, auditsSubdir, e.Name())
+			if rerr := os.Rename(full, full+".corrupt"); rerr != nil {
+				log.Printf("WARNING: audit blob %s is undecryptable (%v) and could not be quarantined: %v", e.Name(), err, rerr)
+			} else {
+				log.Printf("WARNING: audit blob %s is undecryptable (%v) -- QUARANTINED to %s.corrupt; that audit is lost", e.Name(), err, e.Name())
+			}
 			continue
 		}
 		out[id] = pt
