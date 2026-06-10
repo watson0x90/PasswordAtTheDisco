@@ -2,10 +2,36 @@ package vault
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+// A corrupt wrapped_prev_dek (interrupted-rekey marker that won't unwrap) must be
+// surfaced, not swallowed into a confusing per-blob "cannot decrypt" error.
+func TestRekeyRejectsCorruptPrevDEK(t *testing.T) {
+	dir := t.TempDir()
+	v, _ := Open(dir)
+	if err := v.Initialize("prevdek-passphrase"); err != nil {
+		t.Fatal(err)
+	}
+	_ = v.SaveAudit("a", []byte("data"))
+	// Forge a mid-rekey keyfile whose wrapped_prev_dek is garbage (valid b64, but
+	// not a real wrapped key).
+	v.mu.Lock()
+	kf, _ := v.readKeyfile()
+	kf.WrappedPrevDEK = b64([]byte("not-a-valid-wrapped-dek"))
+	b, _ := json.MarshalIndent(kf, "", "  ")
+	_ = writeFileAtomic(v.keyfilePath(), b)
+	v.mu.Unlock()
+
+	err := v.Rekey("prevdek-passphrase")
+	if err == nil || !strings.Contains(err.Error(), "previous DEK") {
+		t.Fatalf("rekey with corrupt wrapped_prev_dek should surface the error, got %v", err)
+	}
+}
 
 func TestInitializeUnlockRoundTrip(t *testing.T) {
 	dir := t.TempDir()

@@ -93,6 +93,8 @@ type Store struct {
 	now     func() time.Time
 	newID   func() string
 	vault   *vault.Vault // nil = in-memory only
+
+	testHookInRekey func() // test-only: runs inside Rekey while writeMu is held
 }
 
 // New returns an empty in-memory Store (no persistence, no eviction).
@@ -203,6 +205,9 @@ func (s *Store) Rekey(passphrase string) error {
 	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
+	if s.testHookInRekey != nil {
+		s.testHookInRekey()
+	}
 	return s.vault.Rekey(passphrase)
 }
 

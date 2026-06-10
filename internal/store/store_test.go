@@ -6,10 +6,64 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/vault"
 )
+
+// Deterministic guard for the data-loss fix: a write that starts during a rekey
+// MUST block until the rekey finishes (store.Rekey holds writeMu), then land
+// durably under the new key. Unlike the probabilistic concurrent-hammer test, this
+// FAILS if store.Rekey stops holding writeMu.
+func TestRekeySerializesConcurrentWrite(t *testing.T) {
+	dir := t.TempDir()
+	v, _ := vault.Open(dir)
+	s := NewPersistent(v)
+	if err := s.Initialize("serialize-passphrase"); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := s.CreateAudit("A", "")
+	if err := s.Replace(m.ID, model.Dataset{Accounts: []model.Account{{Username: "orig", Domain: "D", Cracked: true}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	writeDone := make(chan error, 1)
+	s.testHookInRekey = func() { // runs inside Rekey holding writeMu
+		started := make(chan struct{})
+		go func() {
+			close(started)
+			writeDone <- s.ReplaceDomain(m.ID, "D", []model.Account{{Username: "after-rekey", Domain: "D", Cracked: true}})
+		}()
+		<-started
+		select {
+		case <-writeDone:
+			t.Error("ReplaceDomain completed DURING rekey -- store.Rekey is not holding writeMu")
+		case <-time.After(200 * time.Millisecond):
+			// expected: the write is blocked on writeMu
+		}
+	}
+	if err := s.Rekey("serialize-passphrase"); err != nil {
+		t.Fatalf("rekey: %v", err)
+	}
+	if err := <-writeDone; err != nil {
+		t.Fatalf("post-rekey write failed: %v", err)
+	}
+
+	// The write landed after the rotation (under the new DEK); reopen proves it's
+	// durable + decryptable, not silently lost.
+	s2 := NewPersistent(mustReopen(t, dir))
+	if err := s2.Unlock("serialize-passphrase"); err != nil {
+		t.Fatal(err)
+	}
+	accts, err := s2.Accounts(m.ID, true)
+	if err != nil {
+		t.Fatalf("audit unreadable after rekey+write: %v", err)
+	}
+	if len(accts) != 1 || accts[0].Username != "after-rekey" {
+		t.Fatalf("post-rekey write not durable: %+v", accts)
+	}
+}
 
 // Logical regression test for the lost-update race: two concurrent per-domain
 // uploads to the same audit must BOTH survive. (go test -race cannot catch this
