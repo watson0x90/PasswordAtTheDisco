@@ -78,8 +78,22 @@ the full data flow, API, scoring model, and config.
 ```bash
 cd web && npm ci --ignore-scripts && npm run build && cd ..
 rm -rf internal/webui/dist && cp -r web/dist internal/webui/dist
-go build -tags embed -o patd ./cmd/patd     # ~11 MB; SPA baked in, zero disk deps
+go build -tags embed -o patd ./cmd/patd     # ~10 MB; SPA baked in, zero disk deps
 ```
+
+## Deploy
+
+Guided, full-setup deploy scripts (build → first operator → TLS → service → start):
+
+```bash
+./deploy/deploy.sh        # Linux / macOS  (systemd / launchd)
+```
+```powershell
+.\deploy\deploy.ps1       # Windows  (startup Scheduled Task)
+```
+
+Static CGO-free binary → runs on **Linux / macOS / Windows (amd64 + arm64)**. Full
+guide, env vars, TLS, service management, and backup/recovery: **[deploy/DEPLOYMENT.md](deploy/DEPLOYMENT.md)**.
 
 ## Features
 
