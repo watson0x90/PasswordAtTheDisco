@@ -116,6 +116,10 @@ CGO_ENABLED=0 go build -tags embed -trimpath -ldflags="-s -w" -o patd ./cmd/patd
 2. **Set the store passphrase** on the unlock screen. It is held only in memory and
    **never stored** — choose a strong one and keep it in a password manager.
 3. Create an audit, then ingest dumps (web Upload, or the `patd audit` CLI).
+   > Note: `patd audit --out FILE` writes the analyzed dataset — which **includes
+   > cleartext cracked passwords** — to disk (0600, written atomically). It's an
+   > optional intermediate for offline ingest; protect and delete it, or skip `--out`
+   > and POST directly to the server with `--api`.
 
 Add more operators any time:
 

@@ -8,9 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sync"
 
+	"github.com/watson0x90/PasswordAtTheDisco/internal/fsutil"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/pwanalysis"
 )
 
@@ -135,37 +135,5 @@ func (s *Set) Save(path string) error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(path, b)
-}
-
-// writeFileAtomic writes b durably: a temp file in the same directory is written +
-// fsync'd, then renamed over path (then the dir is fsync'd, best-effort). A crash
-// leaves either the old policy file or the complete new one, never a truncated one.
-func writeFileAtomic(path string, b []byte) error {
-	dir := filepath.Dir(path)
-	f, err := os.CreateTemp(dir, ".policy-*.tmp") // 0600 by default
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	defer func() { _ = os.Remove(tmp) }() // no-op once renamed
-	if _, err := f.Write(b); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return err
-	}
-	if d, err := os.Open(dir); err == nil { // dir fsync; not supported everywhere
-		_ = d.Sync()
-		_ = d.Close()
-	}
-	return nil
+	return fsutil.WriteFileAtomic(path, b, 0o600)
 }

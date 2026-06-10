@@ -42,6 +42,15 @@ func (l *Logger) Log(e Event) error {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	_, err = l.w.Write(append(b, '\n'))
-	return err
+	if _, err = l.w.Write(append(b, '\n')); err != nil {
+		return err // the Write is the persist guarantee -> fail-closed for callers
+	}
+	// Best-effort fsync so a security event (e.g. a cleartext reveal) survives a host
+	// crash. Audit events are low-frequency, so the per-event flush cost is
+	// negligible. Ignored when w isn't a syncable file (stdout/discard) or the fd
+	// can't be synced (a console) -- the data is already written either way.
+	if f, ok := l.w.(interface{ Sync() error }); ok {
+		_ = f.Sync()
+	}
+	return nil
 }

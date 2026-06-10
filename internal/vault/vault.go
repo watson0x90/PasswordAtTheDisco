@@ -22,6 +22,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/argon2"
+
+	"github.com/watson0x90/PasswordAtTheDisco/internal/fsutil"
 )
 
 const (
@@ -210,7 +212,7 @@ func (v *Vault) wrapAndWriteBoth(dek, prevDEK []byte, passphrase string) error {
 	if old, err := os.ReadFile(v.keyfilePath()); err == nil {
 		_ = os.WriteFile(v.keyfilePath()+".bak", old, 0o600) // best-effort backup before overwrite
 	}
-	return writeFileAtomic(v.keyfilePath(), b)
+	return fsutil.WriteFileAtomic(v.keyfilePath(), b, 0o600)
 }
 
 // Initialize sets the store passphrase on first run: generates a random DEK,
@@ -399,7 +401,7 @@ func (v *Vault) Rekey(passphrase string) error {
 		if err != nil {
 			return err
 		}
-		if err := writeFileAtomic(v.auditPath(id), nct); err != nil {
+		if err := fsutil.WriteFileAtomic(v.auditPath(id), nct, 0o600); err != nil {
 			return err
 		}
 	}
@@ -412,7 +414,7 @@ func (v *Vault) Rekey(passphrase string) error {
 		if err != nil {
 			return err
 		}
-		if err := writeFileAtomic(v.indexPath(), nct); err != nil {
+		if err := fsutil.WriteFileAtomic(v.indexPath(), nct, 0o600); err != nil {
 			return err
 		}
 	}
@@ -470,7 +472,7 @@ func (v *Vault) SaveAudit(id string, plaintext []byte) error {
 		return err
 	}
 	v.countSeal()
-	return writeFileAtomic(v.auditPath(id), ct)
+	return fsutil.WriteFileAtomic(v.auditPath(id), ct, 0o600)
 }
 
 func (v *Vault) indexPath() string { return filepath.Join(v.dir, "index.enc") }
@@ -488,7 +490,7 @@ func (v *Vault) SaveIndex(plaintext []byte) error {
 		return err
 	}
 	v.countSeal()
-	return writeFileAtomic(v.indexPath(), ct)
+	return fsutil.WriteFileAtomic(v.indexPath(), ct, 0o600)
 }
 
 // LoadIndex decrypts the metadata index, or returns ErrNoIndex if absent.
@@ -641,38 +643,6 @@ func newGCM(key []byte) (cipher.AEAD, error) {
 		return nil, err
 	}
 	return cipher.NewGCM(block)
-}
-
-// writeFileAtomic writes b durably: a temp file is written + fsync'd, then renamed
-// over path, then the directory is fsync'd (best-effort). A crash leaves either the
-// old file or the new file, never a truncated one.
-func writeFileAtomic(path string, b []byte) error {
-	dir := filepath.Dir(path)
-	f, err := os.CreateTemp(dir, ".keyfile-*.tmp") // 0600 by default
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	defer func() { _ = os.Remove(tmp) }() // no-op once renamed
-	if _, err := f.Write(b); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return err
-	}
-	if d, err := os.Open(dir); err == nil { // dir fsync; not supported everywhere
-		_ = d.Sync()
-		_ = d.Close()
-	}
-	return nil
 }
 
 func b64(b []byte) string            { return base64.StdEncoding.EncodeToString(b) }

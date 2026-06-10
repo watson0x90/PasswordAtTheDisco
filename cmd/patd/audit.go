@@ -16,6 +16,7 @@ import (
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/bloodhound"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/engine"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/fsutil"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/hibp"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
@@ -36,7 +37,7 @@ func runAudit(args []string) {
 	bhePath := fs.String("bhe", "config/bloodhound.json", "BloodHound config path (optional)")
 	policyPath := fs.String("policy", "lists/password_policy.json", "per-domain password policy file (optional)")
 	name := fs.String("name", "CLI import", "name for the audit this ingest creates")
-	out := fs.String("out", "", "also write the dataset JSON to this file")
+	out := fs.String("out", "", "also write the dataset JSON to this file (WARNING: contains CLEARTEXT cracked passwords; 0600, written atomically -- protect/delete it)")
 	insecure := fs.Bool("insecure", false, "skip TLS verification when POSTing (self-signed dev certs)")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: patd audit [flags] DOMAIN cracked-file uncracked-file [DOMAIN cracked-file uncracked-file ...]")
@@ -70,10 +71,10 @@ func runAudit(args []string) {
 		log.Fatalf("encode dataset: %v", err)
 	}
 	if *out != "" {
-		if err := os.WriteFile(*out, data, 0o600); err != nil {
+		if err := fsutil.WriteFileAtomic(*out, data, 0o600); err != nil {
 			log.Fatalf("write %s: %v", *out, err)
 		}
-		log.Printf("wrote %d accounts to %s", len(all), *out)
+		log.Printf("wrote %d accounts to %s (CLEARTEXT - protect/delete this file)", len(all), *out)
 	}
 	if *api != "" {
 		if err := postDataset(*api, *token, data, *insecure); err != nil {

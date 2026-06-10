@@ -26,7 +26,7 @@ func TestUnlockRejectsCorruptPrevDEK(t *testing.T) {
 	kf, _ := v.readKeyfile()
 	kf.WrappedPrevDEK = b64([]byte("garbage-not-a-wrapped-dek"))
 	b, _ := json.MarshalIndent(kf, "", "  ")
-	_ = writeFileAtomic(v.keyfilePath(), b)
+	_ = os.WriteFile(v.keyfilePath(), b, 0o600)
 	v.mu.Unlock()
 	v.Lock()
 
@@ -57,7 +57,7 @@ func TestRekeyRejectsCorruptPrevDEK(t *testing.T) {
 	kf, _ := v.readKeyfile()
 	kf.WrappedPrevDEK = b64([]byte("not-a-valid-wrapped-dek"))
 	b, _ := json.MarshalIndent(kf, "", "  ")
-	_ = writeFileAtomic(v.keyfilePath(), b)
+	_ = os.WriteFile(v.keyfilePath(), b, 0o600)
 	v.mu.Unlock()
 
 	err := v.Rekey("prevdek-passphrase")
@@ -249,7 +249,7 @@ func TestRekeyResumesAfterInterruption(t *testing.T) {
 	_, _ = rand.Read(newDEK)
 	// re-seal only "done" under the new DEK (as a partial rekey would have)
 	doneCT, _ := gcmSeal(newDEK, []byte("done-plaintext"), blobAAD("done"))
-	_ = writeFileAtomic(v.auditPath("done"), doneCT)
+	_ = os.WriteFile(v.auditPath("done"), doneCT, 0o600)
 	if err := v.wrapAndWriteBoth(newDEK, oldDEK, "pp-resume-test"); err != nil {
 		v.mu.Unlock()
 		t.Fatal(err)
