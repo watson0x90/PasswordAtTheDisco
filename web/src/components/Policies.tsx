@@ -166,6 +166,7 @@ export function Policies() {
 
 function RotateDataKey({ csrf }: { csrf: string }) {
   const [pass, setPass] = useState("")
+  const [armed, setArmed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState("")
   const [ok, setOk] = useState(false)
@@ -178,6 +179,7 @@ function RotateDataKey({ csrf }: { csrf: string }) {
       await api.rekey(pass, csrf)
       setOk(true)
       setPass("")
+      setArmed(false)
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : "rotation failed")
     } finally {
@@ -198,9 +200,26 @@ function RotateDataKey({ csrf }: { csrf: string }) {
       </div>
       {err && <div className="error">{err}</div>}
       {ok && <div className="ingest-ok">✓ data key rotated — all audits re-encrypted</div>}
-      <button type="button" className="btn btn-primary" onClick={submit} disabled={busy || !pass}>
-        {busy ? "Rotating…" : "Rotate data key"}
-      </button>
+      {!armed ? (
+        <button type="button" className="btn btn-primary" onClick={() => setArmed(true)} disabled={busy || !pass}>
+          Rotate data key
+        </button>
+      ) : (
+        <>
+          <div className="notice">
+            ⚠ This re-encrypts <b>every</b> audit and briefly pauses all operators (reads return 503) until it
+            finishes. Backups taken before now become unreadable with the new key. Continue?
+          </div>
+          <div className="policy-actions">
+            <button type="button" className="btn" onClick={() => setArmed(false)} disabled={busy}>
+              Cancel
+            </button>
+            <button type="button" className="btn btn-primary" onClick={submit} disabled={busy}>
+              {busy ? "Rotating…" : "Yes, rotate now"}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   )
 }

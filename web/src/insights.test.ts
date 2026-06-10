@@ -36,6 +36,21 @@ describe("posture (parity with Go model.PostureScore golden)", () => {
     expect(p.breakdown).toEqual({ risk: 0, strength: 0, privilege: 15, compliance: 7.5 })
   })
 
+  // Second golden (mirrors the Go TestPostureScoreGolden second case) with NON-ZERO
+  // risk + strength, so a one-sided coefficient drift can't slip through.
+  it("matches the Go golden (non-zero risk+strength): 57 Weak, {12,18,15,12}", () => {
+    const p = posture([
+      acct({ risk_level: "Critical", cracked: true, meets_policy: false }),
+      acct({ risk_level: "High", cracked: true, meets_policy: true }),
+      acct({ risk_level: "Low", cracked: false }),
+      acct({ risk_level: "Low", cracked: false }),
+      acct({ risk_level: "Low", cracked: false }),
+    ])
+    expect(p.score).toBe(57)
+    expect(p.rating).toBe("Weak")
+    expect(p.breakdown).toEqual({ risk: 12, strength: 18, privilege: 15, compliance: 12 })
+  })
+
   it("empty set -> No Data", () => {
     const p = posture([])
     expect(p.score).toBe(0)

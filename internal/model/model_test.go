@@ -19,6 +19,25 @@ func TestPostureScoreGolden(t *testing.T) {
 	if p.Breakdown != (PostureBreakdown{Risk: 0, Strength: 0, Privilege: 15, Compliance: 7.5}) {
 		t.Fatalf("breakdown = %+v, want {0 0 15 7.5}", p.Breakdown)
 	}
+
+	// Second golden with NON-ZERO risk + strength, so coefficient drift in either
+	// (which the all-zero fixture above would miss) is caught. 5 accounts: 1 Crit
+	// cracked non-compliant, 1 High cracked compliant, 3 Low uncracked.
+	//   risk = (100 - 1/5*200 - 1/5*150)/100*40 = 12 ; strength = 3/5*30 = 18 ;
+	//   privilege 15 ; compliance = (5-1)/5*15 = 12  -> score 57 Weak
+	p2 := PostureScore([]Account{
+		{RiskLevel: "Critical", Cracked: true, MeetsPolicy: false},
+		{RiskLevel: "High", Cracked: true, MeetsPolicy: true},
+		{RiskLevel: "Low", Cracked: false},
+		{RiskLevel: "Low", Cracked: false},
+		{RiskLevel: "Low", Cracked: false},
+	})
+	if p2.Score != 57 || p2.Rating != "Weak" {
+		t.Fatalf("posture2 = %.1f %s, want 57 Weak", p2.Score, p2.Rating)
+	}
+	if p2.Breakdown != (PostureBreakdown{Risk: 12, Strength: 18, Privilege: 15, Compliance: 12}) {
+		t.Fatalf("breakdown2 = %+v, want {12 18 15 12}", p2.Breakdown)
+	}
 }
 
 func TestRecomputeSharingCrossDomain(t *testing.T) {

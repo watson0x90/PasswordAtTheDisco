@@ -61,7 +61,7 @@ lives under `PATD_DATA` (default `data/`):
 | `keyfile.json` | the DEK wrapped under the passphrase | **total loss** — the DEK (and thus every audit) is unrecoverable; there is no reset or escrow |
 | `audits/<id>.enc` | one encrypted audit dataset (AES-256-GCM, AAD = `patd-audit:<id>`) | that audit is lost; others are unaffected |
 | `index.enc` | encrypted metadata index (names/counts) — a **derived cache** (AAD = `patd-index`) | self-heals: on unlock the server rebuilds it from the blobs; `patd reindex` forces a rebuild |
-| `keyfile.json.bak` | **transient** crash-safety copy written only during a passphrase rotation and removed on success | should never persist — it wraps the DEK under the *old* passphrase |
+| `keyfile.json.bak` | **transient** crash-safety copy written during *either* rotation (change-passphrase or rotate-data-key) and removed on success | **do not restore it.** It holds only the *old* key/passphrase; after an interrupted **data-key** rotation it would make every already-re-sealed blob undecryptable. To recover an interrupted rotation, keep `keyfile.json` (it carries both keys) and re-run *Rotate data key* to resume. |
 
 Operational rules:
 - **Back up `data/` as a unit** (a consistent snapshot). The files reference each

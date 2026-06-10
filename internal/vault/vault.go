@@ -82,13 +82,13 @@ type Vault struct {
 // stays responsive while Rekey holds the exclusive lock).
 func (v *Vault) Rekeying() bool { return v.rekeying.Load() }
 
-// nonceWarnThreshold is a conservative odometer limit for a single DEK. Blobs use
-// AES-256-GCM with random 96-bit nonces; the birthday bound for a non-negligible
-// collision is ~2^48 messages, so this 2^32 line carries an enormous safety margin
-// and is effectively unreachable in normal use (one seal per audit save). It exists
-// only as a tripwire against a pathological write loop. The real mitigation for a
-// genuinely high-volume deployment is DEK rotation (re-keying), which resets the
-// nonce space -- not yet implemented; ChangePassphrase only re-wraps the same DEK.
+// nonceWarnThreshold is a conservative PER-SESSION sanity tripwire (the counter
+// resets on each Unlock, so it is not lifetime accounting). Blobs use AES-256-GCM
+// with random 96-bit nonces; the birthday bound for a non-negligible collision is
+// ~2^48 messages, so this 2^32 line has an enormous margin and is unreachable in
+// normal use (one seal per audit save) -- it only flags a pathological write loop
+// within a single session. The real high-volume mitigation is DEK rotation
+// (Rekey), which generates a fresh key and resets the nonce space entirely.
 const nonceWarnThreshold = 1 << 32
 
 // countSeal advances the nonce odometer and warns once if it crosses the bound.
