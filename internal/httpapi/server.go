@@ -178,7 +178,7 @@ func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"name": "passwordatthedisco-api", "version": "0.1.0-dev"})
+	writeJSON(w, http.StatusOK, map[string]string{"name": "passwordatthedisco-api", "version": "2.0.0"})
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
