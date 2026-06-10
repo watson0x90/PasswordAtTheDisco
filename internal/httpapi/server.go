@@ -121,6 +121,10 @@ func (s *Server) Routes() http.Handler {
 // handleHealthz is a readiness probe: 200 when the store is usable, 503 while the
 // encrypted store is locked (the server is up but can't serve data yet).
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
+	if s.Store.Rekeying() { // lock-free: stays live while a rekey holds the vault lock
+		writeJSON(w, http.StatusOK, map[string]string{"status": "rekeying"})
+		return
+	}
 	if !s.Store.Unlocked() {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "locked"})
 		return
@@ -335,6 +339,20 @@ func (s *Server) handleRekey(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusLocked, map[string]string{"error": "unlock the store before rotating its data key"})
 		return
 	}
+	if s.Store.Rekeying() {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "a data-key rotation is already in progress"})
+		return
+	}
+	// The passphrase is verified here (argon2id), so rate-limit like unlock to blunt
+	// guessing + the DoS amplification (each correct guess re-encrypts the store).
+	ip := clientIP(r)
+	if s.UnlockLimiter != nil {
+		if ok, retry := s.UnlockLimiter.Allowed(ip); !ok {
+			w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())+1))
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, try again later"})
+			return
+		}
+	}
 	defer r.Body.Close()
 	var body struct {
 		Passphrase string `json:"passphrase"`
@@ -344,14 +362,34 @@ func (s *Server) handleRekey(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
-	if err := s.Store.Rekey(body.Passphrase); err != nil {
+	// Re-encrypting a large store can exceed the default write timeout; extend it,
+	// and keep the idle auto-lock from firing mid-rotation.
+	if rc := http.NewResponseController(w); rc != nil {
+		_ = rc.SetReadDeadline(time.Now().Add(30 * time.Minute))
+		_ = rc.SetWriteDeadline(time.Now().Add(30 * time.Minute))
+	}
+	s.touch()
+	s.inFlight.Add(1)
+	err := s.Store.Rekey(body.Passphrase)
+	s.inFlight.Add(-1)
+	s.touch()
+	if err != nil {
 		s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "store_rekey", Source: r.RemoteAddr, Result: "failed"})
-		if errors.Is(err, vault.ErrBadPassphrase) {
+		switch {
+		case errors.Is(err, vault.ErrBadPassphrase):
+			if s.UnlockLimiter != nil {
+				s.UnlockLimiter.RecordFailure(ip)
+			}
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "current passphrase is incorrect"})
-			return
+		case errors.Is(err, vault.ErrRekeyInProgress):
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "a data-key rotation is already in progress"})
+		default:
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
+	}
+	if s.UnlockLimiter != nil {
+		s.UnlockLimiter.Reset(ip)
 	}
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "store_rekey", Source: r.RemoteAddr, Result: "ok"})
 	writeJSON(w, http.StatusOK, map[string]bool{"rekeyed": true})
@@ -391,6 +429,12 @@ func (s *Server) StartAutoLock(d time.Duration) func() {
 // requireUnlocked rejects requests when the encrypted store is locked (423).
 func (s *Server) requireUnlocked(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Fail fast (don't stall on the vault lock) while a rekey re-encrypts.
+		if s.Store.Rekeying() {
+			w.Header().Set("Retry-After", "5")
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "data-key rotation in progress, retry shortly"})
+			return
+		}
 		if !s.Store.Unlocked() {
 			writeJSON(w, http.StatusLocked, map[string]string{"error": "data store is locked"})
 			return

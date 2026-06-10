@@ -50,6 +50,8 @@ var (
 	ErrBadPassphrase = errors.New("incorrect passphrase")
 	// ErrNoIndex is returned by LoadIndex when no index file exists yet.
 	ErrNoIndex = errors.New("no index file")
+	// ErrRekeyInProgress is returned when a rekey is requested while one is running.
+	ErrRekeyInProgress = errors.New("a data-key rotation is already in progress")
 )
 
 type keyfile struct {
@@ -73,7 +75,12 @@ type Vault struct {
 	prevDEK      []byte       // previous DEK during a rekey; reads fall back to it
 	seals        atomic.Int64 // blob/index seals under the current DEK (nonce odometer)
 	noncesWarned atomic.Bool  // one-shot guard for the nonce-budget warning
+	rekeying     atomic.Bool  // true while Rekey holds the exclusive lock (lock-free probe)
 }
+
+// Rekeying reports whether a data-key rotation is in progress (lock-free, so it
+// stays responsive while Rekey holds the exclusive lock).
+func (v *Vault) Rekeying() bool { return v.rekeying.Load() }
 
 // nonceWarnThreshold is a conservative odometer limit for a single DEK. Blobs use
 // AES-256-GCM with random 96-bit nonces; the birthday bound for a non-negligible
@@ -289,6 +296,10 @@ func (v *Vault) ChangePassphrase(oldPass, newPass string) error {
 // remainder under the in-progress key) rather than starting over. Requires the
 // correct current passphrase; holds an exclusive lock for the whole operation.
 func (v *Vault) Rekey(passphrase string) error {
+	if !v.rekeying.CompareAndSwap(false, true) {
+		return ErrRekeyInProgress
+	}
+	defer v.rekeying.Store(false)
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if v.dek == nil {

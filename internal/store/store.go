@@ -206,6 +206,11 @@ func (s *Store) Rekey(passphrase string) error {
 	return s.vault.Rekey(passphrase)
 }
 
+// Rekeying reports whether a data-key rotation is in progress (lock-free).
+func (s *Store) Rekeying() bool {
+	return s.vault != nil && s.vault.Rekeying()
+}
+
 // loadIndex populates the metadata index. The index is a derived cache, so on
 // ANY failure to read it (absent, corrupt, or unparseable) it is rebuilt from the
 // still-authentic audit blobs and re-persisted -- a corrupt index never bricks
