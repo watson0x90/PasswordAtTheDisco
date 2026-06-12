@@ -151,9 +151,10 @@ Add more operators any time:
 - **HIBP breach correlation** — set `PATD_HIBP` to the NTLM index file from the
   `PwnedPasswordsDownloader` submodule (~74 GB). Leave blank to disable.
 - **BloodHound DA-pathway enrichment** — create an API token in BloodHound CE
-  (Administration -> API Tokens), put `token_id`/`token_key` (plus `domain`/`port`/
-  `scheme`) in `config/bloodhound.json`, and point `PATD_BHE` at it. The file is
-  gitignored. Without it, DA-pathway signals are simply absent.
+  (Administration -> API Tokens), then either set it in the console's **BloodHound**
+  page (host/port/scheme + token; **Test connection** then **Save**, applied live) or
+  pre-seed `config/bloodhound.json` and point `PATD_BHE` at it. The file is gitignored
+  (0600). Without it, DA-pathway signals are simply absent.
 
 ## Security posture the deploy sets
 

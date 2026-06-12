@@ -49,7 +49,8 @@ type Enricher interface {
 type Engine struct {
 	HIBP     HIBPLookup // guarded by hibpMu for hot-swap; read via hibpCount
 	hibpMu   sync.RWMutex
-	Enricher Enricher
+	Enricher Enricher // guarded by encMu for hot-swap; read via enrich
+	encMu    sync.RWMutex
 	Lists    pwanalysis.Lists
 	Policies *policy.Set // per-domain password policies (length/classes + max age)
 	Now      func() time.Time
@@ -64,6 +65,21 @@ func (e *Engine) SwapHIBP(h HIBPLookup) HIBPLookup {
 	old := e.HIBP
 	e.HIBP = h
 	return old
+}
+
+// SwapEnricher atomically replaces the BloodHound enricher (nil to disable), so the
+// connection can be (re)configured from the UI and take effect without a restart.
+func (e *Engine) SwapEnricher(enr Enricher) {
+	e.encMu.Lock()
+	defer e.encMu.Unlock()
+	e.Enricher = enr
+}
+
+// HasEnricher reports whether BloodHound enrichment is currently active.
+func (e *Engine) HasEnricher() bool {
+	e.encMu.RLock()
+	defer e.encMu.RUnlock()
+	return e.Enricher != nil
 }
 
 func (e *Engine) now() time.Time {
@@ -214,10 +230,16 @@ func (e *Engine) hibpCount(ntlm string) int {
 }
 
 func (e *Engine) enrich(username, domain string, wanted bool) Enrichment {
-	if e.Enricher == nil || !wanted {
+	if !wanted {
 		return Enrichment{}
 	}
-	return e.Enricher.Enrich(normalizeUsername(username, domain))
+	e.encMu.RLock()
+	enr := e.Enricher
+	e.encMu.RUnlock()
+	if enr == nil {
+		return Enrichment{}
+	}
+	return enr.Enrich(normalizeUsername(username, domain))
 }
 
 func daysOutOfCompliance(pwdLastSet *int64, now time.Time, maxAge int) *int {

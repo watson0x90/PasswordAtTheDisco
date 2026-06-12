@@ -26,6 +26,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/watson0x90/PasswordAtTheDisco/internal/fsutil"
 )
 
 // Credentials is a BHE API token pair.
@@ -58,6 +60,15 @@ func LoadConfig(path string) (Config, error) {
 		return Config{}, fmt.Errorf("parse bloodhound config: %w", err)
 	}
 	return c, nil
+}
+
+// SaveConfig writes the config to path atomically (0600 -- it holds an API token).
+func SaveConfig(path string, c Config) error {
+	b, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return err
+	}
+	return fsutil.WriteFileAtomic(path, b, 0o600)
 }
 
 // Client is a BloodHound Enterprise API client.

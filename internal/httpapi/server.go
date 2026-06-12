@@ -23,6 +23,7 @@ import (
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/audit"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/auth"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/bloodhound"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/engine"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
@@ -54,6 +55,7 @@ type Server struct {
 	PolicyPath    string         // where to persist policy edits (empty = in-memory only)
 	PwnedDir      string         // PwnedPasswordsDownloader source dir (HIBP NTLM tool)
 	HIBPPath      string         // configured HIBP NTLM index path (for the Pwned page status)
+	BHEPath       string         // BloodHound config path (config/bloodhound.json) for the BHE settings page
 	Downloads     *pwned.Manager // background HIBP download/index job runner (may be nil)
 
 	lastActivity atomic.Int64 // unix-nano of the last unlocked data access (auto-lock)
@@ -119,6 +121,10 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /api/login-activity", s.requireAuth(http.HandlerFunc(s.handleLoginActivity)))
 	mux.Handle("GET /api/audit-log", s.requireAuth(http.HandlerFunc(s.handleAuditLog)))
 	mux.Handle("GET /api/audit-log.csv", s.requireAuth(http.HandlerFunc(s.handleAuditLogCSV)))
+	// BloodHound enrichment config (lead): view (redacted) / test / save + hot-swap
+	mux.Handle("GET /api/bhe/status", s.requireAuth(http.HandlerFunc(s.handleBHEStatus)))
+	mux.Handle("POST /api/bhe/test", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleBHETest))))
+	mux.Handle("PUT /api/bhe/config", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleBHEConfig))))
 	// Audit (engagement) management + selection -- needs an unlocked store
 	mux.Handle("GET /api/audits", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleListAudits))))
 	mux.Handle("POST /api/audits", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleCreateAudit)))))
@@ -754,6 +760,150 @@ func parseAuditTime(s string, endOfDay bool) time.Time {
 		return t
 	}
 	return time.Time{}
+}
+
+type bheConfigBody struct {
+	Scheme             string `json:"scheme"`
+	Host               string `json:"host"`
+	Port               int    `json:"port"`
+	TokenID            string `json:"token_id"`
+	TokenKey           string `json:"token_key"`
+	SearchLimit        int    `json:"search_limit"`
+	ControllablesLimit int    `json:"controllables_limit"`
+}
+
+// bheMerge builds a full config from the submitted body, preserving the saved token
+// when a field is left blank (the token is write-only in the UI) and inheriting saved
+// limits/timeouts.
+func (s *Server) bheMerge(b bheConfigBody) bloodhound.Config {
+	saved, _ := bloodhound.LoadConfig(s.BHEPath)
+	cfg := bloodhound.Config{
+		Scheme: b.Scheme, Host: b.Host, Port: b.Port,
+		TokenID: b.TokenID, TokenKey: b.TokenKey,
+		SearchLimit: b.SearchLimit, ControllablesLimit: b.ControllablesLimit,
+		ConnectTimeout: saved.ConnectTimeout, ReadTimeout: saved.ReadTimeout,
+	}
+	if cfg.TokenID == "" {
+		cfg.TokenID = saved.TokenID
+	}
+	if cfg.TokenKey == "" {
+		cfg.TokenKey = saved.TokenKey
+	}
+	if cfg.SearchLimit == 0 {
+		cfg.SearchLimit = saved.SearchLimit
+	}
+	if cfg.ControllablesLimit == 0 {
+		cfg.ControllablesLimit = saved.ControllablesLimit
+	}
+	return cfg
+}
+
+// handleBHEStatus returns the BloodHound config (token redacted) + whether
+// enrichment is currently active (lead).
+func (s *Server) handleBHEStatus(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	cfg, _ := bloodhound.LoadConfig(s.BHEPath) // missing/invalid -> zero config
+	scheme := cfg.Scheme
+	if scheme == "" {
+		scheme = "http"
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"scheme":              scheme,
+		"host":                cfg.Host,
+		"port":                cfg.Port,
+		"search_limit":        cfg.SearchLimit,
+		"controllables_limit": cfg.ControllablesLimit,
+		"token_configured":    cfg.TokenID != "" && cfg.TokenKey != "",
+		"active":              s.Engine != nil && s.Engine.HasEnricher(),
+		"config_path":         s.BHEPath,
+	})
+}
+
+// handleBHETest probes a BloodHound connection with the submitted config (blank token
+// = use the saved one) and returns the server version + collected domains (lead).
+func (s *Server) handleBHETest(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	var body bheConfigBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+		return
+	}
+	cfg := s.bheMerge(body)
+	if cfg.Host == "" || cfg.TokenID == "" || cfg.TokenKey == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "host, token id, and token key are required"})
+		return
+	}
+	if cfg.ReadTimeout == 0 || cfg.ReadTimeout > 15 {
+		cfg.ReadTimeout = 15 // cap the probe so a dead host doesn't hang the request
+	}
+	if rc := http.NewResponseController(w); rc != nil {
+		_ = rc.SetWriteDeadline(time.Now().Add(30 * time.Second))
+	}
+	client := bloodhound.New(cfg)
+	ver, err := client.GetVersion()
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "bhe_test", Source: r.RemoteAddr, Result: okOr(err)})
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	type dom struct {
+		Name      string `json:"name"`
+		Collected bool   `json:"collected"`
+	}
+	out := []dom{}
+	if doms, derr := client.GetDomains(); derr == nil {
+		for _, d := range doms {
+			out = append(out, dom{Name: d.Name, Collected: d.Collected})
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "server_version": ver.Server, "domains": out})
+}
+
+// handleBHEConfig saves the BloodHound config and hot-swaps the live enricher (lead).
+func (s *Server) handleBHEConfig(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	if s.BHEPath == "" {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "BloodHound config path not set"})
+		return
+	}
+	var body bheConfigBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+		return
+	}
+	cfg := s.bheMerge(body)
+	if cfg.Host == "" || cfg.TokenID == "" || cfg.TokenKey == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "host, token id, and token key are required"})
+		return
+	}
+	if cfg.Scheme == "" {
+		cfg.Scheme = "http"
+	}
+	if cfg.Port == 0 {
+		cfg.Port = 8080
+	}
+	if err := bloodhound.SaveConfig(s.BHEPath, cfg); err != nil {
+		s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "bhe_config", Source: r.RemoteAddr, Result: "failed"})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not save config"})
+		return
+	}
+	if s.Engine != nil {
+		s.Engine.SwapEnricher(engine.BloodhoundEnricher{Client: bloodhound.New(cfg)})
+	}
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "bhe_config", Source: r.RemoteAddr, Result: "ok"})
+	writeJSON(w, http.StatusOK, map[string]any{"saved": true, "active": s.Engine != nil})
 }
 
 // handleLoginActivity returns recent login attempts across operators (lead).

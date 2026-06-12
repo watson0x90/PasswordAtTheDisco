@@ -83,10 +83,11 @@ func main() {
 	policyPath := env("PATD_POLICY", "lists/password_policy.json")
 	hibpPath := env("PATD_HIBP", "PwnedPasswordsDownloader/pwnedpasswords_ntlm.txt")
 	pwnedDir := env("PATD_PWNED_DIR", "PwnedPasswordsDownloader")
+	bhePath := env("PATD_BHE", "config/bloodhound.json")
 	eng, policies, cleanup := buildEngine(
 		hibpPath,
 		env("PATD_LISTS", "lists"),
-		env("PATD_BHE", "config/bloodhound.json"),
+		bhePath,
 		policyPath,
 	)
 	defer cleanup()
@@ -152,6 +153,7 @@ func main() {
 		PolicyPath:    policyPath,
 		PwnedDir:      pwnedDir,
 		HIBPPath:      hibpPath,
+		BHEPath:       bhePath,
 		Downloads:     downloads,
 	}
 

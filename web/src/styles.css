@@ -769,3 +769,8 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 .ev-dim { background: rgba(255,255,255,0.05); color: var(--dim); }
 .act-date { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--faint); }
 .act-date .search { padding: 6px 8px; color-scheme: dark; }
+
+/* BloodHound settings form */
+.bhe-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin: 20px 0; }
+.bhe-form label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--faint); }
+.bhe-form .search { width: 100%; }

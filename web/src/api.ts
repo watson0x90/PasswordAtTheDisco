@@ -284,6 +284,22 @@ export const api = {
 
   loginActivity: () => request<LoginAttempt[]>("/login-activity"),
 
+  bheStatus: () => request<BHEStatus>("/bhe/status"),
+
+  bheTest: (cfg: BHEConfigInput, csrf: string) =>
+    request<BHETestResult>("/bhe/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+      body: JSON.stringify(cfg),
+    }),
+
+  bheConfig: (cfg: BHEConfigInput, csrf: string) =>
+    request<{ saved: boolean; active: boolean }>("/bhe/config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+      body: JSON.stringify(cfg),
+    }),
+
   auditLog: (params: AuditQuery) => request<AuditEvent[]>(`/audit-log${auditQuery(params)}`),
 
   // full /api URL for an <a download> (the browser sends the session cookie)
@@ -338,6 +354,32 @@ export interface LoginAttempt {
   username: string
   source: string
   result: "ok" | "denied" | "locked"
+}
+
+export interface BHEStatus {
+  scheme: string
+  host: string
+  port: number
+  search_limit: number
+  controllables_limit: number
+  token_configured: boolean
+  active: boolean
+  config_path: string
+}
+
+export interface BHEConfigInput {
+  scheme: string
+  host: string
+  port: number
+  token_id?: string
+  token_key?: string
+}
+
+export interface BHETestResult {
+  ok: boolean
+  server_version?: string
+  domains?: { name: string; collected: boolean }[]
+  error?: string
 }
 
 export type PwnedPhase = "idle" | "downloading" | "indexing" | "done" | "failed" | "cancelled"

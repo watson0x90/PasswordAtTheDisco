@@ -8,12 +8,14 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/audit"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/auth"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/bloodhound"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/engine"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
@@ -771,5 +773,44 @@ func TestLoginLockout(t *testing.T) {
 	rec := authedReq("GET", "/api/login-activity", "", cookie, csrf)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"username":"analyst"`) {
 		t.Fatalf("login-activity = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestBHEConfig(t *testing.T) {
+	srv := newServer("tok")
+	srvForReq = srv
+	srv.BHEPath = filepath.Join(t.TempDir(), "bloodhound.json")
+	if err := bloodhound.SaveConfig(srv.BHEPath, bloodhound.Config{Scheme: "http", Host: "10.0.0.1", Port: 8080, TokenID: "tid-xyz", TokenKey: "tkey-secret"}); err != nil {
+		t.Fatal(err)
+	}
+	cookie, csrf := loginCSRF(t, srv, "lead", "leadpw")
+
+	// status must not leak the token, but reports it's configured
+	rec := authedReq("GET", "/api/bhe/status", "", cookie, csrf)
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if strings.Contains(body, "tkey-secret") || strings.Contains(body, "tid-xyz") {
+		t.Fatalf("status leaked the token: %s", body)
+	}
+	if !strings.Contains(body, `"token_configured":true`) {
+		t.Fatalf("status should report token configured: %s", body)
+	}
+
+	// saving with a new host + BLANK token preserves the stored token
+	rec = authedReq("PUT", "/api/bhe/config", `{"scheme":"https","host":"10.0.0.9","port":443}`, cookie, csrf)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("config save = %d (%s)", rec.Code, rec.Body.String())
+	}
+	saved, _ := bloodhound.LoadConfig(srv.BHEPath)
+	if saved.Host != "10.0.0.9" || saved.TokenID != "tid-xyz" || saved.TokenKey != "tkey-secret" {
+		t.Fatalf("save should update host but keep the token, got %+v", saved)
+	}
+
+	// analyst is forbidden
+	acook, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	if rec := authedReq("GET", "/api/bhe/status", "", acook, acsrf); rec.Code != http.StatusForbidden {
+		t.Fatalf("analyst status = %d, want 403", rec.Code)
 	}
 }
