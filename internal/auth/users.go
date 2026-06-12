@@ -21,6 +21,7 @@ type User struct {
 	Username     string `json:"username"`
 	PasswordHash string `json:"password_hash"`
 	Role         Role   `json:"role"`
+	Disabled     bool   `json:"disabled,omitempty"` // disabled operators cannot authenticate
 }
 
 // Users is the operator set, keyed by username.
@@ -56,10 +57,11 @@ var dummyHash = func() string {
 	return h
 }()
 
-// Authenticate verifies credentials, returning the user on success.
+// Authenticate verifies credentials, returning the user on success. A disabled or
+// unknown user fails (after an equalizing hash to blunt the timing oracle).
 func (u Users) Authenticate(username, password string) (User, bool) {
 	user, ok := u[username]
-	if !ok {
+	if !ok || user.Disabled {
 		VerifyPassword(password, dummyHash) // equalize timing
 		return User{}, false
 	}

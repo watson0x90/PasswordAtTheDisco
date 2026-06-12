@@ -253,6 +253,35 @@ export const api = {
 
   pwnedCancel: (csrf: string) =>
     request<PwnedJob>("/pwned/cancel", { method: "POST", headers: { "X-CSRF-Token": csrf } }),
+
+  listUsers: () => request<Operator[]>("/users"),
+
+  createUser: (username: string, password: string, role: Role, csrf: string) =>
+    request<{ username: string; role: string }>("/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+      body: JSON.stringify({ username, password, role }),
+    }),
+
+  updateUser: (username: string, patch: { role?: Role; password?: string; disabled?: boolean }, csrf: string) =>
+    request<{ username: string }>(`/users/${encodeURIComponent(username)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+      body: JSON.stringify(patch),
+    }),
+
+  deleteUser: (username: string, csrf: string) =>
+    request<{ deleted: string }>(`/users/${encodeURIComponent(username)}`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrf },
+    }),
+}
+
+export interface Operator {
+  username: string
+  role: Role
+  disabled: boolean
+  is_self: boolean
 }
 
 export type PwnedPhase = "idle" | "downloading" | "indexing" | "done" | "failed" | "cancelled"

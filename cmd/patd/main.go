@@ -55,13 +55,13 @@ func main() {
 	addr := env("PATD_ADDR", "127.0.0.1:8443")
 	cert, key := os.Getenv("PATD_TLS_CERT"), os.Getenv("PATD_TLS_KEY")
 
-	users := auth.Users{}
 	usersFile := env("PATD_USERS_FILE", "users.json")
-	if u, err := auth.LoadUsers(usersFile); err != nil {
-		log.Printf("WARNING: no operators loaded (%v) -- login disabled until %s exists", err, usersFile)
+	users, err := auth.OpenUserStore(usersFile)
+	if err != nil {
+		log.Printf("WARNING: no operators loaded (%v) -- bootstrap %s (patd hashpw), then add the rest in the UI", err, usersFile)
+		users = auth.NewUserStore(usersFile, nil)
 	} else {
-		users = u
-		log.Printf("loaded %d operator(s) from %s", len(users), usersFile)
+		log.Printf("loaded %d operator(s) from %s", users.Count(), usersFile)
 	}
 
 	// Audit log (JSON lines, 0600). Defaults to stdout; never contains cleartext.

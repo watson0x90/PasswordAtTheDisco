@@ -37,10 +37,10 @@ const sessionCookie = "patd_session"
 // Server holds the API's dependencies.
 type Server struct {
 	Store         *store.Store
-	StaticFS      fs.FS  // embedded SPA; if nil, served from StaticDir on disk
-	StaticDir     string // disk fallback for the SPA (e.g. web/dist)
-	IngestToken   string // bearer token the analysis engine uses to push data
-	Users         auth.Users
+	StaticFS      fs.FS           // embedded SPA; if nil, served from StaticDir on disk
+	StaticDir     string          // disk fallback for the SPA (e.g. web/dist)
+	IngestToken   string          // bearer token the analysis engine uses to push data
+	Users         *auth.UserStore // live operator store (add/disable/remove without restart)
 	Sessions      *auth.SessionStore
 	Audit         *audit.Logger
 	LoginLimiter  *auth.Limiter  // per-IP failed-login throttle
@@ -107,6 +107,11 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/pwned/index", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handlePwnedIndex))))
 	mux.Handle("GET /api/pwned/job", s.requireAuth(http.HandlerFunc(s.handlePwnedJob)))
 	mux.Handle("POST /api/pwned/cancel", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handlePwnedCancel))))
+	// Operator management (lead): live add/update/remove, no restart
+	mux.Handle("GET /api/users", s.requireAuth(http.HandlerFunc(s.handleListUsers)))
+	mux.Handle("POST /api/users", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleCreateUser))))
+	mux.Handle("PATCH /api/users/{username}", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleUpdateUser))))
+	mux.Handle("DELETE /api/users/{username}", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleDeleteUser))))
 	// Audit (engagement) management + selection -- needs an unlocked store
 	mux.Handle("GET /api/audits", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleListAudits))))
 	mux.Handle("POST /api/audits", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleCreateAudit)))))
@@ -594,6 +599,121 @@ func okOr(err error) string {
 		return "failed"
 	}
 	return "ok"
+}
+
+func userErrStatus(err error) int {
+	switch {
+	case errors.Is(err, auth.ErrUserExists), errors.Is(err, auth.ErrLastLead):
+		return http.StatusConflict
+	case errors.Is(err, auth.ErrUserNotFound):
+		return http.StatusNotFound
+	default:
+		return http.StatusBadRequest // weak password, invalid role, bad input
+	}
+}
+
+// handleListUsers lists operators (no password hashes), flagging the caller (lead).
+func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	type row struct {
+		auth.Info
+		IsSelf bool `json:"is_self"`
+	}
+	infos := s.Users.List()
+	rows := make([]row, len(infos))
+	for i, in := range infos {
+		rows[i] = row{Info: in, IsSelf: in.Username == sess.Username}
+	}
+	writeJSON(w, http.StatusOK, rows)
+}
+
+// handleCreateUser adds an operator (lead).
+func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	var body struct {
+		Username string    `json:"username"`
+		Password string    `json:"password"`
+		Role     auth.Role `json:"role"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+		return
+	}
+	err := s.Users.Create(body.Username, body.Password, body.Role)
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "user_create", Target: body.Username, Source: r.RemoteAddr, Result: okOr(err)})
+	if err != nil {
+		writeJSON(w, userErrStatus(err), map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]string{"username": body.Username, "role": string(body.Role)})
+}
+
+// handleUpdateUser changes an operator's role, password, and/or enabled state (lead).
+func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	target := r.PathValue("username")
+	var body struct {
+		Role     *auth.Role `json:"role"`
+		Password *string    `json:"password"`
+		Disabled *bool      `json:"disabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+		return
+	}
+	if body.Disabled != nil && *body.Disabled && target == sess.Username {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "you cannot disable your own account"})
+		return
+	}
+	var err error
+	if body.Role != nil {
+		err = s.Users.SetRole(target, *body.Role)
+	}
+	if err == nil && body.Password != nil {
+		err = s.Users.SetPassword(target, *body.Password)
+	}
+	if err == nil && body.Disabled != nil {
+		err = s.Users.SetDisabled(target, *body.Disabled)
+	}
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "user_update", Target: target, Source: r.RemoteAddr, Result: okOr(err)})
+	if err != nil {
+		writeJSON(w, userErrStatus(err), map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"username": target})
+}
+
+// handleDeleteUser removes an operator (lead).
+func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	target := r.PathValue("username")
+	if target == sess.Username {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "you cannot delete your own account"})
+		return
+	}
+	err := s.Users.Delete(target)
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "user_delete", Target: target, Source: r.RemoteAddr, Result: okOr(err)})
+	if err != nil {
+		writeJSON(w, userErrStatus(err), map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": target})
 }
 
 // touch records activity for the idle auto-lock timer.

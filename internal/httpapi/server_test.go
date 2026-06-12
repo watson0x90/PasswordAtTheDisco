@@ -30,10 +30,10 @@ func newServerAudit(token string, auditW io.Writer) *Server {
 	return &Server{
 		Store:       store.New(),
 		IngestToken: token,
-		Users: auth.Users{
+		Users: auth.NewUserStore("", auth.Users{
 			"lead":    {Username: "lead", PasswordHash: leadHash, Role: auth.RoleLead},
 			"analyst": {Username: "analyst", PasswordHash: analystHash, Role: auth.RoleAnalyst},
-		},
+		}),
 		Sessions:     auth.NewSessionStore(time.Hour, time.Hour),
 		Audit:        audit.New(auditW),
 		LoginLimiter: auth.NewLimiter(50, time.Minute),
@@ -685,5 +685,59 @@ func TestLoginRateLimited(t *testing.T) {
 	// Correct creds are still blocked while locked out.
 	if rec := loginAttempt(srv, "analyst", "analystpw"); rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("expected 429 even with correct creds while locked, got %d", rec.Code)
+	}
+}
+
+func authedReq(method, path, body string, cookie *http.Cookie, csrf string) *httptest.ResponseRecorder {
+	var r *http.Request
+	if body != "" {
+		r = httptest.NewRequest(method, path, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+	} else {
+		r = httptest.NewRequest(method, path, nil)
+	}
+	r.AddCookie(cookie)
+	if csrf != "" {
+		r.Header.Set("X-CSRF-Token", csrf)
+	}
+	return r2rec(r)
+}
+
+func r2rec(r *http.Request) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	srvForReq.Routes().ServeHTTP(rec, r)
+	return rec
+}
+
+var srvForReq *Server
+
+func TestUserManagement(t *testing.T) {
+	srv := newServer("tok")
+	srvForReq = srv
+	cookie, csrf := loginCSRF(t, srv, "lead", "leadpw")
+
+	// create a new analyst -> takes effect live (no restart)
+	rec := authedReq("POST", "/api/users", `{"username":"newby","password":"newby-pass-1","role":"analyst"}`, cookie, csrf)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create user = %d, want 201 (%s)", rec.Code, rec.Body.String())
+	}
+	if _, ok := srv.Users.Authenticate("newby", "newby-pass-1"); !ok {
+		t.Fatal("new operator cannot authenticate (not live)")
+	}
+
+	// self-delete is blocked
+	if rec := authedReq("DELETE", "/api/users/lead", "", cookie, csrf); rec.Code != http.StatusBadRequest {
+		t.Fatalf("self-delete = %d, want 400", rec.Code)
+	}
+
+	// deleting the only lead would be blocked too (409); delete the analyst instead
+	if rec := authedReq("DELETE", "/api/users/newby", "", cookie, csrf); rec.Code != http.StatusOK {
+		t.Fatalf("delete analyst = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+
+	// an analyst may not manage operators
+	acookie, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	if rec := authedReq("GET", "/api/users", "", acookie, acsrf); rec.Code != http.StatusForbidden {
+		t.Fatalf("analyst list users = %d, want 403", rec.Code)
 	}
 }

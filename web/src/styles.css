@@ -716,3 +716,28 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
   transition: width 0.6s ease;
 }
 .pwned-job-line { margin-top: 8px; font-size: 13px; color: var(--dim); font-family: var(--mono); }
+
+/* Operators (user management) page */
+.ops-page .section-label { margin-top: 10px; }
+.ops-page .panel { margin-bottom: 22px; }
+.ops-page .panel:last-child { margin-bottom: 0; }
+.ops-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ops-table th { text-align: left; padding: 8px 12px; color: var(--faint); font-weight: 600; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; border-bottom: 1px solid var(--hairline); }
+.ops-table td { padding: 10px 12px; border-bottom: 1px solid var(--hairline); vertical-align: middle; }
+.ops-table tr:last-child td { border-bottom: none; }
+.ops-row.disabled .ops-user { color: var(--faint); }
+.ops-user { font-family: var(--mono); color: var(--text); }
+.ops-self { margin-left: 8px; font-size: 10px; padding: 1px 6px; border-radius: 6px; background: var(--accent-glow); color: var(--accent); letter-spacing: 1px; text-transform: uppercase; }
+.ops-role { width: auto; min-width: 110px; padding: 5px 8px; }
+.ops-badge { font-size: 11px; padding: 2px 9px; border-radius: 999px; letter-spacing: 0.5px; }
+.ops-badge.on { background: var(--med-bg); color: var(--med); }
+.ops-badge.off { background: var(--crit-bg); color: var(--crit); }
+.ops-actions { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.ops-actions-col { text-align: left; }
+.ops-reset { display: flex; gap: 8px; align-items: center; }
+.ops-reset .search { min-width: 160px; }
+.link-btn { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 13px; padding: 0; font-family: var(--sans); }
+.link-btn:disabled { color: var(--faint); cursor: not-allowed; }
+.link-btn.danger { color: var(--crit); }
+.ops-add { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.ops-add .search { min-width: 160px; }
