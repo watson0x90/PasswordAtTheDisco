@@ -100,3 +100,21 @@ func TestQueryDateRangeAndCSV(t *testing.T) {
 		t.Fatalf("csv missing rows: %s", out)
 	}
 }
+
+func TestStreamCSVSanitizesFormulas(t *testing.T) {
+	ts := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	path := writeLog(t, []Event{
+		{Time: ts, Actor: "=2+2", Action: "login", Result: "denied", Source: "+1.2.3.4"},
+	})
+	var buf strings.Builder
+	if err := StreamCSV(path, Filter{}, &buf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "'=2+2") || strings.Contains(out, ",=2+2,") {
+		t.Fatalf("actor formula not neutralized: %s", out)
+	}
+	if !strings.Contains(out, "'+1.2.3.4") {
+		t.Fatalf("source formula not neutralized: %s", out)
+	}
+}

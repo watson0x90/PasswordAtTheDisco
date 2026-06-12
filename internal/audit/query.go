@@ -127,7 +127,8 @@ func StreamCSV(path string, f Filter, w io.Writer) error {
 			continue
 		}
 		if err := cw.Write([]string{
-			e.Time.UTC().Format(time.RFC3339), e.Actor, e.Role, e.Action, e.Target, e.Source, e.Result,
+			e.Time.UTC().Format(time.RFC3339),
+			csvSafe(e.Actor), csvSafe(e.Role), csvSafe(e.Action), csvSafe(e.Target), csvSafe(e.Source), csvSafe(e.Result),
 		}); err != nil {
 			return err
 		}
@@ -137,6 +138,22 @@ func StreamCSV(path string, f Filter, w io.Writer) error {
 	}
 	cw.Flush()
 	return cw.Error()
+}
+
+// csvSafe neutralizes spreadsheet formula injection (CWE-1236): a cell beginning
+// with =, +, -, @, tab, or CR is prefixed with a single quote so Excel/LibreOffice
+// treat it as text. Audit fields like the actor of a FAILED login are
+// attacker-controlled (the attacker chooses the username), so they must be neutralized
+// before a lead opens the export in a spreadsheet.
+func csvSafe(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	}
+	return s
 }
 
 func matchText(e Event, lower string) bool {

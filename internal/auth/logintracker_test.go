@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"strconv"
 	"testing"
 	"time"
 )
@@ -69,5 +70,18 @@ func TestSuccessAndUnlockClearState(t *testing.T) {
 	// recent is newest-first and bounded
 	if r := tr.Recent(10); len(r) == 0 || r[0].Username != "boss" || r[0].Result != "ok" {
 		t.Fatalf("recent[0] = %+v", r)
+	}
+}
+
+func TestTrackerCapEviction(t *testing.T) {
+	tr := NewLoginTracker(5, time.Minute, time.Minute)
+	for i := 0; i < maxTrackedUsers+200; i++ {
+		tr.RecordFailure("u"+strconv.Itoa(i), "ip")
+	}
+	tr.mu.Lock()
+	n := len(tr.users)
+	tr.mu.Unlock()
+	if n > maxTrackedUsers {
+		t.Fatalf("users map grew to %d, want <= %d (eviction failed)", n, maxTrackedUsers)
 	}
 }

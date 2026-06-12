@@ -724,8 +724,10 @@ func (s *Server) handleAuditLogCSV(w http.ResponseWriter, r *http.Request) {
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "audit_export", Source: r.RemoteAddr, Result: okOr(err)})
 }
 
-// auditFilter builds an audit.Filter from query params (from/to accept RFC3339 or
-// YYYY-MM-DD; the upper bound is end-of-day inclusive).
+// auditFilter builds an audit.Filter from query params. from/to accept either a
+// YYYY-MM-DD date (parsed UTC; a `to` date covers the whole day inclusively) or a
+// full RFC3339 instant (used exactly, as a half-open [from,to) bound). The UI sends
+// date-only values; RFC3339 is for hand-built queries.
 func auditFilter(q url.Values, limit int) audit.Filter {
 	return audit.Filter{
 		Text:   q.Get("q"),
@@ -982,8 +984,15 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleReveal(w http.ResponseWriter, r *http.Request) {
 	sess, _ := sessionFrom(r.Context())
 	username := r.PathValue("username")
+	ev := func(result string) audit.Event {
+		return audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "reveal_secret", Target: username, Source: r.RemoteAddr, Result: result}
+	}
+	// Every reveal attempt is fail-closed on the audit write -- if the audit sink is
+	// down we refuse the request rather than act unlogged (symmetric across branches).
 	if sess.Role != auth.RoleLead {
-		s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "reveal_secret", Target: username, Source: r.RemoteAddr, Result: "denied"})
+		if !s.auditOrFail(w, ev("denied")) {
+			return
+		}
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
 		return
 	}
@@ -993,17 +1002,28 @@ func (s *Server) handleReveal(w http.ResponseWriter, r *http.Request) {
 	}
 	acct, ok := s.Store.Find(id, username)
 	if !ok {
-		s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "reveal_secret", Target: username, Source: r.RemoteAddr, Result: "not_found"})
+		if !s.auditOrFail(w, ev("not_found")) {
+			return
+		}
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "account not found"})
 		return
 	}
-	// Fail-closed: if the audit record can't be written, do NOT reveal the secret.
-	if err := s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "reveal_secret", Target: username, Source: r.RemoteAddr, Result: "ok"}); err != nil {
-		log.Printf("reveal blocked: audit write failed: %v", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not record the audit event; reveal denied"})
+	if !s.auditOrFail(w, ev("ok")) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"username": acct.Username, "password": acct.Password})
+}
+
+// auditOrFail writes an audit event; if the write fails it responds 500 and returns
+// false so the caller aborts (the audit log is a security control -- a security-
+// relevant action must not proceed while it can't be recorded).
+func (s *Server) auditOrFail(w http.ResponseWriter, e audit.Event) bool {
+	if err := s.Audit.Log(e); err != nil {
+		log.Printf("audit write failed (%s/%s): %v", e.Action, e.Result, err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not record the audit event"})
+		return false
+	}
+	return true
 }
 
 // handleAudit accepts uploaded credential dumps (multipart: domain + a required

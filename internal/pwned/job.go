@@ -211,21 +211,53 @@ func (m *Manager) runDownload(ctx context.Context, cmd *exec.Cmd, staging string
 	m.finish(PhaseDone, n, "", m.dataFile)
 }
 
-// swapIntoPlace replaces the live data file + index with the staging ones,
-// releasing/reacquiring the live HIBP handle around the rename (Windows requires
-// the handle released to replace an open file).
+// swapIntoPlace replaces the live data file + index with the staging pair,
+// releasing/reacquiring the live HIBP handle around it (Windows requires the handle
+// released to replace an open file). It stashes the previous pair and rolls back on
+// any partial failure, so the live (data,index) pair is never left mismatched -- a
+// mismatch would make breach lookups silently wrong (false negatives).
 func (m *Manager) swapIntoPlace(staging string, prefixLen int) error {
+	dataLive := m.dataFile
+	idxLive := hibp.IndexPath(dataLive, prefixLen)
+	idxStaging := hibp.IndexPath(staging, prefixLen)
+	dataBak, idxBak := dataLive+".prev", idxLive+".prev"
+
 	if m.BeforeSwap != nil {
 		m.BeforeSwap()
 	}
-	rerr := os.Rename(staging, m.dataFile)
-	if rerr == nil {
-		rerr = os.Rename(hibp.IndexPath(staging, prefixLen), hibp.IndexPath(m.dataFile, prefixLen))
-	}
 	if m.AfterSwap != nil {
-		m.AfterSwap() // reacquire on whatever the live file now is (new on success, old on failure)
+		defer m.AfterSwap() // reacquire on whatever pair ends up live (new on success, old on rollback)
 	}
-	return rerr
+
+	// Stash the current pair aside (may be absent on a first-ever download).
+	hadData := os.Rename(dataLive, dataBak) == nil
+	hadIdx := os.Rename(idxLive, idxBak) == nil
+	restore := func() {
+		if hadData {
+			_ = os.Rename(dataBak, dataLive)
+		}
+		if hadIdx {
+			_ = os.Rename(idxBak, idxLive)
+		}
+	}
+
+	if err := os.Rename(staging, dataLive); err != nil {
+		restore()
+		return err
+	}
+	if err := os.Rename(idxStaging, idxLive); err != nil {
+		_ = os.Rename(dataLive, staging) // undo the data move, then restore the previous pair
+		restore()
+		return fmt.Errorf("index swap failed, restored previous corpus: %w", err)
+	}
+	// Success: drop the stashed previous pair.
+	if hadData {
+		_ = os.Remove(dataBak)
+	}
+	if hadIdx {
+		_ = os.Remove(idxBak)
+	}
+	return nil
 }
 
 // StartIndexOnly builds the index for the existing live data file in place, no

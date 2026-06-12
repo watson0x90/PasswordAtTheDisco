@@ -44,7 +44,14 @@ type userLogin struct {
 	lastSuccess   time.Time
 	lastSuccessIP string
 	lastFailure   time.Time
+	touched       time.Time // last activity, for LRU eviction
 }
+
+// maxTrackedUsers caps the per-username map. handleLogin records a failure for ANY
+// attempted username (pre-auth, attacker-controlled), so without a bound a dictionary
+// spray would accrete unbounded entries. Lockout state is ephemeral, so evicting the
+// least-recently-active entry is safe.
+const maxTrackedUsers = 10000
 
 // LoginTracker tracks per-operator failed-login counts + lockouts plus a bounded
 // recent-activity ring. Safe for concurrent use.
@@ -78,9 +85,27 @@ func NewLoginTracker(threshold int, window, lockFor time.Duration) *LoginTracker
 	}
 }
 
+// evictOldestLocked removes the least-recently-touched entry (called when at cap).
+func (t *LoginTracker) evictOldestLocked() {
+	var oldestKey string
+	var oldest time.Time
+	first := true
+	for k, v := range t.users {
+		if first || v.touched.Before(oldest) {
+			oldest, oldestKey, first = v.touched, k, false
+		}
+	}
+	if oldestKey != "" {
+		delete(t.users, oldestKey)
+	}
+}
+
 func (t *LoginTracker) userForLocked(username string) *userLogin {
 	u := t.users[username]
 	if u == nil {
+		if len(t.users) >= maxTrackedUsers {
+			t.evictOldestLocked()
+		}
 		u = &userLogin{}
 		t.users[username] = u
 	}
@@ -104,6 +129,7 @@ func (t *LoginTracker) RecordSuccess(username, source string) {
 	defer t.mu.Unlock()
 	now := t.now()
 	u := t.userForLocked(username)
+	u.touched = now
 	u.failed = 0
 	u.windowStart = time.Time{}
 	u.lockedUntil = time.Time{}
@@ -119,6 +145,7 @@ func (t *LoginTracker) RecordFailure(username, source string) {
 	defer t.mu.Unlock()
 	now := t.now()
 	u := t.userForLocked(username)
+	u.touched = now
 	if !u.windowStart.IsZero() && now.Sub(u.windowStart) > t.window {
 		u.failed = 0
 		u.windowStart = time.Time{}
@@ -225,11 +252,13 @@ func (t *LoginTracker) SeedFromAudit(path string) {
 		switch e.Result {
 		case "ok":
 			u := t.userForLocked(e.Actor)
+			u.touched = e.Time
 			u.lastSuccess = e.Time
 			u.lastSuccessIP = e.Source
 			t.pushLocked(Attempt{Time: e.Time, Username: e.Actor, Source: e.Source, Result: "ok"})
 		case "denied":
 			u := t.userForLocked(e.Actor)
+			u.touched = e.Time
 			u.lastFailure = e.Time
 			t.pushLocked(Attempt{Time: e.Time, Username: e.Actor, Source: e.Source, Result: "denied"})
 		}
