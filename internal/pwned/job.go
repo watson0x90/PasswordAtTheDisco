@@ -254,6 +254,11 @@ func (m *Manager) StartIndexOnly() error {
 			m.finish(PhaseFailed, 0, "index build failed: "+err.Error(), dataFile)
 			return
 		}
+		// Hot-reload the live searcher so the freshly built index takes effect
+		// without a restart (same data file, new .index<N>).
+		if m.AfterSwap != nil {
+			m.AfterSwap()
+		}
 		m.finish(PhaseDone, n, "", dataFile)
 	}()
 	return nil

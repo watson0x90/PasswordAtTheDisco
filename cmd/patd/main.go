@@ -117,6 +117,7 @@ func main() {
 	downloads.AfterSwap = func() {
 		if s, err := hibp.Open(hibpPath, hibp.DefaultPrefixLen); err == nil {
 			eng.SwapHIBP(s)
+			log.Printf("HIBP index reloaded from %s (live, no restart)", hibpPath)
 		} else {
 			log.Printf("HIBP reacquire after refresh failed (%v); breach correlation disabled until restart", err)
 		}

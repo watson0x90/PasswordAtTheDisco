@@ -144,7 +144,7 @@ export function PwnedPasswords() {
   const busy = isActive(job?.phase)
 
   return (
-    <>
+    <div className="pwned-page">
       <div className="section-label">HIBP Pwned Passwords</div>
 
       <div className="panel">
@@ -176,7 +176,7 @@ export function PwnedPasswords() {
           </div>
         </div>
 
-        <div className="policy-actions">
+        <div className="pwned-actions">
           <button className="btn" disabled={building || !status?.source_present} onClick={doBuild}>
             {building ? "Building…" : "Build downloader"}
           </button>
@@ -214,15 +214,16 @@ export function PwnedPasswords() {
         )}
       </div>
 
+      <div className="section-label">Download &amp; index</div>
       <div className="panel">
-        <div className="section-label" style={{ marginTop: 0 }}>Download &amp; index</div>
         <p className="ingest-note">
           Download the full NTLM hash set with the built tool, then build the <code>.index5</code> prefix index it
           needs. The download is tens of gigabytes and can take hours; it runs in the background — you can leave this
           page. Use <b>resume</b> to continue an interrupted download, or build the index from a file you already have.
+          The refreshed index loads live — no restart needed.
         </p>
 
-        <div className="policy-actions">
+        <div className="pwned-actions">
           <button className="btn btn-primary" disabled={busy || !status?.built} onClick={doDownload}>
             {job?.phase === "downloading" ? "Downloading…" : "Download latest NTLM set"}
           </button>
@@ -247,7 +248,7 @@ export function PwnedPasswords() {
 
         {job && job.phase !== "idle" && <JobView job={job} />}
       </div>
-    </>
+    </div>
   )
 }
 
@@ -285,7 +286,7 @@ function JobView({ job }: { job: PwnedJob }) {
       <div className="ingest-ok">
         ✓ Complete — indexed {fmtBytes(job.bytes_now)}
         {job.index_entries > 0 && <> ({job.index_entries.toLocaleString()} prefixes)</>} in {fmtDur(job.elapsed_sec)}.
-        <div className="stat-sub">Restart the server to load the refreshed HIBP index.</div>
+        <div className="stat-sub">The refreshed index is now live — no restart needed.</div>
       </div>
     )
   }
