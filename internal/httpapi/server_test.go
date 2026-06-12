@@ -741,3 +741,35 @@ func TestUserManagement(t *testing.T) {
 		t.Fatalf("analyst list users = %d, want 403", rec.Code)
 	}
 }
+
+func TestLoginLockout(t *testing.T) {
+	srv := newServer("tok")
+	srv.Logins = auth.NewLoginTracker(3, time.Minute, time.Hour)
+	srvForReq = srv
+
+	// 3 bad attempts lock the analyst account
+	for i := 0; i < 3; i++ {
+		if rec := loginAttempt(srv, "analyst", "wrong"); rec.Code != http.StatusUnauthorized {
+			t.Fatalf("bad attempt %d = %d, want 401", i, rec.Code)
+		}
+	}
+	// even the correct password is now rejected (locked) -> 429
+	if rec := loginAttempt(srv, "analyst", "analystpw"); rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("locked login = %d, want 429", rec.Code)
+	}
+
+	// a lead clears the lockout
+	cookie, csrf := loginCSRF(t, srv, "lead", "leadpw")
+	if rec := authedReq("POST", "/api/users/analyst/unlock", "", cookie, csrf); rec.Code != http.StatusOK {
+		t.Fatalf("unlock = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+	// analyst can log in again
+	if rec := loginAttempt(srv, "analyst", "analystpw"); rec.Code != http.StatusOK {
+		t.Fatalf("post-unlock login = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+	// the lead's successful login shows up in recent activity
+	rec := authedReq("GET", "/api/login-activity", "", cookie, csrf)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"username":"analyst"`) {
+		t.Fatalf("login-activity = %d body=%s", rec.Code, rec.Body.String())
+	}
+}

@@ -37,10 +37,11 @@ const sessionCookie = "patd_session"
 // Server holds the API's dependencies.
 type Server struct {
 	Store         *store.Store
-	StaticFS      fs.FS           // embedded SPA; if nil, served from StaticDir on disk
-	StaticDir     string          // disk fallback for the SPA (e.g. web/dist)
-	IngestToken   string          // bearer token the analysis engine uses to push data
-	Users         *auth.UserStore // live operator store (add/disable/remove without restart)
+	StaticFS      fs.FS              // embedded SPA; if nil, served from StaticDir on disk
+	StaticDir     string             // disk fallback for the SPA (e.g. web/dist)
+	IngestToken   string             // bearer token the analysis engine uses to push data
+	Users         *auth.UserStore    // live operator store (add/disable/remove without restart)
+	Logins        *auth.LoginTracker // per-account lockout + login history (may be nil)
 	Sessions      *auth.SessionStore
 	Audit         *audit.Logger
 	LoginLimiter  *auth.Limiter  // per-IP failed-login throttle
@@ -112,6 +113,8 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/users", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleCreateUser))))
 	mux.Handle("PATCH /api/users/{username}", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleUpdateUser))))
 	mux.Handle("DELETE /api/users/{username}", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleDeleteUser))))
+	mux.Handle("POST /api/users/{username}/unlock", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleUnlockUser))))
+	mux.Handle("GET /api/login-activity", s.requireAuth(http.HandlerFunc(s.handleLoginActivity)))
 	// Audit (engagement) management + selection -- needs an unlocked store
 	mux.Handle("GET /api/audits", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleListAudits))))
 	mux.Handle("POST /api/audits", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleCreateAudit)))))
@@ -216,14 +219,31 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
+	// Per-account lockout (complements the per-IP throttle above): blocks targeting
+	// one account from many IPs.
+	if s.Logins != nil {
+		if locked, until := s.Logins.Locked(creds.Username); locked {
+			s.Logins.RecordBlocked(creds.Username, r.RemoteAddr)
+			s.Audit.Log(audit.Event{Actor: creds.Username, Action: "login", Source: r.RemoteAddr, Result: "locked"})
+			w.Header().Set("Retry-After", strconv.Itoa(int(time.Until(until).Seconds())+1))
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "account temporarily locked after repeated failed logins"})
+			return
+		}
+	}
 	user, ok := s.Users.Authenticate(creds.Username, creds.Password)
 	if !ok {
 		s.LoginLimiter.RecordFailure(ip)
+		if s.Logins != nil {
+			s.Logins.RecordFailure(creds.Username, r.RemoteAddr)
+		}
 		s.Audit.Log(audit.Event{Actor: creds.Username, Action: "login", Source: r.RemoteAddr, Result: "denied"})
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
 	s.LoginLimiter.Reset(ip)
+	if s.Logins != nil {
+		s.Logins.RecordSuccess(user.Username, r.RemoteAddr)
+	}
 	id, csrf, err := s.Sessions.Create(user)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "session error"})
@@ -621,14 +641,63 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	type row struct {
 		auth.Info
-		IsSelf bool `json:"is_self"`
+		IsSelf         bool   `json:"is_self"`
+		LastLogin      string `json:"last_login,omitempty"`
+		LastLoginIP    string `json:"last_login_ip,omitempty"`
+		FailedAttempts int    `json:"failed_attempts"`
+		Locked         bool   `json:"locked"`
+		LockedUntil    string `json:"locked_until,omitempty"`
 	}
 	infos := s.Users.List()
 	rows := make([]row, len(infos))
 	for i, in := range infos {
 		rows[i] = row{Info: in, IsSelf: in.Username == sess.Username}
+		if s.Logins != nil {
+			st := s.Logins.State(in.Username)
+			rows[i].LastLogin = fmtTime(st.LastSuccess)
+			rows[i].LastLoginIP = st.LastSuccessIP
+			rows[i].FailedAttempts = st.FailedAttempts
+			rows[i].Locked = st.Locked
+			rows[i].LockedUntil = fmtTime(st.LockedUntil)
+		}
 	}
 	writeJSON(w, http.StatusOK, rows)
+}
+
+func fmtTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
+// handleUnlockUser clears an account lockout (lead).
+func (s *Server) handleUnlockUser(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	target := r.PathValue("username")
+	if s.Logins != nil {
+		s.Logins.Unlock(target)
+	}
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "user_unlock", Target: target, Source: r.RemoteAddr, Result: "ok"})
+	writeJSON(w, http.StatusOK, map[string]string{"unlocked": target})
+}
+
+// handleLoginActivity returns recent login attempts across operators (lead).
+func (s *Server) handleLoginActivity(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	if s.Logins == nil {
+		writeJSON(w, http.StatusOK, []auth.Attempt{})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.Logins.Recent(25))
 }
 
 // handleCreateUser adds an operator (lead).

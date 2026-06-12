@@ -275,6 +275,14 @@ export const api = {
       method: "DELETE",
       headers: { "X-CSRF-Token": csrf },
     }),
+
+  unlockUser: (username: string, csrf: string) =>
+    request<{ unlocked: string }>(`/users/${encodeURIComponent(username)}/unlock`, {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrf },
+    }),
+
+  loginActivity: () => request<LoginAttempt[]>("/login-activity"),
 }
 
 export interface Operator {
@@ -282,6 +290,18 @@ export interface Operator {
   role: Role
   disabled: boolean
   is_self: boolean
+  last_login?: string
+  last_login_ip?: string
+  failed_attempts: number
+  locked: boolean
+  locked_until?: string
+}
+
+export interface LoginAttempt {
+  time: string
+  username: string
+  source: string
+  result: "ok" | "denied" | "locked"
 }
 
 export type PwnedPhase = "idle" | "downloading" | "indexing" | "done" | "failed" | "cancelled"

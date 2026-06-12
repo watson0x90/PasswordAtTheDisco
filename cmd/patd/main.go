@@ -65,11 +65,12 @@ func main() {
 	}
 
 	// Audit log (JSON lines, 0600). Defaults to stdout; never contains cleartext.
+	auditPath := os.Getenv("PATD_AUDIT_LOG")
 	var auditW = os.Stdout
-	if p := os.Getenv("PATD_AUDIT_LOG"); p != "" {
-		f, err := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if auditPath != "" {
+		f, err := os.OpenFile(auditPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 		if err != nil {
-			log.Fatalf("cannot open audit log %s: %v", p, err)
+			log.Fatalf("cannot open audit log %s: %v", auditPath, err)
 		}
 		defer f.Close()
 		auditW = f
@@ -123,12 +124,23 @@ func main() {
 		}
 	}
 
+	// Per-account login lockout + history. Lockout counters are in-memory (ephemeral,
+	// like the per-IP limiter); last-login is seeded from the durable audit log so it
+	// survives a restart. Tunable via PATD_LOCKOUT_THRESHOLD / _WINDOW_MIN / _MINUTES.
+	logins := auth.NewLoginTracker(
+		envInt("PATD_LOCKOUT_THRESHOLD", auth.DefaultLockoutThreshold),
+		time.Duration(envInt("PATD_LOCKOUT_WINDOW_MIN", 15))*time.Minute,
+		time.Duration(envInt("PATD_LOCKOUT_MINUTES", 15))*time.Minute,
+	)
+	logins.SeedFromAudit(auditPath)
+
 	api := &httpapi.Server{
 		Store:         store.NewPersistent(vlt),
 		StaticFS:      webui.FS, // embedded SPA when built with -tags embed; else nil
 		StaticDir:     env("PATD_STATIC_DIR", "web/dist"),
 		IngestToken:   os.Getenv("PATD_INGEST_TOKEN"),
 		Users:         users,
+		Logins:        logins,
 		Sessions:      auth.NewSessionStore(30*time.Minute, 8*time.Hour),
 		Audit:         audit.New(auditW),
 		LoginLimiter:  auth.NewLimiter(10, 15*time.Minute),

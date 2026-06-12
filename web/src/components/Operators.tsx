@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useState } from "react"
-import { api, ApiError, type Operator, type Role } from "../api"
+import { api, ApiError, type Operator, type Role, type LoginAttempt } from "../api"
 import { useAuth } from "../auth"
+
+function fmtWhen(iso?: string): string {
+  if (!iso) return "never"
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return "never"
+  return d.toLocaleString()
+}
 
 export function Operators() {
   const { me } = useAuth()
   const csrf = me?.csrf_token ?? ""
   const [ops, setOps] = useState<Operator[]>([])
+  const [activity, setActivity] = useState<LoginAttempt[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [ok, setOk] = useState("")
@@ -22,7 +30,9 @@ export function Operators() {
 
   const load = useCallback(async () => {
     try {
-      setOps(await api.listUsers())
+      const [users, acts] = await Promise.all([api.listUsers(), api.loginActivity().catch(() => [])])
+      setOps(users)
+      setActivity(acts)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "failed to load operators")
     } finally {
@@ -97,6 +107,17 @@ export function Operators() {
     }
   }
 
+  async function unlock(u: Operator) {
+    setError("")
+    try {
+      await api.unlockUser(u.username, csrf)
+      flash(`Unlocked ${u.username}.`)
+      await load()
+    } catch (e) {
+      fail(e, "failed to unlock")
+    }
+  }
+
   async function remove(u: Operator) {
     if (!confirm(`Remove operator "${u.username}"? This cannot be undone.`)) return
     setError("")
@@ -132,6 +153,7 @@ export function Operators() {
             <tr>
               <th>Operator</th>
               <th>Role</th>
+              <th>Last login</th>
               <th>Status</th>
               <th className="ops-actions-col">Actions</th>
             </tr>
@@ -153,8 +175,16 @@ export function Operators() {
                     <option value="lead">lead</option>
                   </select>
                 </td>
+                <td className="ops-when" title={u.last_login_ip ? `from ${u.last_login_ip}` : ""}>
+                  {fmtWhen(u.last_login)}
+                </td>
                 <td>
-                  <span className={u.disabled ? "ops-badge off" : "ops-badge on"}>{u.disabled ? "disabled" : "enabled"}</span>
+                  {u.locked ? (
+                    <span className="ops-badge locked">locked</span>
+                  ) : (
+                    <span className={u.disabled ? "ops-badge off" : "ops-badge on"}>{u.disabled ? "disabled" : "enabled"}</span>
+                  )}
+                  {u.failed_attempts > 0 && !u.locked && <span className="ops-fails">{u.failed_attempts} failed</span>}
                 </td>
                 <td className="ops-actions">
                   {resetting === u.username ? (
@@ -173,6 +203,11 @@ export function Operators() {
                     </span>
                   ) : (
                     <>
+                      {u.locked && (
+                        <button className="link-btn" onClick={() => void unlock(u)}>
+                          Unlock
+                        </button>
+                      )}
                       <button className="link-btn" onClick={() => { setResetting(u.username); setResetPass("") }}>
                         Reset password
                       </button>
@@ -229,6 +264,28 @@ export function Operators() {
             {adding ? "Adding…" : "Add operator"}
           </button>
         </div>
+      </div>
+
+      <div className="section-label">Recent login activity</div>
+      <div className="panel">
+        {activity.length === 0 ? (
+          <p className="ingest-note" style={{ margin: 0 }}>No recent login attempts recorded.</p>
+        ) : (
+          <table className="ops-table ops-activity">
+            <tbody>
+              {activity.map((a, i) => (
+                <tr key={i}>
+                  <td className={"ops-result " + a.result}>
+                    {a.result === "ok" ? "✓" : a.result === "locked" ? "⊘" : "✕"}
+                  </td>
+                  <td className="ops-user">{a.username || "—"}</td>
+                  <td className="ops-when">{fmtWhen(a.time)}</td>
+                  <td className="ops-src">{a.source}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   )
