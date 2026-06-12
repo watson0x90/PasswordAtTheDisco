@@ -1,25 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { api, ApiError, type PwnedStatus, type PwnedBuild, type PwnedProbe, type PwnedJob, type PwnedPhase } from "../api"
 import { useAuth } from "../auth"
-
-function fmtBytes(n: number): string {
-  if (!n) return "0 B"
-  const u = ["B", "KB", "MB", "GB", "TB"]
-  let i = 0
-  let v = n
-  while (v >= 1000 && i < u.length - 1) {
-    v /= 1000
-    i++
-  }
-  return `${v.toFixed(v < 10 && i > 0 ? 2 : 1)} ${u[i]}`
-}
-function fmtDur(sec: number): string {
-  if (sec <= 0) return "0s"
-  const h = Math.floor(sec / 3600)
-  const m = Math.floor((sec % 3600) / 60)
-  const s = sec % 60
-  return [h ? `${h}h` : "", h || m ? `${m}m` : "", `${s}s`].filter(Boolean).join(" ")
-}
+import { fmtBytes, fmtDuration } from "../format"
 
 const POLL_MS = 2500
 const isActive = (p?: PwnedPhase) => p === "downloading" || p === "indexing"
@@ -261,9 +243,9 @@ function JobView({ job }: { job: PwnedJob }) {
         <Bar pct={pct} />
         <div className="pwned-job-line">
           downloading — {fmtBytes(job.bytes_now)} of ~{fmtBytes(job.est_total)} (~{pct.toFixed(0)}%)
-          {job.rate_bps > 0 && <> · {fmtBytes(job.rate_bps)}/s · ETA ~{fmtDur(Math.round(remaining))}</>}
+          {job.rate_bps > 0 && <> · {fmtBytes(job.rate_bps)}/s · ETA ~{fmtDuration(Math.round(remaining))}</>}
           {" · elapsed "}
-          {fmtDur(job.elapsed_sec)}
+          {fmtDuration(job.elapsed_sec)}
           {job.resume && " · resumed"}
         </div>
       </div>
@@ -276,7 +258,7 @@ function JobView({ job }: { job: PwnedJob }) {
         <Bar pct={pct} />
         <div className="pwned-job-line">
           building index — scanned {fmtBytes(job.index_scanned)} of {fmtBytes(job.bytes_now)} (~{pct.toFixed(0)}%) ·
-          elapsed {fmtDur(job.elapsed_sec)}
+          elapsed {fmtDuration(job.elapsed_sec)}
         </div>
       </div>
     )
@@ -285,7 +267,7 @@ function JobView({ job }: { job: PwnedJob }) {
     return (
       <div className="ingest-ok">
         ✓ Complete — indexed {fmtBytes(job.bytes_now)}
-        {job.index_entries > 0 && <> ({job.index_entries.toLocaleString()} prefixes)</>} in {fmtDur(job.elapsed_sec)}.
+        {job.index_entries > 0 && <> ({job.index_entries.toLocaleString()} prefixes)</>} in {fmtDuration(job.elapsed_sec)}.
         <div className="stat-sub">The refreshed index is now live — no restart needed.</div>
       </div>
     )

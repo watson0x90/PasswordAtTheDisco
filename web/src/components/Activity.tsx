@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { api, ApiError, type AuditEvent } from "../api"
 import { useAuth } from "../auth"
+import { fmtWhen, resultClass } from "../format"
 
 const ACTIONS = [
   "login", "logout", "reveal_secret", "store_unlock", "store_lock", "store_passphrase_change", "store_rekey",
@@ -9,17 +10,6 @@ const ACTIONS = [
   "pwned_build", "pwned_probe", "pwned_download", "pwned_index", "pwned_cancel",
 ]
 const RESULTS = ["ok", "denied", "failed", "locked", "not_found", "rate_limited"]
-
-function fmtTime(iso: string): string {
-  const d = new Date(iso)
-  return isNaN(d.getTime()) ? iso : d.toLocaleString()
-}
-function resultClass(r: string): string {
-  if (r === "ok") return "ev-ok"
-  if (r === "denied" || r === "failed") return "ev-bad"
-  if (r === "locked" || r === "rate_limited") return "ev-warn"
-  return "ev-dim"
-}
 
 export function Activity() {
   const { me } = useAuth()
@@ -117,7 +107,7 @@ export function Activity() {
             <tbody>
               {events.map((e, i) => (
                 <tr key={i}>
-                  <td className="ops-when">{fmtTime(e.time)}</td>
+                  <td className="ops-when">{fmtWhen(e.time)}</td>
                   <td className="ops-user">
                     {e.actor || "—"}
                     {e.role && <span className="act-role">{e.role}</span>}

@@ -1,13 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { api, ApiError, type Operator, type Role, type LoginAttempt } from "../api"
 import { useAuth } from "../auth"
-
-function fmtWhen(iso?: string): string {
-  if (!iso) return "never"
-  const d = new Date(iso)
-  if (isNaN(d.getTime())) return "never"
-  return d.toLocaleString()
-}
+import { fmtWhen } from "../format"
 
 export function Operators() {
   const { me } = useAuth()

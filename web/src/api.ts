@@ -299,7 +299,7 @@ export interface AuditQuery {
   limit?: number
 }
 
-function auditQuery(p: AuditQuery): string {
+export function auditQuery(p: AuditQuery): string {
   const qs = new URLSearchParams()
   if (p.q) qs.set("q", p.q)
   if (p.action) qs.set("action", p.action)
