@@ -27,19 +27,30 @@ export function Activity() {
   const [q, setQ] = useState("")
   const [action, setAction] = useState("")
   const [result, setResult] = useState("")
+  const [from, setFrom] = useState("")
+  const [to, setTo] = useState("")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
 
   const load = useCallback(async () => {
     try {
-      setEvents(await api.auditLog({ q, action, result, limit: 200 }))
+      setEvents(await api.auditLog({ q, action, result, from, to, limit: 200 }))
       setError("")
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "failed to load activity")
     } finally {
       setLoading(false)
     }
-  }, [q, action, result])
+  }, [q, action, result, from, to])
+
+  function downloadCsv() {
+    const a = document.createElement("a")
+    a.href = api.auditLogCsvUrl({ q, action, result, from, to })
+    a.download = "audit-log.csv"
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  }
 
   // debounced reload on any filter change (covers typing in the search box)
   useEffect(() => {
@@ -78,7 +89,10 @@ export function Activity() {
               <option key={r} value={r}>{r}</option>
             ))}
           </select>
+          <label className="act-date">from<input type="date" className="search" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
+          <label className="act-date">to<input type="date" className="search" value={to} onChange={(e) => setTo(e.target.value)} /></label>
           <button className="btn" onClick={() => void load()}>Refresh</button>
+          <button className="btn" onClick={downloadCsv} title="Download all matching events as CSV">Download CSV</button>
           <span className="act-count">{events.length}</span>
         </div>
 

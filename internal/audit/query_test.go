@@ -3,6 +3,7 @@ package audit
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -56,5 +57,46 @@ func TestQueryFilters(t *testing.T) {
 func TestQueryMissingFile(t *testing.T) {
 	if ev, err := Query(filepath.Join(t.TempDir(), "nope.log"), Filter{}); err != nil || ev != nil {
 		t.Fatalf("missing file should yield (nil,nil), got %v %v", ev, err)
+	}
+}
+
+func TestQueryDateRangeAndCSV(t *testing.T) {
+	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	path := writeLog(t, []Event{
+		{Time: base, Actor: "alice", Action: "login", Result: "ok"},
+		{Time: base.Add(48 * time.Hour), Actor: "bob", Action: "login", Result: "ok"},
+		{Time: base.Add(96 * time.Hour), Actor: "carol", Action: "login", Result: "ok"},
+	})
+
+	// From bound (inclusive): drop the first
+	got, _ := Query(path, Filter{From: base.Add(24 * time.Hour)})
+	if len(got) != 2 {
+		t.Fatalf("From filter = %d, want 2", len(got))
+	}
+	// To bound (exclusive): keep only the first two
+	got, _ = Query(path, Filter{To: base.Add(72 * time.Hour)})
+	if len(got) != 2 || got[0].Actor != "bob" {
+		t.Fatalf("To filter = %+v", got)
+	}
+	// window: just the middle one
+	got, _ = Query(path, Filter{From: base.Add(24 * time.Hour), To: base.Add(72 * time.Hour)})
+	if len(got) != 1 || got[0].Actor != "bob" {
+		t.Fatalf("window filter = %+v", got)
+	}
+
+	// CSV: header + all matching rows (chronological), filtered
+	var buf strings.Builder
+	if err := StreamCSV(path, Filter{Action: "login"}, &buf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.HasPrefix(out, "time,actor,role,action,target,source,result\n") {
+		t.Fatalf("csv header missing: %q", out[:40])
+	}
+	if n := strings.Count(out, "\n"); n != 4 { // header + 3 rows
+		t.Fatalf("csv rows = %d lines, want 4", n)
+	}
+	if !strings.Contains(out, "alice") || !strings.Contains(out, "carol") {
+		t.Fatalf("csv missing rows: %s", out)
 	}
 }

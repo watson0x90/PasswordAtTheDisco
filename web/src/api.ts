@@ -284,15 +284,31 @@ export const api = {
 
   loginActivity: () => request<LoginAttempt[]>("/login-activity"),
 
-  auditLog: (params: { q?: string; action?: string; result?: string; limit?: number }) => {
-    const qs = new URLSearchParams()
-    if (params.q) qs.set("q", params.q)
-    if (params.action) qs.set("action", params.action)
-    if (params.result) qs.set("result", params.result)
-    if (params.limit) qs.set("limit", String(params.limit))
-    const s = qs.toString()
-    return request<AuditEvent[]>(`/audit-log${s ? "?" + s : ""}`)
-  },
+  auditLog: (params: AuditQuery) => request<AuditEvent[]>(`/audit-log${auditQuery(params)}`),
+
+  // full /api URL for an <a download> (the browser sends the session cookie)
+  auditLogCsvUrl: (params: AuditQuery) => `/api/audit-log.csv${auditQuery(params)}`,
+}
+
+export interface AuditQuery {
+  q?: string
+  action?: string
+  result?: string
+  from?: string
+  to?: string
+  limit?: number
+}
+
+function auditQuery(p: AuditQuery): string {
+  const qs = new URLSearchParams()
+  if (p.q) qs.set("q", p.q)
+  if (p.action) qs.set("action", p.action)
+  if (p.result) qs.set("result", p.result)
+  if (p.from) qs.set("from", p.from)
+  if (p.to) qs.set("to", p.to)
+  if (p.limit) qs.set("limit", String(p.limit))
+  const s = qs.toString()
+  return s ? "?" + s : ""
 }
 
 export interface AuditEvent {

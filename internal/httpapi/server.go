@@ -13,6 +13,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"strconv"
@@ -117,6 +118,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/users/{username}/unlock", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleUnlockUser))))
 	mux.Handle("GET /api/login-activity", s.requireAuth(http.HandlerFunc(s.handleLoginActivity)))
 	mux.Handle("GET /api/audit-log", s.requireAuth(http.HandlerFunc(s.handleAuditLog)))
+	mux.Handle("GET /api/audit-log.csv", s.requireAuth(http.HandlerFunc(s.handleAuditLogCSV)))
 	// Audit (engagement) management + selection -- needs an unlocked store
 	mux.Handle("GET /api/audits", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleListAudits))))
 	mux.Handle("POST /api/audits", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleCreateAudit)))))
@@ -698,13 +700,7 @@ func (s *Server) handleAuditLog(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	limit, _ := strconv.Atoi(q.Get("limit"))
-	events, err := audit.Query(s.AuditPath, audit.Filter{
-		Text:   q.Get("q"),
-		Action: q.Get("action"),
-		Result: q.Get("result"),
-		Actor:  q.Get("actor"),
-		Limit:  limit,
-	})
+	events, err := audit.Query(s.AuditPath, auditFilter(q, limit))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "cannot read audit log"})
 		return
@@ -713,6 +709,49 @@ func (s *Server) handleAuditLog(w http.ResponseWriter, r *http.Request) {
 		events = []audit.Event{}
 	}
 	writeJSON(w, http.StatusOK, events)
+}
+
+// handleAuditLogCSV streams the matching audit events as a CSV download (lead).
+func (s *Server) handleAuditLogCSV(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="audit-log.csv"`)
+	err := audit.StreamCSV(s.AuditPath, auditFilter(r.URL.Query(), 0), w)
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "audit_export", Source: r.RemoteAddr, Result: okOr(err)})
+}
+
+// auditFilter builds an audit.Filter from query params (from/to accept RFC3339 or
+// YYYY-MM-DD; the upper bound is end-of-day inclusive).
+func auditFilter(q url.Values, limit int) audit.Filter {
+	return audit.Filter{
+		Text:   q.Get("q"),
+		Action: q.Get("action"),
+		Result: q.Get("result"),
+		Actor:  q.Get("actor"),
+		From:   parseAuditTime(q.Get("from"), false),
+		To:     parseAuditTime(q.Get("to"), true),
+		Limit:  limit,
+	}
+}
+
+func parseAuditTime(s string, endOfDay bool) time.Time {
+	if s == "" {
+		return time.Time{}
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t
+	}
+	if t, err := time.Parse("2006-01-02", s); err == nil { // UTC; the log is UTC
+		if endOfDay {
+			return t.Add(24 * time.Hour) // exclusive upper bound -> includes the whole day
+		}
+		return t
+	}
+	return time.Time{}
 }
 
 // handleLoginActivity returns recent login attempts across operators (lead).
