@@ -233,3 +233,7 @@ internal/webui/dist/
 
 # Encrypted-at-rest store (keyfile + audit blobs)
 /data/
+
+# Browser-test artifacts + ad-hoc verification screenshots (root-level PNGs)
+.playwright-mcp/
+/*.png
