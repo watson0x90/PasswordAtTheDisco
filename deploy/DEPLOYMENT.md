@@ -89,9 +89,13 @@ CGO_ENABLED=0 go build -tags embed -trimpath -ldflags="-s -w" -o patd ./cmd/patd
 | `PATD_TLS_CERT` / `PATD_TLS_KEY` | TLS PEM cert + key | self-signed or provided |
 | `PATD_AUTOLOCK_MIN` | idle minutes before the store auto-locks (0 = never) | `60` |
 | `PATD_HIBP` | HIBP NTLM index path (blank = disabled) | unset |
+| `PATD_PWNED_DIR` | PwnedPasswordsDownloader source dir (HIBP page: build/download/index) | `PwnedPasswordsDownloader` |
 | `PATD_BHE` | BloodHound config path (blank = disabled) | `config/bloodhound.json` if present |
 | `PATD_LISTS` | wordlists/policy dir | `<install>/lists` |
 | `PATD_INGEST_TOKEN` | bearer token for the engine ingest API | random |
+| `PATD_LOCKOUT_THRESHOLD` | failed logins before an account locks | `5` |
+| `PATD_LOCKOUT_WINDOW_MIN` | minutes over which failures are counted | `15` |
+| `PATD_LOCKOUT_MINUTES` | lockout duration once tripped | `15` |
 
 ## TLS
 

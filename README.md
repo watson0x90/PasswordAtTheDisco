@@ -107,7 +107,13 @@ guide, env vars, TLS, service management, and backup/recovery: **[deploy/DEPLOYM
 - **Console:** at-a-glance dashboard, an **Actionable** view (DA pathways /
   breached / reused remediation lists), per-**Domain** stats, and a searchable,
   risk-filtered accounts table with role-gated reveal.
-- **CLI:** `patd audit` (run the engine over dumps → ingest), `patd hashpw`.
+- **Administration (lead-only):** runtime **Operator** management (add / disable /
+  remove with live effect, no restart; per-account **login lockout** + last-login),
+  a searchable, CSV-exportable **Activity** view over the audit log, and an **HIBP**
+  page that builds the bundled PwnedPasswordsDownloader and downloads + indexes the
+  NTLM set in the background, hot-swapping the live index without a restart.
+- **CLI:** `patd audit` (run the engine over dumps → ingest), `patd hashpw`,
+  `patd reindex`.
 
 ## ⚠️ Store passphrase & data recovery — read this
 
