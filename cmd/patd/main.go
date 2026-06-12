@@ -141,6 +141,7 @@ func main() {
 		IngestToken:   os.Getenv("PATD_INGEST_TOKEN"),
 		Users:         users,
 		Logins:        logins,
+		AuditPath:     auditPath,
 		Sessions:      auth.NewSessionStore(30*time.Minute, 8*time.Hour),
 		Audit:         audit.New(auditW),
 		LoginLimiter:  auth.NewLimiter(10, 15*time.Minute),

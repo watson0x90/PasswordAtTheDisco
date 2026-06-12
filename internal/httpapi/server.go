@@ -44,6 +44,7 @@ type Server struct {
 	Logins        *auth.LoginTracker // per-account lockout + login history (may be nil)
 	Sessions      *auth.SessionStore
 	Audit         *audit.Logger
+	AuditPath     string         // on-disk audit log path, for the lead Activity view (empty = none)
 	LoginLimiter  *auth.Limiter  // per-IP failed-login throttle
 	UnlockLimiter *auth.Limiter  // per-IP failed-unlock throttle (brute-force guard)
 	RekeyLimiter  *auth.Limiter  // per-IP failed-rekey throttle (separate so it can't lock out unlock)
@@ -115,6 +116,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("DELETE /api/users/{username}", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleDeleteUser))))
 	mux.Handle("POST /api/users/{username}/unlock", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleUnlockUser))))
 	mux.Handle("GET /api/login-activity", s.requireAuth(http.HandlerFunc(s.handleLoginActivity)))
+	mux.Handle("GET /api/audit-log", s.requireAuth(http.HandlerFunc(s.handleAuditLog)))
 	// Audit (engagement) management + selection -- needs an unlocked store
 	mux.Handle("GET /api/audits", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleListAudits))))
 	mux.Handle("POST /api/audits", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleCreateAudit)))))
@@ -684,6 +686,33 @@ func (s *Server) handleUnlockUser(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "user_unlock", Target: target, Source: r.RemoteAddr, Result: "ok"})
 	writeJSON(w, http.StatusOK, map[string]string{"unlocked": target})
+}
+
+// handleAuditLog returns recent audit events matching the query filters (lead). The
+// audit log never contains cleartext, so this is a read-only oversight view.
+func (s *Server) handleAuditLog(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	q := r.URL.Query()
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	events, err := audit.Query(s.AuditPath, audit.Filter{
+		Text:   q.Get("q"),
+		Action: q.Get("action"),
+		Result: q.Get("result"),
+		Actor:  q.Get("actor"),
+		Limit:  limit,
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "cannot read audit log"})
+		return
+	}
+	if events == nil {
+		events = []audit.Event{}
+	}
+	writeJSON(w, http.StatusOK, events)
 }
 
 // handleLoginActivity returns recent login attempts across operators (lead).

@@ -283,6 +283,26 @@ export const api = {
     }),
 
   loginActivity: () => request<LoginAttempt[]>("/login-activity"),
+
+  auditLog: (params: { q?: string; action?: string; result?: string; limit?: number }) => {
+    const qs = new URLSearchParams()
+    if (params.q) qs.set("q", params.q)
+    if (params.action) qs.set("action", params.action)
+    if (params.result) qs.set("result", params.result)
+    if (params.limit) qs.set("limit", String(params.limit))
+    const s = qs.toString()
+    return request<AuditEvent[]>(`/audit-log${s ? "?" + s : ""}`)
+  },
+}
+
+export interface AuditEvent {
+  time: string
+  actor?: string
+  role?: string
+  action: string
+  target?: string
+  source?: string
+  result: string
 }
 
 export interface Operator {

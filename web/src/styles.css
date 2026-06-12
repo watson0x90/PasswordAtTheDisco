@@ -752,3 +752,18 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 .ops-activity .ops-result.denied { color: var(--crit); }
 .ops-activity .ops-result.locked { color: var(--high); }
 .ops-src { color: var(--faint); font-family: var(--mono); font-size: 11px; }
+
+/* Activity (audit log) view */
+.act-filters { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
+.act-filters .search { min-width: 150px; }
+.act-filters .search:first-child { flex: 1; min-width: 240px; }
+.act-count { font-family: var(--mono); font-size: 12px; color: var(--faint); }
+.act-table td { font-size: 12px; }
+.act-action { font-family: var(--mono); color: var(--accent); white-space: nowrap; }
+.act-target { font-family: var(--mono); color: var(--dim); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.act-role { margin-left: 8px; font-size: 10px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.5px; }
+.act-result { font-size: 11px; padding: 2px 8px; border-radius: 999px; }
+.ev-ok { background: var(--med-bg); color: var(--med); }
+.ev-bad { background: var(--crit-bg); color: var(--crit); }
+.ev-warn { background: var(--high-bg); color: var(--high); }
+.ev-dim { background: rgba(255,255,255,0.05); color: var(--dim); }
