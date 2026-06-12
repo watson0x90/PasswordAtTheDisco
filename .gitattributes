@@ -1,3 +1,22 @@
+# Line-ending normalization. Text files are stored LF in the repo and checked out
+# LF on every platform — Go, Node, and the deploy shell scripts all expect LF, and
+# this eliminates the CRLF<->LF churn that Windows core.autocrlf otherwise produces.
+* text=auto eol=lf
+
+# Scripts that MUST be LF to execute.
+*.sh text eol=lf
+
+# Binary assets: never EOL-convert and never diff as text.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.exe   binary
+*.pdf   binary
+
 # Vendored offline front-end assets must be stored byte-identical (no EOL
 # conversion) so they match the upstream CDN files on every platform.
 report_lib/vendor/** -text
