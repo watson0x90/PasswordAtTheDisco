@@ -41,7 +41,31 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
+## What's new in 2.1
+
+Building on the 2.0 secure core (encrypted-at-rest store, data-key rotation, single
+embedded binary, guided deploy), 2.1 adds a lead-only **administration & oversight**
+suite — all applied live, no restarts:
+
+- **Operator management** — add / disable / remove operators from the UI; changes take
+  effect immediately. A last-enabled-lead guard prevents accidental lock-out.
+- **Login lockout & history** — per-account lockout after repeated failures
+  (`PATD_LOCKOUT_*`), a last-login column, and a recent-activity feed (seeded from the
+  audit log, so it survives restarts).
+- **Activity view** — full-text search, action/result filters, a date range, and CSV
+  export over the audit log (which never contains cleartext).
+- **In-app HIBP downloader** — build the bundled PwnedPasswordsDownloader and download +
+  index the NTLM set in the background, hot-swapping the live index with no restart.
+
+Hardened by an adversarial review of the new surface (capped login tracker against
+memory exhaustion, atomic HIBP corpus/index swap, CSV-injection sanitization, symmetric
+fail-closed reveal auditing). `govulncheck` clean. See [`v2.1.0`](https://github.com/watson0x90/PasswordAtTheDisco/releases/tag/v2.1.0).
+
 ## Quick start
+
+> Setting up a real instance? Use the **guided installer** instead — see
+> [Deploy (first-time setup)](#deploy-first-time-setup). The manual steps below are for
+> local development.
 
 ```bash
 # 1. Build
@@ -81,22 +105,39 @@ rm -rf internal/webui/dist && cp -r web/dist internal/webui/dist
 go build -tags embed -o patd ./cmd/patd     # ~10 MB; SPA baked in, zero disk deps
 ```
 
-## Deploy
+## Deploy (first-time setup)
 
-Guided setup (build → first operator → TLS → config), then install a service as a
-separate, opt-in step:
+The **guided installer** is the recommended path. It builds the binary, creates your
+first **lead** operator (`patd hashpw` → `users.json`), sets up TLS, writes the config,
+and leaves a launcher — *without* installing a service (that's a separate, opt-in step).
 
 ```bash
-./deploy/deploy.sh                                   # Linux/macOS: guided setup (no service)
-sudo ./deploy/deploy.sh --install-service            # then, optionally: systemd / launchd
+git clone https://github.com/watson0x90/PasswordAtTheDisco
+cd PasswordAtTheDisco
+
+./deploy/deploy.sh                         # Linux/macOS — prompts for dir, address, operator, TLS
+<install-dir>/run.sh                       # start it in the foreground …
+sudo ./deploy/deploy.sh --install-service  # … or install it as a service (systemd / launchd)
 ```
 ```powershell
-.\deploy\deploy.ps1                                  # Windows: guided setup (no service)
-.\deploy\deploy.ps1 -InstallService                  # then, elevated: startup Scheduled Task
+.\deploy\deploy.ps1                        # Windows — same guided flow
+.\deploy\deploy.ps1 -InstallService        # elevated: register a startup Scheduled Task
 ```
 
+Then, **on first run in the browser**:
+
+1. Open the URL the installer printed and **sign in** as the lead operator you created.
+2. **Set the store passphrase** on the unlock screen. This is the at-rest encryption
+   key — held only in memory, **never written to disk**, with no reset. Save it in a
+   password manager (see the recovery warning below).
+3. Add more operators in **Operators**, and — optionally — wire up **HIBP** (the *HIBP*
+   tab builds + downloads the NTLM set) and **BloodHound** (`config/bloodhound.json`).
+
+> Credential-bearing host? Build the binary on a clean box and deploy that one with
+> `./deploy/deploy.sh --binary /path/to/patd`, so `npm` never runs on the prod host.
+
 Static CGO-free binary → runs on **Linux / macOS / Windows (amd64 + arm64)**. Full
-guide, env vars, TLS, service management, and backup/recovery: **[deploy/DEPLOYMENT.md](deploy/DEPLOYMENT.md)**.
+guide (env vars, TLS, service management, backup/recovery): **[deploy/DEPLOYMENT.md](deploy/DEPLOYMENT.md)**.
 
 ## Features
 
