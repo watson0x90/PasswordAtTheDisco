@@ -283,7 +283,7 @@ function JobView({ job }: { job: PwnedJob }) {
   if (job.phase === "done") {
     return (
       <div className="ingest-ok">
-        ✓ Complete — {fmtBytes(job.bytes_now)} downloaded and indexed
+        ✓ Complete — indexed {fmtBytes(job.bytes_now)}
         {job.index_entries > 0 && <> ({job.index_entries.toLocaleString()} prefixes)</>} in {fmtDur(job.elapsed_sec)}.
         <div className="stat-sub">Restart the server to load the refreshed HIBP index.</div>
       </div>
