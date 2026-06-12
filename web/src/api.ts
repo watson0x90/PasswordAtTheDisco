@@ -238,6 +238,38 @@ export const api = {
 
   pwnedProbe: (csrf: string) =>
     request<PwnedProbe>("/pwned/probe", { method: "POST", headers: { "X-CSRF-Token": csrf } }),
+
+  pwnedJob: () => request<PwnedJob>("/pwned/job"),
+
+  pwnedDownload: (resume: boolean, csrf: string) =>
+    request<PwnedJob>("/pwned/download", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+      body: JSON.stringify({ resume }),
+    }),
+
+  pwnedIndex: (csrf: string) =>
+    request<PwnedJob>("/pwned/index", { method: "POST", headers: { "X-CSRF-Token": csrf } }),
+
+  pwnedCancel: (csrf: string) =>
+    request<PwnedJob>("/pwned/cancel", { method: "POST", headers: { "X-CSRF-Token": csrf } }),
+}
+
+export type PwnedPhase = "idle" | "downloading" | "indexing" | "done" | "failed" | "cancelled"
+
+export interface PwnedJob {
+  phase: PwnedPhase
+  resume: boolean
+  started_at?: string
+  ended_at?: string
+  elapsed_sec: number
+  bytes_now: number
+  est_total: number
+  rate_bps: number
+  index_scanned: number
+  index_entries: number
+  data_file: string
+  error?: string
 }
 
 export interface PwnedStatus {

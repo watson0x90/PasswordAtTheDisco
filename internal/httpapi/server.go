@@ -51,6 +51,7 @@ type Server struct {
 	PolicyPath    string         // where to persist policy edits (empty = in-memory only)
 	PwnedDir      string         // PwnedPasswordsDownloader source dir (HIBP NTLM tool)
 	HIBPPath      string         // configured HIBP NTLM index path (for the Pwned page status)
+	Downloads     *pwned.Manager // background HIBP download/index job runner (may be nil)
 
 	lastActivity atomic.Int64 // unix-nano of the last unlocked data access (auto-lock)
 	inFlight     atomic.Int64 // in-flight data requests; auto-lock waits for zero
@@ -102,6 +103,10 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /api/pwned/status", s.requireAuth(http.HandlerFunc(s.handlePwnedStatus)))
 	mux.Handle("POST /api/pwned/build", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handlePwnedBuild))))
 	mux.Handle("POST /api/pwned/probe", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handlePwnedProbe))))
+	mux.Handle("POST /api/pwned/download", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handlePwnedDownload))))
+	mux.Handle("POST /api/pwned/index", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handlePwnedIndex))))
+	mux.Handle("GET /api/pwned/job", s.requireAuth(http.HandlerFunc(s.handlePwnedJob)))
+	mux.Handle("POST /api/pwned/cancel", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handlePwnedCancel))))
 	// Audit (engagement) management + selection -- needs an unlocked store
 	mux.Handle("GET /api/audits", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleListAudits))))
 	mux.Handle("POST /api/audits", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleCreateAudit)))))
@@ -503,6 +508,92 @@ func (s *Server) handlePwnedProbe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+// handlePwnedDownload starts the background NTLM download (then index build) (lead).
+func (s *Server) handlePwnedDownload(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	if s.Downloads == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "downloader not configured"})
+		return
+	}
+	var body struct {
+		Resume bool `json:"resume"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	err := s.Downloads.Start(body.Resume)
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "pwned_download", Source: r.RemoteAddr, Result: okOr(err)})
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusAccepted, s.Downloads.Status())
+}
+
+// handlePwnedIndex (re)builds the index for the existing data file, no download (lead).
+func (s *Server) handlePwnedIndex(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	if s.Downloads == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "downloader not configured"})
+		return
+	}
+	err := s.Downloads.StartIndexOnly()
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "pwned_index", Source: r.RemoteAddr, Result: okOr(err)})
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusAccepted, s.Downloads.Status())
+}
+
+// handlePwnedJob reports the current download/index job (lead); polled by the UI.
+func (s *Server) handlePwnedJob(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	if s.Downloads == nil {
+		writeJSON(w, http.StatusOK, pwned.JobStatus{Phase: pwned.PhaseIdle})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.Downloads.Status())
+}
+
+// handlePwnedCancel stops an in-progress download (lead).
+func (s *Server) handlePwnedCancel(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	if s.Downloads == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "downloader not configured"})
+		return
+	}
+	err := s.Downloads.Cancel()
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "pwned_cancel", Source: r.RemoteAddr, Result: okOr(err)})
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.Downloads.Status())
+}
+
+// okOr returns "ok" for a nil error else "failed", for audit results.
+func okOr(err error) string {
+	if err != nil {
+		return "failed"
+	}
+	return "ok"
 }
 
 // touch records activity for the idle auto-lock timer.

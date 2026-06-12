@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/bloodhound"
@@ -46,11 +47,23 @@ type Enricher interface {
 
 // Engine holds the pipeline's dependencies. HIBP and Enricher are optional.
 type Engine struct {
-	HIBP     HIBPLookup
+	HIBP     HIBPLookup // guarded by hibpMu for hot-swap; read via hibpCount
+	hibpMu   sync.RWMutex
 	Enricher Enricher
 	Lists    pwanalysis.Lists
 	Policies *policy.Set // per-domain password policies (length/classes + max age)
 	Now      func() time.Time
+}
+
+// SwapHIBP atomically replaces the HIBP searcher (h may be nil to disable lookups)
+// and returns the previous one so the caller can Close it. Lets the breach corpus
+// be refreshed (re-downloaded + re-indexed) and hot-swapped without a restart.
+func (e *Engine) SwapHIBP(h HIBPLookup) HIBPLookup {
+	e.hibpMu.Lock()
+	defer e.hibpMu.Unlock()
+	old := e.HIBP
+	e.HIBP = h
+	return old
 }
 
 func (e *Engine) now() time.Time {
@@ -188,10 +201,13 @@ func (e *Engine) scoreUncracked(domain string, a secretsdump.ParsedAccount, shar
 }
 
 func (e *Engine) hibpCount(ntlm string) int {
-	if e.HIBP == nil {
+	e.hibpMu.RLock()
+	h := e.HIBP
+	e.hibpMu.RUnlock()
+	if h == nil {
 		return 0
 	}
-	if _, c, err := e.HIBP.LookupHash(ntlm); err == nil {
+	if _, c, err := h.LookupHash(ntlm); err == nil {
 		return c
 	}
 	return 0

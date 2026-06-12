@@ -694,3 +694,19 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
   color: var(--dim);
 }
 .pwned-build .stat-sub { font-family: var(--mono); word-break: break-all; }
+
+/* HIBP download/index job */
+.pwned-job { margin-top: 14px; }
+.pwned-bar {
+  height: 10px;
+  border-radius: 6px;
+  background: var(--hairline);
+  overflow: hidden;
+  border: 1px solid var(--glass-border);
+}
+.pwned-bar-fill {
+  height: 100%;
+  background: var(--accent-grad);
+  transition: width 0.6s ease;
+}
+.pwned-job-line { margin-top: 8px; font-size: 13px; color: var(--dim); font-family: var(--mono); }

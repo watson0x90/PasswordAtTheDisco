@@ -28,7 +28,9 @@ import (
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/audit"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/auth"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/hibp"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/httpapi"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/pwned"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/store"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/vault"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/webui"
@@ -101,6 +103,25 @@ func main() {
 		log.Printf("encrypted store %s: uninitialized -- a lead sets the passphrase on first unlock", dataDir)
 	}
 
+	// HIBP download/index job runner. The swap hooks release the live HIBP file
+	// handle before replacing it (Windows can't overwrite an open file) and
+	// reacquire it on the freshly downloaded corpus -- no restart needed.
+	downloads := pwned.NewManager(pwnedDir, hibpPath, hibp.DefaultPrefixLen)
+	downloads.BeforeSwap = func() {
+		if old := eng.SwapHIBP(nil); old != nil {
+			if c, ok := old.(interface{ Close() error }); ok {
+				_ = c.Close()
+			}
+		}
+	}
+	downloads.AfterSwap = func() {
+		if s, err := hibp.Open(hibpPath, hibp.DefaultPrefixLen); err == nil {
+			eng.SwapHIBP(s)
+		} else {
+			log.Printf("HIBP reacquire after refresh failed (%v); breach correlation disabled until restart", err)
+		}
+	}
+
 	api := &httpapi.Server{
 		Store:         store.NewPersistent(vlt),
 		StaticFS:      webui.FS, // embedded SPA when built with -tags embed; else nil
@@ -117,6 +138,7 @@ func main() {
 		PolicyPath:    policyPath,
 		PwnedDir:      pwnedDir,
 		HIBPPath:      hibpPath,
+		Downloads:     downloads,
 	}
 
 	// Idle auto-lock: drop the key + clear decrypted data after inactivity so
