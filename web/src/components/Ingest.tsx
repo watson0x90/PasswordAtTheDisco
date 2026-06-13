@@ -10,24 +10,24 @@ export function Ingest() {
   const { activeId, active } = useAudits()
   const { refresh } = useAccountsData()
   const nav = useNav()
+
+  // Step 1 — load the dump (secretsdump/pwdump): every account, by NT hash.
   const [domain, setDomain] = useState("")
-  const [cracked, setCracked] = useState<File | null>(null)
-  const [uncracked, setUncracked] = useState<File | null>(null)
+  const [dump, setDump] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   const [result, setResult] = useState<AuditResult | null>(null)
 
-  // "Apply hashcat results" (match cracked passwords to existing accounts by NT hash)
+  // Step 2 — apply cracked passwords (hashcat output), matched by NT hash.
   const [crackfile, setCrackfile] = useState<File | null>(null)
   const [applyBusy, setApplyBusy] = useState(false)
   const [applyError, setApplyError] = useState("")
   const [applyResult, setApplyResult] = useState<ApplyCracksResult | null>(null)
 
-  // Reset the form when the active audit changes (stale results would mislead).
+  // Reset when the active audit changes (stale results would mislead).
   useEffect(() => {
     setDomain("")
-    setCracked(null)
-    setUncracked(null)
+    setDump(null)
     setResult(null)
     setError("")
     setCrackfile(null)
@@ -44,12 +44,13 @@ export function Ingest() {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!domain.trim() || (!cracked && !uncracked) || !me) return
+    if (!domain.trim() || !dump || !me) return
     setBusy(true)
     setError("")
     setResult(null)
     try {
-      setResult(await api.audit(domain.trim(), cracked, uncracked, me.csrf_token))
+      // The dump loads as uncracked accounts (NT hashes); passwords come from step 2.
+      setResult(await api.audit(domain.trim(), null, dump, me.csrf_token))
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "upload failed")
     } finally {
@@ -74,12 +75,12 @@ export function Ingest() {
 
   return (
     <>
-      <div className="section-label">Upload</div>
+      <div className="section-label">1 · Load dump</div>
       <form className="panel ingest-form" onSubmit={onSubmit}>
         <p className="ingest-note">
-          Upload a domain's credential dumps into <b>{active ? active.name : "this audit"}</b>. The server parses
-          them, correlates against HIBP, scores each account, and ingests the results — cleartext is never
-          written to disk.
+          Upload a domain's <b>secretsdump / pwdump</b> (<code>user:rid:lm:nt:::</code>) into{" "}
+          <b>{active ? active.name : "this audit"}</b>. Every account loads with its NT hash — all uncracked at first.
+          Then apply hashcat's results below. Cleartext is never written to disk.
         </p>
 
         <div className="field">
@@ -96,54 +97,36 @@ export function Ingest() {
 
         <div className="field">
           <label>
-            Cracked file <span className="opt">optional</span>
+            Dump file <span className="req">required</span>
           </label>
-          <input key={`c-${activeId}`} type="file" onChange={(e) => setCracked(e.target.files?.[0] ?? null)} />
+          <input key={`d-${activeId}`} type="file" onChange={(e) => setDump(e.target.files?.[0] ?? null)} />
           <div className="hint">
-            secretsdump <code>user:rid:lm:nt:::password</code> or simple <code>user:hash:password</code>
-          </div>
-        </div>
-
-        <div className="field">
-          <label>
-            Uncracked file <span className="opt">optional</span>
-          </label>
-          <input key={`u-${activeId}`} type="file" onChange={(e) => setUncracked(e.target.files?.[0] ?? null)} />
-          <div className="hint">
-            The full secretsdump/<b>pwdump</b> (<code>user:rid:lm:nt:::</code>) goes here — every account loads with its
-            NT hash; then apply hashcat results below to flip the cracked ones.
+            impacket secretsdump NTDS output (<code>user:rid:lm:nt:::</code>) or simple <code>user:hash</code>
           </div>
         </div>
 
         {error && <div className="error">{error}</div>}
         {result && (
           <div className="ingest-ok">
-            ✓ ingested {result.accounts.toLocaleString()} account{result.accounts === 1 ? "" : "s"} for <b>{domain.trim()}</b>{" "}
-            ({result.cracked} cracked{result.uncracked ? `, ${result.uncracked} uncracked` : ""}).
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                refresh()
-                nav("overview")
-              }}
-            >
+            ✓ loaded {result.accounts.toLocaleString()} account{result.accounts === 1 ? "" : "s"} for{" "}
+            <b>{domain.trim()}</b>. Apply hashcat results below to fill in cracked passwords.
+            <button type="button" className="btn" onClick={() => { refresh(); nav("overview") }}>
               View results →
             </button>
           </div>
         )}
 
-        <button className="btn btn-primary" type="submit" disabled={busy || !domain.trim() || (!cracked && !uncracked)}>
-          {busy ? "Running audit…" : "Upload & run audit"}
+        <button className="btn btn-primary" type="submit" disabled={busy || !domain.trim() || !dump}>
+          {busy ? "Loading…" : "Load dump"}
         </button>
       </form>
 
-      <div className="section-label">Apply hashcat results</div>
+      <div className="section-label">2 · Apply hashcat results</div>
       <form className="panel ingest-form" onSubmit={onApply}>
         <p className="ingest-note">
-          Upload hashcat's cracked output and it's matched to the loaded accounts <b>by NT hash</b> — so one cracked
-          hash flips <i>every</i> account that shares it (across domains, cracked or not), then everything is re-scored.
-          Run it as you crack more over time.
+          Upload hashcat's cracked output; it's matched to the loaded accounts <b>by NT hash</b> — so one cracked hash
+          flips <i>every</i> account that shares it (across domains, cracked or not), then everything is re-scored. Run
+          it again as you crack more over time.
         </p>
         <div className="field">
           <label>
@@ -161,14 +144,7 @@ export function Ingest() {
             ✓ {applyResult.hashes_matched.toLocaleString()} hash{applyResult.hashes_matched === 1 ? "" : "es"} matched →{" "}
             <b>{applyResult.newly_cracked.toLocaleString()}</b> account{applyResult.newly_cracked === 1 ? "" : "s"} newly
             cracked (from {applyResult.crack_entries.toLocaleString()} crack entries).
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                refresh()
-                nav("overview")
-              }}
-            >
+            <button type="button" className="btn" onClick={() => { refresh(); nav("overview") }}>
               View results →
             </button>
           </div>
