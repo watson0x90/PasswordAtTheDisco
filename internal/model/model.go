@@ -90,9 +90,14 @@ func PostureScore(accounts []Account) Posture {
 // -- the sensitive field that must never leave the process unredacted without
 // authorization.
 type Account struct {
-	Username        string  `json:"username"`
-	Domain          string  `json:"domain"`
-	Password        string  `json:"password,omitempty"`
+	Username string `json:"username"`
+	Domain   string `json:"domain"`
+	Password string `json:"password,omitempty"`
+	// NTHash is the account's NT hash, retained to detect password REUSE across
+	// accounts -- including uncracked ones, since NTLM is unsalted (identical hash =
+	// identical password). It is a pass-the-hash credential, so it is persisted only
+	// in the encrypted store and stripped by Redacted() before any API response.
+	NTHash          string  `json:"nt_hash,omitempty"`
 	Cracked         bool    `json:"cracked"`
 	PasswordLength  int     `json:"password_length"`
 	RiskLevel       string  `json:"risk_level"`
@@ -108,9 +113,11 @@ type Account struct {
 	Complexity      string  `json:"complexity,omitempty"`
 }
 
-// Redacted returns a copy with the cleartext password removed.
+// Redacted returns a copy with the cleartext password AND the NT hash removed --
+// both are credentials (the hash enables pass-the-hash) and never leave the process.
 func (a Account) Redacted() Account {
 	a.Password = ""
+	a.NTHash = ""
 	return a
 }
 
@@ -119,40 +126,61 @@ func (a Account) HasDAPathway() bool {
 	return a.DADomains != "" && a.DADomains != "None" && a.DADomains != "Unknown"
 }
 
-// RecomputeSharing sets each cracked account's SharedWith to the number of OTHER
-// accounts in the set that use the same cleartext password. Run over a whole
-// audit, this captures cross-domain reuse (the per-domain engine pass cannot).
+// emptyNTHash is the NT hash of an empty password. Every account with no password
+// set shares it, which is "no password", not meaningful reuse -- so it is excluded.
+const emptyNTHash = "31D6CFE0D16AE931B73C59D7E0C089C0"
+
+// reuseKey normalizes an account's NT hash for reuse grouping. NTLM is unsalted, so
+// the hash is the password-equality key -- this works for UNCRACKED accounts too.
+// Returns "" (don't count) for a missing or empty-password hash.
+func reuseKey(ntHash string) string {
+	h := strings.ToUpper(strings.TrimSpace(ntHash))
+	if h == "" || h == emptyNTHash {
+		return ""
+	}
+	return h
+}
+
+// RecomputeSharing sets each account's SharedWith to the number of OTHER accounts in
+// the set with the same NT hash -- cracked or not, across all domains. Because NTLM
+// is unsalted, an identical hash means an identical password even when neither was
+// cracked, so this catches reuse the cleartext-only pass would miss.
 func RecomputeSharing(accts []Account) {
-	byPw := make(map[string]int)
+	byHash := make(map[string]int)
 	for _, a := range accts {
-		if a.Cracked && a.Password != "" {
-			byPw[a.Password]++
+		if k := reuseKey(a.NTHash); k != "" {
+			byHash[k]++
 		}
 	}
 	for i := range accts {
-		if a := &accts[i]; a.Cracked && a.Password != "" {
-			a.SharedWith = byPw[a.Password] - 1
+		if k := reuseKey(accts[i].NTHash); k != "" {
+			accts[i].SharedWith = byHash[k] - 1
+		} else {
+			accts[i].SharedWith = 0
 		}
 	}
 }
 
-// EscalateSharedWithDA raises any account to Critical when it shares a cracked
-// password with an account that has a Domain Admin pathway (e.g. a helpdesk
-// account reusing a DA's password) -- the flagship lateral-movement signal. Run
-// over a whole audit it catches cross-domain reuse. Idempotent: safe to re-run.
+// EscalateSharedWithDA raises any account to Critical when it shares an NT hash with
+// an account that has a Domain Admin pathway (e.g. a helpdesk account reusing a DA's
+// password -- detected even if neither was cracked). The flagship lateral-movement
+// signal. Run over a whole audit it catches cross-domain reuse. Idempotent.
 func EscalateSharedWithDA(accts []Account) {
-	daPasswords := make(map[string]bool)
+	daHashes := make(map[string]bool)
 	for _, a := range accts {
-		if a.Cracked && a.Password != "" && a.HasDAPathway() {
-			daPasswords[a.Password] = true
+		if a.HasDAPathway() {
+			if k := reuseKey(a.NTHash); k != "" {
+				daHashes[k] = true
+			}
 		}
 	}
-	if len(daPasswords) == 0 {
+	if len(daHashes) == 0 {
 		return
 	}
 	for i := range accts {
 		a := &accts[i]
-		if !a.Cracked || a.Password == "" || !daPasswords[a.Password] {
+		k := reuseKey(a.NTHash)
+		if k == "" || !daHashes[k] {
 			continue
 		}
 		if a.RiskLevel != "Critical" {

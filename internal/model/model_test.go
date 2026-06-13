@@ -40,33 +40,42 @@ func TestPostureScoreGolden(t *testing.T) {
 	}
 }
 
-func TestRecomputeSharingCrossDomain(t *testing.T) {
+// Sharing is keyed on the NT hash (NTLM is unsalted), so it spans domains AND covers
+// uncracked accounts -- and ignores the empty-password hash.
+func TestRecomputeSharingByHash(t *testing.T) {
+	const reused = "1122334455667788AABBCCDDEEFF0011"
 	accts := []Account{
-		{Username: "a", Domain: "CORP", Password: "Reused1", Cracked: true},
-		{Username: "b", Domain: "LEGACY", Password: "Reused1", Cracked: true}, // different domain, same pw
-		{Username: "c", Domain: "CORP", Password: "Unique1", Cracked: true},
+		{Username: "a", Domain: "CORP", NTHash: reused, Cracked: true, Password: "Reused1"},
+		{Username: "b", Domain: "LEGACY", NTHash: reused, Cracked: false}, // UNCRACKED, same hash, other domain
+		{Username: "c", Domain: "CORP", NTHash: "FFEEDDCCBBAA99887766554433221100", Cracked: true, Password: "Unique1"},
+		{Username: "svc", Domain: "CORP", NTHash: emptyNTHash, Cracked: false},  // no password set
+		{Username: "svc2", Domain: "CORP", NTHash: emptyNTHash, Cracked: false}, // no password set
 	}
 	RecomputeSharing(accts)
 	if accts[0].SharedWith != 1 || accts[1].SharedWith != 1 {
-		t.Fatalf("cross-domain reuse not counted: a=%d b=%d", accts[0].SharedWith, accts[1].SharedWith)
+		t.Fatalf("cracked+uncracked sharing one NT hash should each be 1: a=%d b=%d", accts[0].SharedWith, accts[1].SharedWith)
 	}
 	if accts[2].SharedWith != 0 {
-		t.Fatalf("unique password should have 0 shared, got %d", accts[2].SharedWith)
+		t.Fatalf("unique hash should have 0 shared, got %d", accts[2].SharedWith)
+	}
+	if accts[3].SharedWith != 0 || accts[4].SharedWith != 0 {
+		t.Fatal("empty-password (no-password) accounts must not count as password reuse")
 	}
 }
 
-func TestEscalateSharedWithDACrossDomain(t *testing.T) {
+func TestEscalateSharedWithDAByHash(t *testing.T) {
+	const shared = "AABBCCDDEEFF00112233445566778899"
 	accts := []Account{
-		{Username: "da", Domain: "PARENT", Password: "Shared1", Cracked: true, DADomains: "PARENT", RiskLevel: "Critical"},
-		{Username: "helpdesk", Domain: "SUB", Password: "Shared1", Cracked: true, RiskLevel: "Low"}, // other domain
-		{Username: "alice", Domain: "SUB", Password: "Unique1", Cracked: true, RiskLevel: "Low"},
+		{Username: "da", Domain: "PARENT", NTHash: shared, Cracked: true, Password: "Shared1", DADomains: "PARENT", RiskLevel: "Critical"},
+		{Username: "helpdesk", Domain: "SUB", NTHash: shared, Cracked: false, RiskLevel: "Low"}, // UNCRACKED, shares the DA's hash
+		{Username: "alice", Domain: "SUB", NTHash: "00000000000000000000000000000001", Cracked: false, RiskLevel: "Low"},
 	}
 	EscalateSharedWithDA(accts)
 	if accts[1].RiskLevel != "Critical" || !strings.Contains(accts[1].RiskVector, "SHARED-DA") {
-		t.Fatalf("cross-domain DA reuse not escalated: %+v", accts[1])
+		t.Fatalf("uncracked account sharing a DA's NT hash must escalate: %+v", accts[1])
 	}
 	if accts[2].RiskLevel == "Critical" {
-		t.Fatal("unique-password account must not be escalated")
+		t.Fatal("unrelated account must not be escalated")
 	}
 	// idempotent: a second pass must not duplicate the marker
 	before := accts[1].RiskVector

@@ -173,6 +173,7 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 		Username:        a.Username,
 		Domain:          domain,
 		Password:        pw,
+		NTHash:          strings.ToUpper(a.Hash),
 		Cracked:         true,
 		PasswordLength:  an.PasswordLength,
 		RiskLevel:       res.Level,
@@ -203,6 +204,7 @@ func (e *Engine) scoreUncracked(domain string, a secretsdump.ParsedAccount, shar
 	return model.Account{
 		Username:        a.Username,
 		Domain:          domain,
+		NTHash:          strings.ToUpper(a.Hash),
 		Cracked:         false,
 		RiskLevel:       risk.ComputeLevel(score, hasDA),
 		RiskScore:       score,
