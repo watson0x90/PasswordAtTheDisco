@@ -87,7 +87,15 @@ PATD_INGEST_TOKEN=$(openssl rand -hex 32) PATD_USERS_FILE=users.json \
 ./patd audit -token "$PATD_INGEST_TOKEN" \
   -hibp PwnedPasswordsDownloader/pwnedpasswords_ntlm.txt \
   CORP cracked.txt uncracked.txt
+
+#    Or the dump-first workflow: load the full pwdump, then apply hashcat output
+#    by NT hash (one cracked hash flips every account that shares it):
+./patd audit -crackfile cracked.potfile CORP ntds.pwdump
 ```
+
+The same flow works in the console **Upload** tab: drop the full secretsdump/pwdump in
+the *uncracked* slot (every account loads with its NT hash), then **Apply hashcat
+results** (`user:hash:password`) — matched by hash, re-scored, no re-upload.
 
 Then open the console, sign in, and triage: **Overview → Actionable → Domains →
 Accounts** (with the lead-gated reveal).

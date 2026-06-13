@@ -130,6 +130,35 @@ func (e *Engine) ProcessDomain(domain string, cracked, uncracked []secretsdump.P
 	return out
 }
 
+// Rescore re-runs scoring over an existing account set, grouped by domain. An account
+// whose Password is non-empty is scored as cracked, the rest as uncracked. Used after
+// applying newly cracked passwords (by NT hash) to a stored audit, so the formerly
+// uncracked accounts get full cracked scoring. (Re-runs BHE enrichment.)
+func (e *Engine) Rescore(accts []model.Account) []model.Account {
+	order := []string{}
+	byDomain := map[string][]model.Account{}
+	for _, a := range accts {
+		if _, ok := byDomain[a.Domain]; !ok {
+			order = append(order, a.Domain)
+		}
+		byDomain[a.Domain] = append(byDomain[a.Domain], a)
+	}
+	out := make([]model.Account, 0, len(accts))
+	for _, dom := range order {
+		var cracked, uncracked []secretsdump.ParsedAccount
+		for _, a := range byDomain[dom] {
+			pa := secretsdump.ParsedAccount{Username: a.Username, Domain: a.Domain, Hash: a.NTHash, Password: a.Password, Cracked: a.Password != ""}
+			if pa.Cracked {
+				cracked = append(cracked, pa)
+			} else {
+				uncracked = append(uncracked, pa)
+			}
+		}
+		out = append(out, e.ProcessDomain(dom, cracked, uncracked)...)
+	}
+	return out
+}
+
 func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, sharedWith int, allPasswords []string, analysisCache map[string]*pwanalysis.Analysis, simCache map[string]float64, now time.Time) model.Account {
 	pw := a.Password
 	pol := e.Policies.For(domain) // ProcessDomain is per-domain, so one policy here

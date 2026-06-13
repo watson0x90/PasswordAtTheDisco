@@ -138,6 +138,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /api/accounts/{username}/secret", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleReveal))))
 	// Web upload of dump files into the active audit (lead)
 	mux.Handle("POST /api/upload", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleAudit)))))
+	mux.Handle("POST /api/upload/cracks", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleApplyCracks)))))
 	// Redacted exports of the active audit (any operator)
 	mux.Handle("GET /api/export/csv", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportCSV))))
 	mux.Handle("GET /api/export/html", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportHTML))))
@@ -1214,20 +1215,20 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cf, _, err := r.FormFile("cracked")
+	// Both files are optional, but at least one is required. This lets you upload
+	// just the full pwdump (everything uncracked) first, then apply hashcat results.
+	cracked, err := optionalUpload(r, "cracked", domain, secretsdump.ParseCracked)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a cracked-passwords file is required"})
-		return
-	}
-	defer cf.Close()
-	cracked, err := secretsdump.ParseCracked(cf, domain)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "parse cracked: " + err.Error()})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	uncracked, err := optionalUpload(r, "uncracked", domain, secretsdump.ParseUncracked)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if len(cracked) == 0 && len(uncracked) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "upload a cracked and/or uncracked (pwdump) file"})
 		return
 	}
 
@@ -1238,6 +1239,72 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "audit_upload", Target: domain, Source: r.RemoteAddr, Result: "ok"})
 	writeJSON(w, http.StatusOK, map[string]int{"accounts": len(accts), "cracked": len(cracked), "uncracked": len(uncracked)})
+}
+
+// handleApplyCracks applies a hashcat-style crack file (user:hash:password lines) to
+// the active audit, matching by NT hash -- so one cracked hash flips EVERY account
+// that shares it (cracked or uncracked, any domain) -- then re-scores. Lead only.
+func (s *Server) handleApplyCracks(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	if s.Engine == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "audit engine not configured on this server"})
+		return
+	}
+	auditID, ok := s.activeAudit(w, sess)
+	if !ok {
+		return
+	}
+	// Re-scoring re-runs password analysis + BHE enrichment; extend the deadlines.
+	if rc := http.NewResponseController(w); rc != nil {
+		_ = rc.SetReadDeadline(time.Now().Add(10 * time.Minute))
+		_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Minute))
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 128<<20)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "could not parse upload"})
+		return
+	}
+	cf, _, err := r.FormFile("crackfile")
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a 'crackfile' (user:hash:password lines) is required"})
+		return
+	}
+	defer cf.Close()
+	cracks, err := secretsdump.CrackMap(cf)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "could not parse crack file"})
+		return
+	}
+	accounts, err := s.Store.Accounts(auditID, true) // need NT hashes + any existing cleartext
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		return
+	}
+	matched := map[string]bool{}
+	newly := 0
+	for i := range accounts {
+		if accounts[i].Password != "" {
+			continue // already cracked
+		}
+		h := strings.ToUpper(strings.TrimSpace(accounts[i].NTHash))
+		if pw, ok := cracks[h]; ok {
+			accounts[i].Password = pw
+			matched[h] = true
+			newly++
+		}
+	}
+	rescored := s.Engine.Rescore(accounts)
+	meta, _ := s.Store.Meta(auditID)
+	if err := s.Store.Replace(auditID, model.Dataset{Name: meta.Name, Accounts: rescored}); err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "selected audit no longer exists"})
+		return
+	}
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "apply_cracks", Source: r.RemoteAddr, Result: "ok"})
+	writeJSON(w, http.StatusOK, map[string]int{"crack_entries": len(cracks), "hashes_matched": len(matched), "newly_cracked": newly})
 }
 
 // optionalUpload parses an optional multipart file part; returns nil if absent.

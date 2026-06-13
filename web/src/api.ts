@@ -165,13 +165,19 @@ export const api = {
   revealSecret: (username: string) =>
     request<{ username: string; password: string }>(`/accounts/${encodeURIComponent(username)}/secret`),
 
-  audit: (domain: string, cracked: File, uncracked: File | null, csrf: string) => {
+  audit: (domain: string, cracked: File | null, uncracked: File | null, csrf: string) => {
     const fd = new FormData()
     fd.append("domain", domain)
-    fd.append("cracked", cracked)
+    if (cracked) fd.append("cracked", cracked)
     if (uncracked) fd.append("uncracked", uncracked)
     // No Content-Type header: the browser sets the multipart boundary.
     return request<AuditResult>("/upload", { method: "POST", headers: { "X-CSRF-Token": csrf }, body: fd })
+  },
+
+  applyCracks: (crackfile: File, csrf: string) => {
+    const fd = new FormData()
+    fd.append("crackfile", crackfile)
+    return request<ApplyCracksResult>("/upload/cracks", { method: "POST", headers: { "X-CSRF-Token": csrf }, body: fd })
   },
 
   unlock: (passphrase: string, csrf: string) =>
@@ -429,4 +435,10 @@ export interface AuditResult {
   accounts: number
   cracked: number
   uncracked: number
+}
+
+export interface ApplyCracksResult {
+  crack_entries: number
+  hashes_matched: number
+  newly_cracked: number
 }

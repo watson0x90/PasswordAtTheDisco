@@ -39,31 +39,36 @@ func runAudit(args []string) {
 	name := fs.String("name", "CLI import", "name for the audit this ingest creates")
 	out := fs.String("out", "", "also write the dataset JSON to this file (WARNING: contains CLEARTEXT cracked passwords; 0600, written atomically -- protect/delete it)")
 	insecure := fs.Bool("insecure", false, "skip TLS verification when POSTing (self-signed dev certs)")
+	crackfile := fs.String("crackfile", "", "hashcat results (user:hash:password) to apply by NT hash; when set, positional args are DOMAIN dump-file pairs (a full secretsdump/pwdump per domain)")
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: patd audit [flags] DOMAIN cracked-file uncracked-file [DOMAIN cracked-file uncracked-file ...]")
+		fmt.Fprintln(os.Stderr, "usage: patd audit [flags] DOMAIN cracked-file uncracked-file [...]")
+		fmt.Fprintln(os.Stderr, "   or: patd audit -crackfile cracks.txt [flags] DOMAIN dump-file [DOMAIN dump-file ...]")
 		fs.PrintDefaults()
 	}
 	_ = fs.Parse(args)
-
-	entries, err := parseEntries(fs.Args())
-	if err != nil {
-		fs.Usage()
-		log.Fatalf("audit: %v", err)
-	}
 
 	eng, _, cleanup := buildEngine(*hibpPath, *listsDir, *bhePath, *policyPath)
 	defer cleanup()
 
 	var all []model.Account
-	for _, e := range entries {
-		cracked, uncracked, err := secretsdump.ParseDomain(e.Domain, e.Cracked, e.Uncracked)
+	if *crackfile != "" {
+		all = auditWithCrackfile(eng, *crackfile, fs.Args(), fs.Usage)
+	} else {
+		entries, err := parseEntries(fs.Args())
 		if err != nil {
-			log.Printf("skip %s: %v", e.Domain, err)
-			continue
+			fs.Usage()
+			log.Fatalf("audit: %v", err)
 		}
-		accts := eng.ProcessDomain(e.Domain, cracked, uncracked)
-		all = append(all, accts...)
-		log.Printf("%s: %d cracked + %d uncracked -> %d accounts", e.Domain, len(cracked), len(uncracked), len(accts))
+		for _, e := range entries {
+			cracked, uncracked, err := secretsdump.ParseDomain(e.Domain, e.Cracked, e.Uncracked)
+			if err != nil {
+				log.Printf("skip %s: %v", e.Domain, err)
+				continue
+			}
+			accts := eng.ProcessDomain(e.Domain, cracked, uncracked)
+			all = append(all, accts...)
+			log.Printf("%s: %d cracked + %d uncracked -> %d accounts", e.Domain, len(cracked), len(uncracked), len(accts))
+		}
 	}
 
 	data, err := json.Marshal(model.Dataset{Name: *name, GeneratedAt: time.Now().UTC(), Accounts: all})
@@ -97,6 +102,55 @@ func parseEntries(args []string) ([]domainEntry, error) {
 		out = append(out, domainEntry{Domain: args[i], Cracked: args[i+1], Uncracked: args[i+2]})
 	}
 	return out, nil
+}
+
+// auditWithCrackfile loads each domain's full dump (every account, uncracked),
+// applies the hashcat crack file by NT hash (one cracked hash flips every account
+// that shares it), then scores. Positional args are DOMAIN dump-file pairs.
+func auditWithCrackfile(eng *engine.Engine, crackfile string, args []string, usage func()) []model.Account {
+	if len(args) == 0 || len(args)%2 != 0 {
+		usage()
+		log.Fatalf("audit: with -crackfile, expected DOMAIN dump-file pairs, got %d argument(s)", len(args))
+	}
+	cf, err := os.Open(crackfile)
+	if err != nil {
+		log.Fatalf("crackfile: %v", err)
+	}
+	cracks, err := secretsdump.CrackMap(cf)
+	cf.Close()
+	if err != nil {
+		log.Fatalf("crackfile: %v", err)
+	}
+	log.Printf("crackfile: %d cracked NT hashes loaded", len(cracks))
+
+	var all []model.Account
+	for i := 0; i < len(args); i += 2 {
+		domain, dump := args[i], args[i+1]
+		f, err := os.Open(dump)
+		if err != nil {
+			log.Printf("skip %s: %v", domain, err)
+			continue
+		}
+		accounts, perr := secretsdump.ParseUncracked(f, domain)
+		f.Close()
+		if perr != nil {
+			log.Printf("skip %s: %v", domain, perr)
+			continue
+		}
+		var cracked, uncracked []secretsdump.ParsedAccount
+		for _, a := range accounts {
+			if pw, ok := cracks[strings.ToUpper(a.Hash)]; ok {
+				a.Password, a.Cracked = pw, true
+				cracked = append(cracked, a)
+			} else {
+				uncracked = append(uncracked, a)
+			}
+		}
+		accts := eng.ProcessDomain(domain, cracked, uncracked)
+		all = append(all, accts...)
+		log.Printf("%s: %d accounts (%d cracked via crackfile)", domain, len(accts), len(cracked))
+	}
+	return all
 }
 
 // configured reports whether a BHE config has real (non-placeholder) credentials.

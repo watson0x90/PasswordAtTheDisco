@@ -83,6 +83,47 @@ func ParseUncracked(r io.Reader, domain string) ([]ParsedAccount, error) {
 	return out, sc.Err()
 }
 
+// emptyNTHashHex is the NT hash of an empty password; never a real crack target.
+const emptyNTHashHex = "31D6CFE0D16AE931B73C59D7E0C089C0"
+
+// CrackMap parses a crack-results file into a map of uppercase NT hash -> cleartext,
+// keyed on the NT hash so one cracked hash applies to every account that shares it
+// (NTLM is unsalted). Accepted line shapes (the password may itself contain ':'):
+//   - user:hash:password                          (the common hashcat --username form)
+//   - hash:password                               (a bare hashcat potfile line)
+//   - user:rid:lm:nt:::password                   (secretsdump with the password)
+//
+// $HEX[] passwords are decoded; machine accounts, empty passwords, and the
+// empty-password NT hash are ignored.
+func CrackMap(r io.Reader) (map[string]string, error) {
+	m := map[string]string{}
+	sc := newScanner(r)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, ":")
+		var hash, pw string
+		switch {
+		case len(parts) >= 7 && !skipAccount(parts[0]): // secretsdump-with-password
+			hash, pw = parts[3], joinPassword(parts)
+		case len(parts) >= 3 && !skipAccount(parts[0]): // user:hash:password (password may contain ':')
+			hash, pw = parts[1], strings.Join(parts[2:], ":")
+		case len(parts) == 2: // bare potfile: hash:password
+			hash, pw = parts[0], parts[1]
+		default:
+			continue
+		}
+		h := strings.ToUpper(strings.TrimSpace(hash))
+		if h == "" || h == emptyNTHashHex || pw == "" {
+			continue
+		}
+		m[h] = decodeHex(pw)
+	}
+	return m, sc.Err()
+}
+
 // skipAccount filters machine/computer accounts (trailing '$'): their passwords
 // are random machine-generated, not user-chosen, so including them would inflate
 // account counts and skew the posture score in a password audit. Secretsdump

@@ -150,3 +150,32 @@ func TestParseSkipsBlankAndMalformedLines(t *testing.T) {
 		t.Fatalf("expected only the valid line, got %+v", got)
 	}
 }
+
+func TestCrackMap(t *testing.T) {
+	lines := []string{
+		"alice:aabbccddeeff00112233445566778899:Summer2024!",    // user:hash:password
+		"bob:ccddeeff00112233445566778899aabb:p@ss:with:colons", // password contains ':'
+		"deadbeefdeadbeefdeadbeefdeadbeef:PotfilePw",            // bare potfile hash:password
+		"WK01$:1111111111111111:MachinePw",                      // machine account -> skipped
+		"svc2:31D6CFE0D16AE931B73C59D7E0C089C0:Ignored",         // empty-NT hash -> excluded
+	}
+	m, err := CrackMap(strings.NewReader(strings.Join(lines, "\n")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m["AABBCCDDEEFF00112233445566778899"] != "Summer2024!" {
+		t.Fatalf("user:hash:password not mapped: %v", m)
+	}
+	if m["CCDDEEFF00112233445566778899AABB"] != "p@ss:with:colons" {
+		t.Fatalf("colon password not preserved: %q", m["CCDDEEFF00112233445566778899AABB"])
+	}
+	if m["DEADBEEFDEADBEEFDEADBEEFDEADBEEF"] != "PotfilePw" {
+		t.Fatalf("bare potfile line not mapped: %v", m)
+	}
+	if _, ok := m["31D6CFE0D16AE931B73C59D7E0C089C0"]; ok {
+		t.Fatal("empty-password NT hash must be excluded")
+	}
+	if len(m) != 3 {
+		t.Fatalf("expected 3 usable cracks (machine + empty-hash dropped), got %d: %v", len(m), m)
+	}
+}
