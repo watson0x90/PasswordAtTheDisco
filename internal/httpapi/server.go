@@ -134,6 +134,7 @@ func (s *Server) Routes() http.Handler {
 	// Views scoped to the session's active audit
 	mux.Handle("GET /api/summary", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleSummary))))
 	mux.Handle("GET /api/accounts", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleAccounts))))
+	mux.Handle("GET /api/report", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleReport))))
 	// Cleartext reveal -- requires lead role, always audit-logged
 	mux.Handle("GET /api/accounts/{username}/secret", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleReveal))))
 	// Web upload of dump files into the active audit (lead)
@@ -1127,6 +1128,24 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, sum)
+}
+
+// handleReport builds the Actionable reports (cracked accounts, cracked- and
+// uncracked-password reuse groups keyed on NT hash, HIBP-exposed accounts). It
+// reads the unredacted accounts so it can group by NT hash, but model.BuildReport
+// returns only redacted rows -- no cleartext password, no NT hash ever leaves here.
+func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	id, ok := s.activeAudit(w, sess)
+	if !ok {
+		return
+	}
+	accts, err := s.Store.Accounts(id, true) // need NT hashes to group; report is redacted
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		return
+	}
+	writeJSON(w, http.StatusOK, model.BuildReport(accts))
 }
 
 // handleReveal returns a single account's cleartext password. Requires the lead

@@ -1,82 +1,257 @@
-import { useState, type ReactNode } from "react"
-import { useAccountsData } from "../accountsData"
-import { RISK_CLASS, hasDA } from "../util"
-import type { Account } from "../api"
+import { useEffect, useState, type ReactNode } from "react"
+import { api, ApiError, type Report, type ReportAccount, type ReuseGroup } from "../api"
+import { useAudits } from "../auditsData"
+import { RISK_CLASS } from "../util"
 
 const TOP = 50
 
 export function Actionable() {
-  const { accounts, error } = useAccountsData()
+  const { activeId } = useAudits()
+  const [report, setReport] = useState<Report | null>(null)
+  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(true)
 
-  if (error && !accounts) return <div className="center-state">{error}</div>
-  if (!accounts) {
+  useEffect(() => {
+    let live = true
+    setLoading(true)
+    api
+      .report()
+      .then((r) => {
+        if (live) {
+          setReport(r)
+          setError("")
+        }
+      })
+      .catch((e) => {
+        if (live) setError(e instanceof ApiError ? e.message : "failed to load report")
+      })
+      .finally(() => {
+        if (live) setLoading(false)
+      })
+    return () => {
+      live = false
+    }
+  }, [activeId])
+
+  if (error && !report) return <div className="center-state">{error}</div>
+  if (loading && !report) {
     return (
       <div className="center-state">
         <div className="spinner">loading</div>
       </div>
     )
   }
-
-  const da = accounts.filter((a) => hasDA(a.da_domains)).sort((a, b) => b.risk_score - a.risk_score)
-  const breached = accounts.filter((a) => a.hibp_breached).sort((a, b) => b.hibp_breach_count - a.hibp_breach_count)
-  const reused = accounts.filter((a) => a.shared_with > 0).sort((a, b) => b.shared_with - a.shared_with)
+  if (!report) return null
 
   return (
     <>
-      <div className="section-label">Actionable</div>
+      <div className="section-label">Actionable reports</div>
+      <div className="report-strip">
+        <Stat n={report.total_accounts} label="accounts" />
+        <Stat n={report.cracked_count} label="cracked" tone="high" />
+        <Stat n={report.uncracked_count} label="uncracked" />
+        <Stat n={report.cracked_reuse.length} label="cracked-password groups" tone="crit" />
+        <Stat n={report.uncracked_reuse.length} label="uncracked-hash groups" tone="med" />
+        <Stat n={report.hibp_exposed.length} label="in HIBP" tone="high" />
+      </div>
+
       <Section
         title="Domain Admin Pathways"
         action="Privilege-escalation routes — remediate access / rotate first"
-        items={da}
+        count={report.da_pathways.length}
         tone="crit"
-        metricHead="DA Pathway"
-        metric={(a) => <span className="badge crit">{a.da_domains}</span>}
-      />
+      >
+        <AccountTable
+          rows={report.da_pathways}
+          metricHead="DA Pathway"
+          metric={(a) => <span className="badge crit">{a.da_domains}</span>}
+        />
+      </Section>
+
       <Section
-        title="Breached Credentials"
-        action="Found in Have I Been Pwned — force reset (known-compromised)"
-        items={breached}
+        title="Cracked Credentials"
+        action="Plaintext recovered by hashcat — force reset; reveal cleartext in Accounts"
+        count={report.cracked.length}
         tone="high"
-        metricHead="HIBP"
-        metric={(a) => <span className="c-crit">{a.hibp_breach_count.toLocaleString()}</span>}
-      />
+      >
+        <AccountTable
+          rows={report.cracked}
+          metricHead="Length"
+          metric={(a) => <span className="c-med">{a.password_length ?? "—"}</span>}
+        />
+      </Section>
+
       <Section
-        title="Reused Passwords"
-        action="Shared across accounts — enforce unique credentials"
-        items={reused}
+        title="Shared Cracked Passwords"
+        action="Accounts proven to share the same cracked password — one reset is incomplete; rotate the whole group"
+        count={report.cracked_reuse.length}
+        tone="crit"
+      >
+        <ReuseGroups groups={report.cracked_reuse} cracked />
+      </Section>
+
+      <Section
+        title="Shared Uncracked Passwords"
+        action="Same NT hash, password not yet cracked — identical credential reused; lateral-movement risk"
+        count={report.uncracked_reuse.length}
         tone="med"
-        metricHead="Shared With"
-        metric={(a) => <span className="c-med">{a.shared_with}</span>}
-      />
+      >
+        <ReuseGroups groups={report.uncracked_reuse} />
+      </Section>
+
+      <Section
+        title="Exposed in Have I Been Pwned"
+        action="NT hash found in HIBP (cracked or not) — known-compromised; the count is how many breaches it appears in"
+        count={report.hibp_exposed.length}
+        tone="high"
+      >
+        <AccountTable
+          rows={report.hibp_exposed}
+          metricHead="HIBP breaches"
+          metric={(a) => <span className="c-crit">{a.hibp_breach_count.toLocaleString()}</span>}
+          sharedCol
+        />
+      </Section>
     </>
   )
 }
 
-interface SectionProps {
-  title: string
-  action: string
-  items: Account[]
-  tone: "crit" | "high" | "med"
-  metricHead: string
-  metric: (a: Account) => ReactNode
+function Stat({ n, label, tone }: { n: number; label: string; tone?: string }) {
+  return (
+    <div className="report-stat">
+      <span className={`report-stat-n ${tone ? `c-${tone}` : ""}`}>{n.toLocaleString()}</span>
+      <span className="report-stat-label">{label}</span>
+    </div>
+  )
 }
 
-function Section({ title, action, items, tone, metricHead, metric }: SectionProps) {
-  const [showAll, setShowAll] = useState(false)
-  const shown = showAll ? items : items.slice(0, TOP)
+function Section({
+  title,
+  action,
+  count,
+  tone,
+  children,
+}: {
+  title: string
+  action: string
+  count: number
+  tone: "crit" | "high" | "med"
+  children: ReactNode
+}) {
   return (
     <div className="action-section">
       <div className="action-head">
-        <span className={`action-count ${tone}`}>{items.length}</span>
+        <span className={`action-count ${tone}`}>{count}</span>
         <div>
           <div className="action-title">{title}</div>
           <div className="action-sub">{action}</div>
         </div>
       </div>
-      {items.length === 0 ? (
-        <div className="action-empty">none — nothing to action here ✓</div>
-      ) : (
-        <div className="table-wrap action-table">
+      {count === 0 ? <div className="action-empty">none — nothing to action here ✓</div> : children}
+    </div>
+  )
+}
+
+// AccountTable renders a flat list of redacted report rows with one metric column.
+function AccountTable({
+  rows,
+  metricHead,
+  metric,
+  sharedCol,
+}: {
+  rows: ReportAccount[]
+  metricHead: string
+  metric: (a: ReportAccount) => ReactNode
+  sharedCol?: boolean
+}) {
+  const [showAll, setShowAll] = useState(false)
+  const shown = showAll ? rows : rows.slice(0, TOP)
+  return (
+    <div className="table-wrap action-table">
+      <table className="accounts">
+        <thead>
+          <tr>
+            <th>Username</th>
+            <th>Domain</th>
+            <th>Risk</th>
+            <th className="num">Score</th>
+            {sharedCol && <th className="num">Shared</th>}
+            <th>{metricHead}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {shown.map((a, i) => (
+            <tr key={`${a.domain}/${a.username}/${i}`}>
+              <td>{a.username}</td>
+              <td className="muted">{a.domain}</td>
+              <td>
+                <span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span>
+              </td>
+              <td className="num">{a.risk_score.toFixed(1)}</td>
+              {sharedCol && <td className="num">{a.shared_with > 0 ? a.shared_with : "—"}</td>}
+              <td>{metric(a)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {rows.length > TOP && (
+        <div className="meta-line">
+          showing {shown.length.toLocaleString()} of {rows.length.toLocaleString()}{" "}
+          <button className="link-btn" onClick={() => setShowAll((v) => !v)}>
+            {showAll ? "show top 50" : "show all"}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ReuseGroups({ groups, cracked }: { groups: ReuseGroup[]; cracked?: boolean }) {
+  return (
+    <div className="reuse-list">
+      {groups.slice(0, TOP).map((g) => (
+        <ReuseGroupRow key={g.group_id} g={g} cracked={cracked} />
+      ))}
+      {groups.length > TOP && (
+        <div className="meta-line">
+          showing top {TOP} of {groups.length.toLocaleString()} groups
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ReuseGroupRow({ g, cracked }: { g: ReuseGroup; cracked?: boolean }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="reuse-group">
+      <button className="reuse-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <span className={`reuse-size badge ${cracked ? "crit" : "med"}`}>{g.size}×</span>
+        <span className="reuse-summary">
+          accounts share {cracked ? "a cracked password" : "an uncracked password"}
+          {cracked && g.password_length ? <span className="muted"> ({g.password_length} chars)</span> : null}
+        </span>
+        <span className="reuse-meta">
+          {g.domains > 1 && (
+            <span className="badge med" title="reused across domains">
+              {g.domains} domains
+            </span>
+          )}
+          {g.hibp_breach_count > 0 && (
+            <span className="badge high" title="appears in HIBP breaches">
+              HIBP {g.hibp_breach_count.toLocaleString()}
+            </span>
+          )}
+          {g.has_da_pathway && (
+            <span className="badge crit" title="a member can reach Domain Admin">
+              DA reachable
+            </span>
+          )}
+        </span>
+        <span className="reuse-caret">{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (
+        <div className="table-wrap reuse-members">
           <table className="accounts">
             <thead>
               <tr>
@@ -84,29 +259,32 @@ function Section({ title, action, items, tone, metricHead, metric }: SectionProp
                 <th>Domain</th>
                 <th>Risk</th>
                 <th className="num">Score</th>
-                <th>{metricHead}</th>
+                <th>DA</th>
               </tr>
             </thead>
             <tbody>
-              {shown.map((a, i) => (
-                <tr key={`${a.domain}/${a.username}/${i}`}>
-                  <td>{a.username}</td>
-                  <td className="muted">{a.domain}</td>
+              {g.members.map((m, i) => (
+                <tr key={`${m.domain}/${m.username}/${i}`}>
+                  <td>{m.username}</td>
+                  <td className="muted">{m.domain}</td>
                   <td>
-                    <span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span>
+                    <span className={`badge ${RISK_CLASS[m.risk_level] || ""}`}>{m.risk_level}</span>
                   </td>
-                  <td className="num">{a.risk_score.toFixed(1)}</td>
-                  <td>{metric(a)}</td>
+                  <td className="num">{m.risk_score.toFixed(1)}</td>
+                  <td>
+                    {m.da_domains ? (
+                      <span className="badge crit">{m.da_domains}</span>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {items.length > TOP && (
+          {g.truncated && (
             <div className="meta-line">
-              showing {shown.length.toLocaleString()} of {items.length.toLocaleString()}{" "}
-              <button className="link-btn" onClick={() => setShowAll((v) => !v)}>
-                {showAll ? "show top 50" : "show all"}
-              </button>
+              showing first {g.members.length} of {g.size.toLocaleString()} members
             </div>
           )}
         </div>

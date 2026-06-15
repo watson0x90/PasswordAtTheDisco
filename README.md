@@ -153,9 +153,12 @@ guide (env vars, TLS, service management, backup/recovery): **[deploy/DEPLOYMENT
   dump, password analysis (complexity / policy / wordlists / similarity),
   BloodHound Enterprise enrichment, and CVSS-style base/temporal/environmental
   scoring with a risk vector.
-- **Console:** at-a-glance dashboard, an **Actionable** view (DA pathways /
-  breached / reused remediation lists), per-**Domain** stats, and a searchable,
-  risk-filtered accounts table with role-gated reveal.
+- **Console:** at-a-glance dashboard, an **Actionable** view with full remediation
+  reports (DA pathways, cracked credentials, accounts sharing a *cracked* password,
+  accounts sharing an *uncracked* NT hash, and HIBP-exposed accounts with breach
+  counts — reuse grouped server-side by NT hash so the hash never leaves the process),
+  per-**Domain** stats, and a searchable, risk-filtered accounts table with role-gated
+  reveal.
 - **Administration (lead-only):** runtime **Operator** management (add / disable /
   remove with live effect, no restart; per-account **login lockout** + last-login),
   a searchable, CSV-exportable **Activity** view over the audit log, an **HIBP**

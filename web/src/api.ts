@@ -84,6 +84,43 @@ export interface Account {
   complexity: string
 }
 
+// A redacted account row in the Actionable reports — no cleartext, no NT hash.
+export interface ReportAccount {
+  username: string
+  domain: string
+  cracked: boolean
+  password_length?: number
+  risk_level: string
+  risk_score: number
+  hibp_breach_count: number
+  shared_with: number
+  da_domains?: string
+}
+
+// A set of accounts sharing one NT hash (= one password). The hash is never exposed.
+export interface ReuseGroup {
+  group_id: number
+  size: number
+  cracked: boolean
+  password_length?: number
+  hibp_breach_count: number
+  has_da_pathway: boolean
+  domains: number
+  truncated?: boolean
+  members: ReportAccount[]
+}
+
+export interface Report {
+  total_accounts: number
+  cracked_count: number
+  uncracked_count: number
+  da_pathways: ReportAccount[]
+  cracked: ReportAccount[]
+  cracked_reuse: ReuseGroup[]
+  uncracked_reuse: ReuseGroup[]
+  hibp_exposed: ReportAccount[]
+}
+
 export interface PolicyRule {
   min_length: number
   require_lowercase: boolean
@@ -161,6 +198,8 @@ export const api = {
   summary: () => request<Summary>("/summary"),
 
   accounts: () => request<Account[]>("/accounts"),
+
+  report: () => request<Report>("/report"),
 
   revealSecret: (username: string) =>
     request<{ username: string; password: string }>(`/accounts/${encodeURIComponent(username)}/secret`),
