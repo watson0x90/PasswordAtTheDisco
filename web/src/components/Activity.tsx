@@ -4,7 +4,7 @@ import { useAuth } from "../auth"
 import { fmtWhen, resultClass } from "../format"
 
 const ACTIONS = [
-  "login", "logout", "reveal_secret", "store_unlock", "store_lock", "store_passphrase_change", "store_rekey",
+  "login", "logout", "reveal_secret", "reveal_violation_terms", "store_unlock", "store_lock", "store_passphrase_change", "store_rekey",
   "audit_create", "audit_delete", "audit_upload", "apply_cracks", "export", "policy_update",
   "user_create", "user_update", "user_delete", "user_unlock",
   "pwned_build", "pwned_probe", "pwned_download", "pwned_index", "pwned_cancel",

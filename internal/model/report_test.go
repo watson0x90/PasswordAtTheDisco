@@ -86,6 +86,19 @@ func TestBuildReport(t *testing.T) {
 	}
 }
 
+func TestBuildReportViolationCounts(t *testing.T) {
+	accts := []Account{
+		{Username: "a", Domain: "C", Cracked: true, IsCommon: true, BannedWordCount: 1}, // common + forbidden
+		{Username: "b", Domain: "C", Cracked: true, IsDictionaryWord: true},             // dictionary
+		{Username: "c", Domain: "C", Cracked: true, KeyboardPatternCount: 2},            // keyboard
+		{Username: "d", Domain: "C", Cracked: true},                                     // clean
+	}
+	vc := BuildReport(accts).ViolationCounts
+	if vc.Common != 1 || vc.Dictionary != 1 || vc.Forbidden != 1 || vc.Keyboard != 1 {
+		t.Fatalf("violation counts wrong: %+v", vc)
+	}
+}
+
 func TestBuildReportEmpty(t *testing.T) {
 	rep := BuildReport(nil)
 	// JSON-friendly: slices are non-nil so the API emits [] not null
@@ -94,5 +107,35 @@ func TestBuildReportEmpty(t *testing.T) {
 	}
 	if rep.TotalAccounts != 0 || rep.CrackedCount != 0 {
 		t.Errorf("empty report counts non-zero: %+v", rep)
+	}
+}
+
+func TestAggregateTerms(t *testing.T) {
+	accts := []Account{
+		{BannedWords: []string{"summer", "2021"}, KeyboardPatterns: []string{"qwerty"}},
+		{BannedWords: []string{"2021"}},
+		{BannedWords: []string{"2021", "2021"}},  // duplicate within one account counts once
+		{IsCommon: true, IsDictionaryWord: true}, // common/dictionary must NOT appear as terms
+	}
+	tr := AggregateTerms(accts, 25)
+	if len(tr.Forbidden) != 2 {
+		t.Fatalf("want 2 forbidden terms, got %+v", tr.Forbidden)
+	}
+	// sorted by count desc: 2021 (3) before summer (1)
+	if tr.Forbidden[0].Term != "2021" || tr.Forbidden[0].Count != 3 {
+		t.Fatalf("top forbidden wrong: %+v", tr.Forbidden[0])
+	}
+	if len(tr.Keyboard) != 1 || tr.Keyboard[0].Term != "qwerty" || tr.Keyboard[0].Count != 1 {
+		t.Fatalf("keyboard wrong: %+v", tr.Keyboard)
+	}
+}
+
+func TestAggregateTermsTopN(t *testing.T) {
+	var accts []Account
+	for _, w := range []string{"a", "b", "c", "d"} {
+		accts = append(accts, Account{BannedWords: []string{w}})
+	}
+	if got := len(AggregateTerms(accts, 2).Forbidden); got != 2 {
+		t.Fatalf("topN cap failed: got %d", got)
 	}
 }

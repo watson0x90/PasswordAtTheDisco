@@ -57,17 +57,77 @@ type ReuseGroup struct {
 	Members         []ReportAccount `json:"members"`
 }
 
+// ViolationCounts is the number of accounts tripping each wordlist category.
+type ViolationCounts struct {
+	Common     int `json:"common"`
+	Dictionary int `json:"dictionary"`
+	Forbidden  int `json:"forbidden"`
+	Keyboard   int `json:"keyboard"`
+}
+
 // Report is the Actionable section's set of redacted reports.
 type Report struct {
-	TotalAccounts  int             `json:"total_accounts"`
-	CrackedCount   int             `json:"cracked_count"`
-	UncrackedCount int             `json:"uncracked_count"`
-	DAPathways     []ReportAccount `json:"da_pathways"`
-	Cracked        []ReportAccount `json:"cracked"`         // whose password has been cracked
-	CrackedReuse   []ReuseGroup    `json:"cracked_reuse"`   // groups sharing a cracked password
-	UncrackedReuse []ReuseGroup    `json:"uncracked_reuse"` // groups sharing an uncracked NT hash
-	HIBPExposed    []ReportAccount `json:"hibp_exposed"`    // accounts whose hash is in HIBP + the count
-	WeakPasswords  []ReportAccount `json:"weak_passwords"`  // cracked pw matched a wordlist (common/dictionary/forbidden/keyboard)
+	TotalAccounts   int             `json:"total_accounts"`
+	CrackedCount    int             `json:"cracked_count"`
+	UncrackedCount  int             `json:"uncracked_count"`
+	DAPathways      []ReportAccount `json:"da_pathways"`
+	Cracked         []ReportAccount `json:"cracked"`         // whose password has been cracked
+	CrackedReuse    []ReuseGroup    `json:"cracked_reuse"`   // groups sharing a cracked password
+	UncrackedReuse  []ReuseGroup    `json:"uncracked_reuse"` // groups sharing an uncracked NT hash
+	HIBPExposed     []ReportAccount `json:"hibp_exposed"`    // accounts whose hash is in HIBP + the count
+	WeakPasswords   []ReportAccount `json:"weak_passwords"`  // cracked pw matched a wordlist (common/dictionary/forbidden/keyboard)
+	ViolationCounts ViolationCounts `json:"violation_counts"`
+}
+
+// Term is one recurring wordlist match and how many accounts' passwords contain it.
+type Term struct {
+	Term  string `json:"term"`
+	Count int    `json:"count"`
+}
+
+// Terms is the recurring forbidden words + keyboard patterns. The matched strings
+// are cleartext fragments -- this is only ever returned by the lead-gated, audited
+// terms endpoint, never persisted or exported. Common/dictionary are deliberately
+// excluded: their "term" is the whole password.
+type Terms struct {
+	Forbidden []Term `json:"forbidden"`
+	Keyboard  []Term `json:"keyboard"`
+}
+
+// AggregateTerms counts each distinct matched term once per account and returns the
+// top-N of each kind, sorted by count (desc), then term (asc) for stability.
+func AggregateTerms(accts []Account, topN int) Terms {
+	tally := func(get func(Account) []string) []Term {
+		counts := map[string]int{}
+		for _, a := range accts {
+			seen := map[string]bool{}
+			for _, t := range get(a) {
+				if t == "" || seen[t] {
+					continue
+				}
+				seen[t] = true
+				counts[t]++
+			}
+		}
+		out := make([]Term, 0, len(counts))
+		for t, c := range counts {
+			out = append(out, Term{Term: t, Count: c})
+		}
+		sort.SliceStable(out, func(i, j int) bool {
+			if out[i].Count != out[j].Count {
+				return out[i].Count > out[j].Count
+			}
+			return out[i].Term < out[j].Term
+		})
+		if topN > 0 && len(out) > topN {
+			out = out[:topN]
+		}
+		return out
+	}
+	return Terms{
+		Forbidden: tally(func(a Account) []string { return a.BannedWords }),
+		Keyboard:  tally(func(a Account) []string { return a.KeyboardPatterns }),
+	}
 }
 
 // BuildReport groups accounts by NT hash and produces the redacted Actionable
@@ -100,6 +160,18 @@ func BuildReport(accts []Account) Report {
 		}
 		if a.IsWeak() {
 			rep.WeakPasswords = append(rep.WeakPasswords, toReportAccount(a))
+		}
+		if a.IsCommon {
+			rep.ViolationCounts.Common++
+		}
+		if a.IsDictionaryWord {
+			rep.ViolationCounts.Dictionary++
+		}
+		if a.BannedWordCount > 0 {
+			rep.ViolationCounts.Forbidden++
+		}
+		if a.KeyboardPatternCount > 0 {
+			rep.ViolationCounts.Keyboard++
 		}
 		if k := reuseKey(a.NTHash); k != "" {
 			if _, ok := byHash[k]; !ok {

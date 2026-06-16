@@ -84,3 +84,24 @@ func TestEscalateSharedWithDAByHash(t *testing.T) {
 		t.Fatalf("escalation not idempotent: %q -> %q", before, accts[1].RiskVector)
 	}
 }
+
+func TestRedactedStripsMatchedWords(t *testing.T) {
+	a := Account{
+		Username: "alice", Domain: "CORP",
+		Password: "Summer2021!", NTHash: "ABC",
+		BannedWords:      []string{"summer", "2021"},
+		KeyboardPatterns: []string{"qwerty"},
+		BannedWordCount:  2, KeyboardPatternCount: 1, IsCommon: true,
+	}
+	r := a.Redacted()
+	if r.BannedWords != nil || r.KeyboardPatterns != nil {
+		t.Fatalf("Redacted leaked matched words: %+v / %+v", r.BannedWords, r.KeyboardPatterns)
+	}
+	if r.Password != "" || r.NTHash != "" {
+		t.Fatalf("Redacted leaked credential")
+	}
+	// redacted-safe metadata is preserved
+	if r.BannedWordCount != 2 || !r.IsCommon {
+		t.Fatalf("Redacted dropped safe metadata: %+v", r)
+	}
+}

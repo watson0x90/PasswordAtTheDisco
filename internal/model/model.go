@@ -111,12 +111,19 @@ type Account struct {
 	Enabled         bool    `json:"enabled"`
 	MeetsPolicy     bool    `json:"meets_policy"`
 	Complexity      string  `json:"complexity,omitempty"`
-	// Wordlist weakness signals (cracked accounts only). Booleans/counts only --
-	// never the matched substring, which would leak a fragment of the cleartext.
+	// Wordlist weakness signals (cracked accounts only). Counts/booleans are
+	// redacted-safe; the matched substrings live in BannedWords / KeyboardPatterns
+	// below (see their comment) and are stripped by Redacted().
 	IsCommon             bool `json:"is_common,omitempty"`              // exact match in the common-password list
 	IsDictionaryWord     bool `json:"is_dictionary_word,omitempty"`     // exactly a dictionary word
 	BannedWordCount      int  `json:"banned_word_count,omitempty"`      // forbidden words found as substrings
 	KeyboardPatternCount int  `json:"keyboard_pattern_count,omitempty"` // keyboard patterns found as substrings
+	// BannedWords / KeyboardPatterns are the ACTUAL matched substrings -- cleartext
+	// fragments. Like Password/NTHash they are persisted only in the encrypted store
+	// and stripped by Redacted(); they leave the process only via the lead-gated,
+	// audited terms endpoint.
+	BannedWords      []string `json:"banned_words,omitempty"`
+	KeyboardPatterns []string `json:"keyboard_patterns,omitempty"`
 }
 
 // IsWeak reports whether the password matched any wordlist signal (common,
@@ -125,11 +132,14 @@ func (a Account) IsWeak() bool {
 	return a.IsCommon || a.IsDictionaryWord || a.BannedWordCount > 0 || a.KeyboardPatternCount > 0
 }
 
-// Redacted returns a copy with the cleartext password AND the NT hash removed --
-// both are credentials (the hash enables pass-the-hash) and never leave the process.
+// Redacted returns a copy with every cleartext fragment removed: the password, the
+// NT hash (a pass-the-hash credential), and the matched wordlist substrings
+// (BannedWords / KeyboardPatterns). None of these ever leave the process unredacted.
 func (a Account) Redacted() Account {
 	a.Password = ""
 	a.NTHash = ""
+	a.BannedWords = nil
+	a.KeyboardPatterns = nil
 	return a
 }
 

@@ -1,19 +1,39 @@
 import { useEffect, useState, type ReactNode } from "react"
-import { api, ApiError, type Report, type ReportAccount, type ReuseGroup } from "../api"
+import { api, ApiError, type Report, type ReportAccount, type ReuseGroup, type Terms } from "../api"
 import { useAudits } from "../auditsData"
+import { useAuth } from "../auth"
 import { RISK_CLASS, weaknessTags } from "../util"
+import { BarChart } from "./BarChart"
 
 const TOP = 50
 
 export function Actionable() {
   const { activeId } = useAudits()
+  const { me } = useAuth()
   const [report, setReport] = useState<Report | null>(null)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(true)
+  const [terms, setTerms] = useState<Terms | null>(null)
+  const [termsBusy, setTermsBusy] = useState(false)
+  const [termsErr, setTermsErr] = useState("")
+
+  async function revealTerms() {
+    setTermsBusy(true)
+    setTermsErr("")
+    try {
+      setTerms(await api.reportTerms())
+    } catch (e) {
+      setTermsErr(e instanceof ApiError ? e.message : "failed to load terms")
+    } finally {
+      setTermsBusy(false)
+    }
+  }
 
   useEffect(() => {
     let live = true
     setLoading(true)
+    setTerms(null)
+    setTermsErr("")
     api
       .report()
       .then((r) => {
@@ -120,6 +140,51 @@ export function Actionable() {
         count={report.weak_passwords.length}
         tone="high"
       >
+        <div className="weak-charts">
+          <div className="weak-chart-label">Accounts by violation category</div>
+          <BarChart
+            rows={[
+              { label: "Forbidden", n: report.violation_counts.forbidden },
+              { label: "Common", n: report.violation_counts.common },
+              { label: "Dictionary", n: report.violation_counts.dictionary },
+              { label: "Keyboard", n: report.violation_counts.keyboard },
+            ]}
+          />
+          {me?.role === "lead" && (
+            <div className="weak-terms">
+              {!terms ? (
+                <button className="btn" onClick={() => void revealTerms()} disabled={termsBusy}>
+                  {termsBusy ? "Revealing…" : "🔓 Reveal recurring terms"}
+                </button>
+              ) : (
+                <>
+                  {terms.forbidden.length === 0 && terms.keyboard.length === 0 ? (
+                    <div className="muted">No recurring forbidden words or keyboard patterns.</div>
+                  ) : (
+                    <>
+                      <div className="weak-chart-label">
+                        Top recurring terms <span className="muted">— audit-logged reveal; actual words, in-app only</span>
+                      </div>
+                      {terms.forbidden.length > 0 && (
+                        <>
+                          <div className="weak-chart-label">Forbidden words</div>
+                          <BarChart accent="term" rows={terms.forbidden.slice(0, 10).map((t) => ({ label: t.term, n: t.count }))} />
+                        </>
+                      )}
+                      {terms.keyboard.length > 0 && (
+                        <>
+                          <div className="weak-chart-label">Keyboard patterns</div>
+                          <BarChart accent="term" rows={terms.keyboard.slice(0, 10).map((t) => ({ label: t.term, n: t.count }))} />
+                        </>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+              {termsErr && <div className="error">{termsErr}</div>}
+            </div>
+          )}
+        </div>
         <AccountTable
           rows={report.weak_passwords}
           metricHead="Matched"

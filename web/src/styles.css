@@ -491,6 +491,21 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
   padding: 1px 7px;
 }
 
+/* CSS bar charts (violation category + term drill-down) */
+.barchart { display: flex; flex-direction: column; gap: 7px; }
+.barrow { display: grid; grid-template-columns: 96px 1fr 36px; align-items: center; gap: 10px; font-family: var(--mono); font-size: 12px; }
+.barlabel { color: var(--dim); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bartrack { height: 13px; background: #11182b; border-radius: 4px; overflow: hidden; }
+.barfill { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #0e7490, #22d3ee); }
+.barchart.term .barfill { background: linear-gradient(90deg, #9f1239, #fb7185); }
+.barchart.term .barlabel { color: var(--crit); }
+.barn { color: var(--text); text-align: right; }
+
+.weak-charts { margin-bottom: 16px; max-width: 520px; }
+.weak-chart-label { font-size: 12px; color: var(--faint); margin: 4px 0 10px; }
+.weak-terms { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--hairline); }
+.weak-terms .barchart { margin-bottom: 10px; }
+
 /* ---- domains ---- */
 
 .domain-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 16px; }
