@@ -7,7 +7,10 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // TestSign locks the BHE HMAC scheme to values independently computed with the
@@ -49,7 +52,6 @@ func newTestClient(t *testing.T, h http.HandlerFunc) (*Client, *httptest.Server)
 	host, portStr, _ := net.SplitHostPort(u.Host)
 	port, _ := strconv.Atoi(portStr)
 	c := New(Config{Scheme: "http", Host: host, Port: port, TokenID: "tid", TokenKey: "tkey"})
-	c.minInterval = 0 // no throttling in tests
 	return c, srv
 }
 
@@ -137,4 +139,49 @@ func TestDomainFromName(t *testing.T) {
 			t.Errorf("domainFromName(%q) = %q, want %q", in, got, want)
 		}
 	}
+}
+
+func TestClientConcurrencySemaphore(t *testing.T) {
+	var cur, max int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&cur, 1)
+		for {
+			old := atomic.LoadInt32(&max)
+			if n <= old || atomic.CompareAndSwapInt32(&max, old, n) {
+				break
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+		atomic.AddInt32(&cur, -1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer srv.Close()
+
+	host, port := splitHostPort(t, srv.URL)
+	c := New(Config{Scheme: "http", Host: host, Port: port, EnrichConcurrency: 4})
+
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); _, _, _ = c.get("/api/v2/available-domains") }()
+	}
+	wg.Wait()
+	if got := atomic.LoadInt32(&max); got == 0 || got > 4 {
+		t.Fatalf("max concurrent = %d, want 1..4", got)
+	}
+}
+
+// splitHostPort extracts host + numeric port from an httptest URL.
+func splitHostPort(t *testing.T, raw string) (string, int) {
+	t.Helper()
+	u, err := url.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := strconv.Atoi(u.Port())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u.Hostname(), p
 }

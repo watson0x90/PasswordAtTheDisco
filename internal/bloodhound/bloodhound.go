@@ -18,13 +18,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/fsutil"
@@ -47,6 +45,7 @@ type Config struct {
 	ControllablesLimit int    `json:"controllables_limit"`
 	ConnectTimeout     int    `json:"connect_timeout"`
 	ReadTimeout        int    `json:"read_timeout"`
+	EnrichConcurrency  int    `json:"enrich_concurrency"` // max concurrent BHE requests (default 8)
 }
 
 // LoadConfig reads a bloodhound.json config file.
@@ -80,9 +79,7 @@ type Client struct {
 	searchLimit        int
 	controllablesLimit int
 
-	mu          sync.Mutex
-	lastRequest time.Time
-	minInterval time.Duration
+	sem chan struct{}
 }
 
 // New builds a Client from a Config.
@@ -103,6 +100,13 @@ func New(cfg Config) *Client {
 	if controllablesLimit == 0 {
 		controllablesLimit = 10
 	}
+	concurrency := cfg.EnrichConcurrency
+	if concurrency <= 0 {
+		concurrency = 8
+	}
+	if concurrency > 32 {
+		concurrency = 32
+	}
 	return &Client{
 		scheme:             scheme,
 		host:               cfg.Host,
@@ -111,7 +115,7 @@ func New(cfg Config) *Client {
 		http:               &http.Client{Timeout: time.Duration(readTimeout) * time.Second},
 		searchLimit:        searchLimit,
 		controllablesLimit: controllablesLimit,
-		minInterval:        100 * time.Millisecond,
+		sem:                make(chan struct{}, concurrency),
 	}
 }
 
@@ -132,20 +136,12 @@ func (c *Client) formatURL(uri string) string {
 	return fmt.Sprintf("%s://%s:%d/%s", c.scheme, c.host, c.port, strings.TrimPrefix(uri, "/"))
 }
 
-// throttle enforces a minimum interval between requests (with jitter).
-func (c *Client) throttle() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.minInterval > 0 {
-		if elapsed := time.Since(c.lastRequest); elapsed < c.minInterval {
-			time.Sleep(c.minInterval - elapsed + time.Duration(rand.Int63n(int64(50*time.Millisecond))))
-		}
-	}
-	c.lastRequest = time.Now()
-}
+func (c *Client) acquire() { c.sem <- struct{}{} }
+func (c *Client) release() { <-c.sem }
 
 func (c *Client) doRequest(method, uri string, body []byte) (*http.Response, error) {
-	c.throttle()
+	c.acquire()
+	defer c.release()
 	requestDate := time.Now().Format("2006-01-02T15:04:05.000000-07:00")
 	var rdr io.Reader
 	if body != nil {
