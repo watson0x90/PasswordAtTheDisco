@@ -207,7 +207,7 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 	}
 
 	count := e.hibpCount(a.Hash)
-	enrData := enrichVia(enr, a.Username, domain, true)
+	enrData := enrichVia(enr, a.Username, domain)
 
 	rctx := risk.Context{
 		SharedWith:          sharedWith,
@@ -262,7 +262,7 @@ func (e *Engine) scoreUncracked(domain string, a secretsdump.ParsedAccount, shar
 	count := e.hibpCount(a.Hash)
 	var enrData Enrichment
 	if sharedWith > 0 {
-		enrData = enrichVia(enr, a.Username, domain, true)
+		enrData = enrichVia(enr, a.Username, domain)
 	}
 	hasDA := len(enrData.DADomains) > 0
 	score := uncrackedScore(hasDA, sharedWith, count)
@@ -297,10 +297,9 @@ func (e *Engine) hibpCount(ntlm string) int {
 	return 0
 }
 
-// enrichVia fetches enrichment from enr (nil = none). Replaces the old
-// e.enrich method so enrichment source is explicit rather than read from e.Enricher.
-func enrichVia(enr Enricher, username, domain string, wanted bool) Enrichment {
-	if !wanted || enr == nil {
+// enrichVia fetches enrichment from enr; returns an empty Enrichment if enr is nil.
+func enrichVia(enr Enricher, username, domain string) Enrichment {
+	if enr == nil {
 		return Enrichment{}
 	}
 	return enr.Enrich(NormalizeUsername(username, domain))
