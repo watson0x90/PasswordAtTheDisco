@@ -1330,10 +1330,14 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "selected audit no longer exists"})
 		return
 	}
-	_ = s.Store.RecordIngest(auditID, model.IngestEvent{
+	if err := s.Store.RecordIngest(auditID, model.IngestEvent{
 		Filename: dumpName, Kind: "dump", Domain: domain,
 		AccountsLoaded: len(accts), At: time.Now().UTC(), By: sess.Username,
-	})
+	}); err != nil {
+		// Best-effort: the upload already succeeded and was audit-logged; a
+		// history-write failure must not fail the request, but leave a trace.
+		log.Printf("record ingest event (dump %s/%s): %v", domain, dumpName, err)
+	}
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "audit_upload", Target: domain, Source: r.RemoteAddr, Result: "ok"})
 	writeJSON(w, http.StatusOK, map[string]int{"accounts": len(accts), "cracked": len(cracked), "uncracked": len(uncracked)})
 }
@@ -1417,10 +1421,13 @@ func (s *Server) handleApplyCracks(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "selected audit no longer exists"})
 		return
 	}
-	_ = s.Store.RecordIngest(auditID, model.IngestEvent{
+	if err := s.Store.RecordIngest(auditID, model.IngestEvent{
 		Filename: crackName, Kind: "cracks",
 		HashesMatched: len(matched), NewlyCracked: newly, At: time.Now().UTC(), By: sess.Username,
-	})
+	}); err != nil {
+		// Best-effort: the apply already succeeded and was audit-logged.
+		log.Printf("record ingest event (cracks %s): %v", crackName, err)
+	}
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "apply_cracks", Source: r.RemoteAddr, Result: "ok"})
 	writeJSON(w, http.StatusOK, map[string]int{"crack_entries": len(cracks), "hashes_matched": len(matched), "newly_cracked": newly})
 }

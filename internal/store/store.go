@@ -509,7 +509,10 @@ func (s *Store) RecordIngest(id string, ev model.IngestEvent) error {
 	return s.swap(id, &audit{meta: meta, ds: ds})
 }
 
-// Ingests returns the audit's ingest history (oldest first).
+// Ingests returns the audit's ingest history (oldest first). The result aliases
+// the cached dataset's slice and MUST be treated as read-only -- callers must
+// not append to or mutate it. RecordIngest is copy-on-write and never mutates
+// this backing array, so concurrent reads stay consistent.
 func (s *Store) Ingests(id string) ([]model.IngestEvent, error) {
 	a, err := s.ensureLoaded(id)
 	if err != nil {
