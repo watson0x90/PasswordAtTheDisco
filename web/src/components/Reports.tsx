@@ -15,6 +15,20 @@ const COLUMNS: [string, string][] = [
   ["controlled_objects", "BloodHound-controlled object count"],
 ]
 
+function FocusedRow({ title, sub, href }: { title: string; sub: string; href: string }) {
+  return (
+    <div className="report-focused-row">
+      <div>
+        <div className="report-focused-title">{title}</div>
+        <div className="action-sub">{sub}</div>
+      </div>
+      <a className="btn" href={href} download>
+        Download CSV
+      </a>
+    </div>
+  )
+}
+
 export function Reports() {
   const { activeId, active } = useAudits()
 
@@ -53,6 +67,28 @@ export function Reports() {
             </li>
           ))}
         </ul>
+      </div>
+
+      <div className="panel report-export">
+        <div className="action-title">Focused reports (CSV)</div>
+        <div className="action-sub">Subsets of the audit, same redaction — no passwords or hashes.</div>
+        <div className="report-focused">
+          <FocusedRow
+            title="Cracked accounts"
+            sub="Only accounts whose password was recovered — the force-reset worklist."
+            href="/api/export/cracked.csv"
+          />
+          <FocusedRow
+            title="HIBP-exposed accounts"
+            sub="Only accounts whose NT hash is in Have I Been Pwned (cracked or uncracked), most-breached first."
+            href="/api/export/hibp.csv"
+          />
+          <FocusedRow
+            title="Password-reuse groups"
+            sub="One row per shared-password group (by NT hash): size, domains spanned, HIBP count, Tier-0 reach, and member usernames."
+            href="/api/export/reuse.csv"
+          />
+        </div>
       </div>
 
       <div className="panel report-export">

@@ -106,3 +106,38 @@ func TestCSVAccountsSummary(t *testing.T) {
 		t.Errorf("formula-injection username not neutralized: %s", r2)
 	}
 }
+
+func TestReuseGroupsCSV(t *testing.T) {
+	// hashA shared by two cracked accounts; hashB shared by two uncracked accounts.
+	const hashA = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	const hashB = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+	accts := []model.Account{
+		{Username: "alice", Domain: "CORP", NTHash: hashA, Cracked: true, PasswordLength: 8, HIBPBreachCount: 500, DADomains: "CORP"},
+		{Username: "bob", Domain: "SUB", NTHash: hashA, Cracked: true, PasswordLength: 8, HIBPBreachCount: 500},
+		{Username: "carol", Domain: "CORP", NTHash: hashB, Cracked: false},
+		{Username: "dave", Domain: "CORP", NTHash: hashB, Cracked: false},
+	}
+	var b bytes.Buffer
+	if err := ReuseGroupsCSV(&b, model.BuildReport(accts)); err != nil {
+		t.Fatal(err)
+	}
+	rows := strings.Split(strings.TrimSpace(b.String()), "\n")
+	if len(rows) != 3 { // header + cracked group + uncracked group
+		t.Fatalf("want header + 2 group rows, got %d:\n%s", len(rows), b.String())
+	}
+	if !strings.HasPrefix(rows[0], "group_id,type,size,domains,") {
+		t.Errorf("unexpected header: %s", rows[0])
+	}
+	out := b.String()
+	// the cracked group: type Cracked, size 2, 2 domains, HIBP 500, reaches Tier-0, both members
+	if !strings.Contains(out, "Cracked,2,2,500,Yes,") {
+		t.Errorf("cracked group row malformed:\n%s", out)
+	}
+	if !strings.Contains(out, "alice; bob") {
+		t.Errorf("cracked group should list both members:\n%s", out)
+	}
+	// the uncracked group: type Uncracked, size 2, single domain, no HIBP, no Tier-0
+	if !strings.Contains(out, "Uncracked,2,1,0,No,") {
+		t.Errorf("uncracked group row malformed:\n%s", out)
+	}
+}

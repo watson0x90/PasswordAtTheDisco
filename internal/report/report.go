@@ -131,6 +131,45 @@ func yesNo(b bool) string {
 	return "No"
 }
 
+// ReuseGroupsCSV writes one row per shared-password group (cracked and uncracked),
+// keyed on a shared NT hash. The hash itself is never emitted; members are listed
+// by username only. group_id is opaque but unique across both group types.
+func ReuseGroupsCSV(w io.Writer, rep model.Report) error {
+	cw := csv.NewWriter(w)
+	header := []string{
+		"group_id", "type", "size", "domains", "hibp_breach_count", "reaches_tier0", "members",
+	}
+	if err := cw.Write(header); err != nil {
+		return err
+	}
+	writeGroup := func(g model.ReuseGroup, typ string) error {
+		names := make([]string, 0, len(g.Members))
+		for _, m := range g.Members {
+			names = append(names, m.Username)
+		}
+		members := strings.Join(names, "; ")
+		if g.Truncated { // BuildReport caps members; note the remainder
+			members += " (+" + strconv.Itoa(g.Size-len(g.Members)) + " more)"
+		}
+		return cw.Write([]string{
+			strconv.Itoa(g.GroupID), typ, strconv.Itoa(g.Size), strconv.Itoa(g.Domains),
+			strconv.Itoa(g.HIBPBreachCount), yesNo(g.HasDAPathway), csvSafe(members),
+		})
+	}
+	for _, g := range rep.CrackedReuse {
+		if err := writeGroup(g, "Cracked"); err != nil {
+			return err
+		}
+	}
+	for _, g := range rep.UncrackedReuse {
+		if err := writeGroup(g, "Uncracked"); err != nil {
+			return err
+		}
+	}
+	cw.Flush()
+	return cw.Error()
+}
+
 // csvSafe neutralizes spreadsheet formula injection (CWE-1236): a cell that would
 // start with =, +, -, @, tab or CR is prefixed with a single quote so Excel/Sheets
 // treat it as text. encoding/csv already handles comma/quote/newline quoting.
