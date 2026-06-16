@@ -1,0 +1,130 @@
+package enrich
+
+import (
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/watson0x90/PasswordAtTheDisco/internal/engine"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/store"
+)
+
+type countingEnricher struct {
+	mu    sync.Mutex
+	calls map[string]int
+	data  map[string]engine.Enrichment
+}
+
+func (c *countingEnricher) Enrich(u string) engine.Enrichment {
+	c.mu.Lock()
+	c.calls[u]++
+	c.mu.Unlock()
+	return c.data[u]
+}
+
+func newEng(enr engine.Enricher) *engine.Engine {
+	e := &engine.Engine{Policies: policy.DefaultSet()}
+	e.SwapEnricher(enr)
+	return e
+}
+
+func seedStore(t *testing.T) (*store.Store, string) {
+	t.Helper()
+	s := store.New()
+	meta, err := s.CreateAudit("t", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	accts := []model.Account{
+		{Username: "alice", Domain: "CORP", NTHash: "H1", Password: "Summer2024!", Cracked: true},
+		{Username: "alice", Domain: "CORP", NTHash: "H1", Password: "Summer2024!", Cracked: true},
+	}
+	if err := s.ReplaceDomain(meta.ID, "CORP", accts); err != nil {
+		t.Fatal(err)
+	}
+	return s, meta.ID
+}
+
+func TestEnrichJobRunsAndDedups(t *testing.T) {
+	s, id := seedStore(t)
+	key := engine.NormalizeUsername("alice", "CORP")
+	enr := &countingEnricher{calls: map[string]int{}, data: map[string]engine.Enrichment{
+		key: {DADomains: []string{"CORP"}},
+	}}
+	m := NewManager(newEng(enr), s)
+	if err := m.Start(id); err != nil {
+		t.Fatal(err)
+	}
+	m.Wait()
+	st := m.Status()
+	if st.Phase != PhaseDone || st.Total != 1 || st.Processed != 1 || st.Enriched != 1 {
+		t.Fatalf("status = %+v", st)
+	}
+	if enr.calls[key] != 1 {
+		t.Fatalf("expected 1 dedup'd lookup, got %d", enr.calls[key])
+	}
+	got, _ := s.Accounts(id, false)
+	if got[0].DADomains != "CORP" {
+		t.Fatalf("accounts not enriched: DA=%q", got[0].DADomains)
+	}
+}
+
+func TestEnrichJobFailsWithoutEnricher(t *testing.T) {
+	s, id := seedStore(t)
+	m := NewManager(newEng(nil), s)
+	if err := m.Start(id); err != nil {
+		t.Fatal(err)
+	}
+	m.Wait()
+	if m.Status().Phase != PhaseFailed {
+		t.Fatalf("phase = %s, want failed", m.Status().Phase)
+	}
+}
+
+type slowEnricher struct {
+	inner engine.Enricher
+	gate  chan struct{}
+}
+
+func (s slowEnricher) Enrich(u string) engine.Enrichment {
+	<-s.gate
+	return s.inner.Enrich(u)
+}
+
+func TestEnrichJobDoubleStart(t *testing.T) {
+	s, id := seedStore(t)
+	block := make(chan struct{})
+	enr := &countingEnricher{calls: map[string]int{}, data: map[string]engine.Enrichment{}}
+	slow := slowEnricher{inner: enr, gate: block}
+	m := NewManager(newEng(slow), s)
+	if err := m.Start(id); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Start(id); err == nil {
+		t.Fatal("second Start should error while running")
+	}
+	close(block)
+	m.Wait()
+}
+
+func TestEnrichJobActivityHook(t *testing.T) {
+	s, id := seedStore(t)
+	var held atomic.Int32
+	enr := &countingEnricher{calls: map[string]int{}, data: map[string]engine.Enrichment{}}
+	m := NewManager(newEng(enr), s)
+	m.ActivityHook = func() func() {
+		held.Add(1)
+		return func() { held.Add(-1) }
+	}
+	if err := m.Start(id); err != nil {
+		t.Fatal(err)
+	}
+	m.Wait()
+	time.Sleep(10 * time.Millisecond)
+	if held.Load() != 0 {
+		t.Fatalf("activity hook not released, held=%d", held.Load())
+	}
+}
