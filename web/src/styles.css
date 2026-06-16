@@ -104,6 +104,8 @@ a { color: var(--accent); text-decoration: none; }
 }
 
 .nav-dd { position: relative; display: inline-flex; }
+.nav-dd-trigger { display: inline-flex; align-items: center; gap: 5px; }
+.nav-dd-caret { font-size: 15px; line-height: 1; position: relative; top: 0.5px; }
 .nav-dd-menu {
   position: absolute;
   top: calc(100% + 6px);

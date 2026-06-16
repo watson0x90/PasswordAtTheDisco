@@ -106,12 +106,13 @@ function NavDropdown({
   return (
     <div className="nav-dd">
       <button
-        className={active ? "nav-tab active" : "nav-tab"}
+        className={active ? "nav-tab nav-dd-trigger active" : "nav-tab nav-dd-trigger"}
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        {label} <span aria-hidden="true">▾</span>
+        {label}
+        <span className="nav-dd-caret" aria-hidden="true">▾</span>
       </button>
       {open && (
         <>
