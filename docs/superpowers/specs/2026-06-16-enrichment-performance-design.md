@@ -76,14 +76,25 @@ cancel/rollback. The progress bar already conveys the work; not worth the churn.
 
 ## Components
 
-### 1. `internal/bloodhound` — cache domains
-`GetUserData` fetches the collected-domains list once per job instead of per
-account. Add a small **TTL cache** for `GetDomains()` on `*Client` (e.g. 60s):
-the first call hits BHE, subsequent calls within the window return the cached
-slice. This removes ~25% of all calls (the most wasteful, identical-every-time
-one) and is safe for hot-swap. The per-user calls (`GetUser`,
-`GetUserControllables`, `GetUserFull`) remain — they are inherently per-user and
-are handled by concurrency.
+### 1. `internal/bloodhound` — concurrency + cache domains
+Two changes to `*Client`:
+
+- **Throttle → concurrency semaphore.** Today `doRequest` calls `throttle()`,
+  which serializes every request behind `c.mu` with a **100 ms minimum gap**
+  (≈10 req/s, the real dominant bottleneck — a worker pool sharing one client
+  would just queue here). Replace it with a buffered semaphore
+  (`chan struct{}` sized `enrich_concurrency`, default 8): `doRequest` acquires a
+  slot before the call and releases after, bounding *concurrent in-flight*
+  requests to N instead of spacing them serially. Low-volume callers (version
+  probe, etc.) are unaffected in practice.
+- **Domains TTL cache.** `GetDomains()` caches its result for ~60s (guarded by a
+  dedicated mutex). The first call hits BHE; subsequent calls within the window
+  return the cached slice — so `GetUserData` no longer re-fetches domains for
+  every account (~25% of all calls, identical every time). Safe for hot-swap (a
+  new `Client` from `SwapEnricher` starts with an empty cache).
+
+The per-user calls (`GetUser`, `GetUserControllables`, `GetUserFull`) remain —
+inherently per-user, now run concurrently up to the semaphore bound.
 
 ### 2. `internal/engine` — score with an explicit enricher
 Today `ProcessDomain`/`Rescore` read `e.Enricher` implicitly. Make the enricher
@@ -127,13 +138,18 @@ The job holds the server's auto-lock open while running (see §Error handling).
   "audit_id": "…",
   "processed": 0,
   "total": 0,
+  "enriched": 0,
   "started_at": "RFC3339",
   "elapsed_sec": 0,
-  "enriched": 0,
-  "errors": 0,
   "error": ""
 }
 ```
+`total` = distinct normalized usernames; `processed` = lookups completed;
+`enriched` = lookups that returned BHE data (non-empty). The `Enricher`
+interface returns no error (it degrades to empty internally), so a per-user
+failure simply shows up as "not enriched" rather than a separate error count.
+`Replace` preserves the audit name + ingest history and re-runs cross-domain
+DA-share escalation, so the job passes only `Dataset{Accounts: rescored}`.
 
 ### 4. `internal/httpapi` — endpoints + auto-start
 - `POST /api/enrich` — start enrichment for the **active** audit
@@ -172,9 +188,10 @@ The job holds the server's auto-lock open while running (see §Error handling).
 
 ## Data flow & concurrency
 
-- Prefetch pool size from the BloodHound config (`config/bloodhound.json` →
-  `enrich_concurrency`), default **8**, clamped to a sane range (1–32). It lives
-  with the other BHE settings since it governs load on the BHE API.
+- Concurrency from the BloodHound config (`config/bloodhound.json` →
+  `enrich_concurrency`), default **8**, clamped to a sane range (1–32). It sizes
+  both the client's request semaphore and the job's worker pool, and lives with
+  the other BHE settings since it governs load on the BHE API.
 - Memoization: a `sync.Map` (or guarded map) of normalized-username → result;
   duplicate usernames across the dump are fetched once.
 - Progress: workers increment `processed` atomically; `Status()` reads a
@@ -186,8 +203,9 @@ The job holds the server's auto-lock open while running (see §Error handling).
 
 - **BHE unreachable / `GetDomains` fails:** job → `failed` with a readable error;
   accounts retain base+HIBP scores. UI shows the error and offers re-run.
-- **Per-user BHE error/timeout:** that user gets empty enrichment; `errors++`;
-  job continues and still persists. Surfaced as "enriched X, Y errors".
+- **Per-user BHE error/timeout:** the `Enricher` already swallows it and returns
+  empty enrichment; the job counts it as "not enriched", continues, and still
+  persists. Surfaced as "enriched X of N".
 - **Cancel:** no `Replace`; phase `cancelled`.
 - **Auto-lock interplay:** the running job increments the server `inFlight`
   counter (and touches `lastActivity`) so the idle auto-lock cannot fire mid-job
@@ -205,11 +223,11 @@ The job holds the server's auto-lock open while running (see §Error handling).
 - **bloodhound:** `GetDomains` TTL cache returns cached value within the window
   and refetches after expiry (httptest server counting requests); `GetUserData`
   makes **one** domains call across N user lookups.
-- **enrich (job):** with a fake enricher + in-memory store — `Start` runs to
-  `done`, `processed==total`, accounts gain enrichment after the job; memoization
-  fetches a duplicate username once (call counter); per-user error degrades to
-  empty + `errors++` + still persists; `Cancel` ends `cancelled` without
-  persisting; double-`Start` errors.
+- **enrich (job):** with a fake enricher + in-memory `store.New()` — `Start` runs
+  to `done`, `processed==total`, accounts gain enrichment after the job;
+  duplicate usernames are fetched once (call counter); a user the enricher
+  returns empty for is counted "not enriched" and the job still persists;
+  `Cancel` ends `cancelled` without persisting; double-`Start` errors.
 - **httpapi:** `POST /api/enrich` lead-only (analyst 403), 409 when running;
   `GET /api/enrich/job` shape; auto-start fires after `handleAudit`; the job
   keeps the store from auto-locking (extend the existing auto-lock test).
@@ -232,7 +250,8 @@ The job holds the server's auto-lock open while running (see §Error handling).
 
 ## Rough file touch-list
 
-- `internal/bloodhound/bloodhound.go` (+`_test.go`) — `GetDomains` TTL cache.
+- `internal/bloodhound/bloodhound.go` (+`_test.go`) — throttle→concurrency
+  semaphore, `GetDomains` TTL cache, `enrich_concurrency` config field.
 - `internal/engine/engine.go` (+`_test.go`) — `RescoreWith`, explicit enricher.
 - `internal/enrich/job.go` (+`_test.go`) — new job manager (mirror `pwned`).
 - `internal/httpapi/server.go` (+`_test.go`) — 3 endpoints, auto-start in
