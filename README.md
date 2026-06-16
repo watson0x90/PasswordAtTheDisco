@@ -50,8 +50,10 @@ tab — every output redacted (no cleartext password, no NT hash):
   grouped reports: who's cracked, accounts sharing a *cracked* password, accounts sharing
   an *uncracked* NT hash (lateral-movement risk), HIBP-exposed accounts with breach
   counts, and **weak passwords** matching the wordlists (common / dictionary / forbidden /
-  keyboard) — surfaced as per-account badges, counts only (never the matched word). Reuse
-  is grouped **server-side by NT hash** (the hash never leaves the process), cross-domain.
+  keyboard) — per-account badges plus a **violations-by-category chart**, and a lead-only,
+  **audit-logged drill-down** into the actual recurring forbidden words / keyboard patterns
+  (shown in-app only; exports stay counts/categories, never the matched word). Reuse is
+  grouped **server-side by NT hash** (the hash never leaves the process), cross-domain.
 - **Reports tab — CSV *and* HTML** — a per-account summary (crack status, HIBP exposure,
   reuse, and any pathway to a **Tier-0 / privileged** account), plus focused
   cracked-only, HIBP-exposed, and password-reuse-group reports. Each downloads as a
