@@ -1165,8 +1165,10 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleReportTerms(w http.ResponseWriter, r *http.Request) {
 	sess, _ := sessionFrom(r.Context())
 	if sess.Role != auth.RoleLead {
-		s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "reveal_violation_terms", Source: r.RemoteAddr, Result: "denied"})
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "revealing violation terms requires the lead role"})
+		if !s.auditOrFail(w, audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "reveal_violation_terms", Source: r.RemoteAddr, Result: "denied"}) {
+			return
+		}
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
 		return
 	}
 	id, ok := s.activeAudit(w, sess)
@@ -1178,8 +1180,10 @@ func (s *Server) handleReportTerms(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
 		return
 	}
-	meta, _ := s.Store.Meta(id)
-	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "reveal_violation_terms", Target: meta.Name, Source: r.RemoteAddr, Result: "ok"})
+	meta, _ := s.Store.Meta(id) // id is guaranteed present by activeAudit above
+	if !s.auditOrFail(w, audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "reveal_violation_terms", Target: meta.Name, Source: r.RemoteAddr, Result: "ok"}) {
+		return
+	}
 	writeJSON(w, http.StatusOK, model.AggregateTerms(accts, 25))
 }
 
