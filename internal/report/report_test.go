@@ -178,6 +178,47 @@ func TestFocusedHTMLRedactsAndRenders(t *testing.T) {
 // lives in the model package.
 func BuildReportFor(a []model.Account) model.Report { return model.BuildReport(a) }
 
+func TestFocusedHTMLHasGapColumns(t *testing.T) {
+	accts := []model.Account{
+		{Username: "alice", Domain: "CORP", Cracked: true, Complexity: "mixedalphaspecialnum",
+			MeetsPolicy: true, Controlled: 12, Enabled: false, RiskLevel: "Critical", RiskScore: 9,
+			BannedWordCount: 1},
+	}
+	when := time.Unix(1_700_000_000, 0)
+
+	var acc, weak bytes.Buffer
+	if err := AccountsHTML(&acc, "Eng", "cracked accounts", when, accts); err != nil {
+		t.Fatal(err)
+	}
+	if err := WeakPasswordsHTML(&weak, "Eng", when, accts); err != nil {
+		t.Fatal(err)
+	}
+	for name, out := range map[string]string{"accounts": acc.String(), "weak": weak.String()} {
+		for _, want := range []string{"Complexity", "Policy", "Controlled", "12", "disabled"} {
+			if !strings.Contains(out, want) {
+				t.Fatalf("%s HTML missing %q", name, want)
+			}
+		}
+	}
+}
+
+func TestCSVHasRiskVector(t *testing.T) {
+	var b bytes.Buffer
+	if err := CSV(&b, []model.Account{
+		{Username: "a", Domain: "C", Cracked: true, RiskLevel: "High", RiskScore: 7, RiskVector: "CRACKED/SHARED-DA"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	out := b.String()
+	header := strings.SplitN(out, "\n", 2)[0]
+	if !strings.Contains(header, "risk_vector") {
+		t.Fatalf("CSV header missing risk_vector: %s", header)
+	}
+	if !strings.Contains(out, "CRACKED/SHARED-DA") {
+		t.Fatalf("CSV missing the risk vector value:\n%s", out)
+	}
+}
+
 func TestWeakPasswordsHTML(t *testing.T) {
 	accts := []model.Account{
 		{Username: "alice", Domain: "CORP", Cracked: true, Password: "Summer2021!",

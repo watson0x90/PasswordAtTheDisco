@@ -213,7 +213,7 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 		DADomains:       joinDA(enr.DADomains),
 		Controlled:      derefInt(enr.ControlledObjects),
 		SharedWith:      sharedWith,
-		Enabled:         derefBool(enr.Enabled),
+		Enabled:         enabledOrUnknown(enr.Enabled),
 		MeetsPolicy:     an.MeetsPolicy,
 		Complexity:      an.ComplexityLabel,
 		// wordlist weakness signals (counts/booleans + matched substrings; see Redacted())
@@ -250,7 +250,7 @@ func (e *Engine) scoreUncracked(domain string, a secretsdump.ParsedAccount, shar
 		DADomains:       joinDA(enr.DADomains),
 		Controlled:      derefInt(enr.ControlledObjects),
 		SharedWith:      sharedWith,
-		Enabled:         derefBool(enr.Enabled),
+		Enabled:         enabledOrUnknown(enr.Enabled),
 	}
 }
 
@@ -389,7 +389,9 @@ func derefInt(p *int) int {
 	return *p
 }
 
-func derefBool(p *bool) bool { return p != nil && *p }
+// enabledOrUnknown treats a missing enabled-status (no BloodHound data) as enabled,
+// so a "disabled" flag fires only on an explicit disabled signal -- not on absent data.
+func enabledOrUnknown(p *bool) bool { return p == nil || *p }
 
 // BloodhoundEnricher adapts a *bloodhound.Client to the Enricher interface.
 type BloodhoundEnricher struct {

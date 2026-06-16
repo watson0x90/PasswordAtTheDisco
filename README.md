@@ -41,6 +41,21 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
+## What's new in 2.4
+
+A **console information-architecture** pass plus report parity fixes:
+
+- **Consolidated nav** — the 13 flat tabs collapse to six (Overview · Actionable · Accounts ·
+  Domains · Compare · Reports) plus two lead-only dropdowns: **Setup ▾** (Upload · Policies ·
+  **Integrations**) and **Admin ▾** (Operators · Activity). Insights folds into **Overview**;
+  HIBP + BloodHound merge into one **Integrations** page.
+- **Report parity** — exported reports now match the on-screen detail: a **disabled-account
+  badge** in the Accounts table + Actionable lists (and a marker in the HTML reports), the
+  `risk_vector` column restored to the accounts CSV, and `controlled_objects` /
+  `complexity` / `meets_policy` columns added to the HTML reports. The "disabled" flag fires
+  only on a **confirmed** BloodHound signal (unknown status is treated as enabled, so it
+  never false-flags un-enriched accounts).
+
 ## What's new in 2.3
 
 Deeper **wordlist-violation reporting**, building on 2.2's weak-password signals — every

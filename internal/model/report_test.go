@@ -139,3 +139,17 @@ func TestAggregateTermsTopN(t *testing.T) {
 		t.Fatalf("topN cap failed: got %d", got)
 	}
 }
+
+func TestReportAccountCarriesEnabled(t *testing.T) {
+	rep := BuildReport([]Account{
+		{Username: "live", Domain: "C", Cracked: true, Enabled: true, RiskScore: 5},
+		{Username: "off", Domain: "C", Cracked: true, Enabled: false, RiskScore: 4},
+	})
+	byName := map[string]bool{}
+	for _, a := range rep.Cracked {
+		byName[a.Username] = a.Enabled
+	}
+	if !byName["live"] || byName["off"] {
+		t.Fatalf("Enabled not propagated to ReportAccount: %+v", byName)
+	}
+}

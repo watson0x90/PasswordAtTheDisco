@@ -10,18 +10,17 @@ import { Accounts } from "./components/Accounts"
 import { Compare } from "./components/Compare"
 import { Ingest } from "./components/Ingest"
 import { Policies } from "./components/Policies"
-import { PwnedPasswords } from "./components/PwnedPasswords"
+import { Integrations } from "./components/Integrations"
 import { Operators } from "./components/Operators"
 import { Activity } from "./components/Activity"
 import { Reports } from "./components/Reports"
-import { BloodHound } from "./components/BloodHound"
 import { Unlock } from "./components/Unlock"
 
-// Recharts is heavy (~180KB) and only the chart views need it. Lazy-load them so
-// it's split into a separate chunk fetched after auth, not on the login screen.
+// Recharts is heavy (~180KB). Lazy-load Dashboard and Domains so the charting
+// chunk is deferred until after auth, not on the login screen. (Insights renders
+// inside Dashboard, so it rides in that lazy chunk.)
 const Dashboard = lazy(() => import("./components/Dashboard").then((m) => ({ default: m.Dashboard })))
 const Domains = lazy(() => import("./components/Domains").then((m) => ({ default: m.Domains })))
-const Insights = lazy(() => import("./components/Insights").then((m) => ({ default: m.Insights })))
 
 function viewFor(view: View) {
   switch (view) {
@@ -31,8 +30,6 @@ function viewFor(view: View) {
       return <Domains />
     case "accounts":
       return <Accounts />
-    case "insights":
-      return <Insights />
     case "compare":
       return <Compare />
     case "reports":
@@ -41,10 +38,8 @@ function viewFor(view: View) {
       return <Ingest />
     case "policies":
       return <Policies />
-    case "pwned":
-      return <PwnedPasswords />
-    case "bhe":
-      return <BloodHound />
+    case "integrations":
+      return <Integrations />
     case "operators":
       return <Operators />
     case "activity":

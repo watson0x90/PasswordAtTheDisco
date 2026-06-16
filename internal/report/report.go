@@ -91,7 +91,7 @@ func CSV(w io.Writer, accounts []model.Account) error {
 	cw := csv.NewWriter(w)
 	header := []string{
 		"domain", "username", "enabled", "status", "password_length", "complexity",
-		"meets_policy", "risk_level", "risk_score", "hibp_found", "hibp_breach_count",
+		"meets_policy", "risk_level", "risk_score", "risk_vector", "hibp_found", "hibp_breach_count",
 		"reused", "shared_with", "tier0_pathway", "tier0_pathway_domains", "controlled_objects",
 		"common_password", "dictionary_word", "forbidden_words", "keyboard_patterns",
 	}
@@ -112,7 +112,7 @@ func CSV(w io.Writer, accounts []model.Account) error {
 		}
 		row := []string{
 			csvSafe(a.Domain), csvSafe(a.Username), yesNo(a.Enabled), status, pwLen, csvSafe(a.Complexity),
-			yesNo(a.MeetsPolicy), csvSafe(a.RiskLevel), strconv.FormatFloat(a.RiskScore, 'f', 1, 64),
+			yesNo(a.MeetsPolicy), csvSafe(a.RiskLevel), strconv.FormatFloat(a.RiskScore, 'f', 1, 64), csvSafe(a.RiskVector),
 			yesNo(a.HIBPBreached), strconv.Itoa(a.HIBPBreachCount),
 			yesNo(a.SharedWith > 0), strconv.Itoa(a.SharedWith),
 			yesNo(tier0), csvSafe(tier0Domains), strconv.Itoa(a.Controlled),
@@ -362,9 +362,9 @@ td{padding:7px 10px;border-bottom:1px solid #1b2236;white-space:nowrap}
 
 <div class="label">Accounts ({{.Total}})</div>
 <div class="panel"><table>
-<tr><th>Username</th><th>Domain</th><th>Risk</th><th>Score</th><th>HIBP</th><th>Complexity</th><th>Policy</th><th>Shared</th><th>DA</th><th>Weaknesses</th></tr>
+<tr><th>Username</th><th>Domain</th><th>Risk</th><th>Score</th><th>HIBP</th><th>Complexity</th><th>Policy</th><th>Shared</th><th>DA</th><th>Controlled</th><th>Weaknesses</th></tr>
 {{range .Accounts}}<tr>
-<td>{{.Username}}</td><td class="muted">{{.Domain}}</td>
+<td>{{.Username}}{{if not .Enabled}}<span class="muted"> · disabled</span>{{end}}</td><td class="muted">{{.Domain}}</td>
 <td><span class="badge" style="color:{{color .RiskLevel}};border-color:{{color .RiskLevel}}">{{.RiskLevel}}</span></td>
 <td>{{f1 .RiskScore}}</td>
 <td>{{if .HIBPBreached}}<span style="color:#fb7185">{{.HIBPBreachCount}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
@@ -372,6 +372,7 @@ td{padding:7px 10px;border-bottom:1px solid #1b2236;white-space:nowrap}
 <td>{{if .Cracked}}{{if .MeetsPolicy}}<span style="color:#a3e635">meets</span>{{else}}<span style="color:#fbbf24">fails</span>{{end}}{{else}}<span class="muted">—</span>{{end}}</td>
 <td>{{if gt .SharedWith 0}}{{.SharedWith}}{{else}}<span class="muted">0</span>{{end}}</td>
 <td>{{if .HasDAPathway}}<span style="color:#fb7185">{{.DADomains}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
+<td>{{if gt .Controlled 0}}{{.Controlled}}{{else}}<span class="muted">0</span>{{end}}</td>
 <td>{{if .IsCommon}}<span class="wtag">common</span> {{end}}{{if .IsDictionaryWord}}<span class="wtag">dictionary</span> {{end}}{{if gt .BannedWordCount 0}}<span class="wtag">forbidden</span> {{end}}{{if gt .KeyboardPatternCount 0}}<span class="wtag">keyboard</span> {{end}}{{if not .IsWeak}}<span class="muted">—</span>{{end}}</td>
 </tr>{{end}}
 </table></div>
@@ -435,19 +436,22 @@ var focusedAccountsTemplate = template.Must(template.New("focused-accounts").Fun
 <span class="redact">Redacted report · no cleartext passwords or hashes</span>
 <div class="label">{{.Count}} account{{if ne .Count 1}}s{{end}}</div>
 <div class="panel"><table>
-<tr><th>Username</th><th>Domain</th><th>Status</th><th>Risk</th><th>Score</th><th>Length</th><th>HIBP</th><th>Shared</th><th>Tier-0 pathway</th><th>Weaknesses</th></tr>
+<tr><th>Username</th><th>Domain</th><th>Status</th><th>Risk</th><th>Score</th><th>Length</th><th>Complexity</th><th>Policy</th><th>HIBP</th><th>Shared</th><th>Controlled</th><th>Tier-0 pathway</th><th>Weaknesses</th></tr>
 {{range .Accounts}}<tr>
-<td>{{.Username}}</td><td class="muted">{{.Domain}}</td>
+<td>{{.Username}}{{if not .Enabled}}<span class="muted"> · disabled</span>{{end}}</td><td class="muted">{{.Domain}}</td>
 <td>{{if .Cracked}}Cracked{{else}}<span class="muted">Uncracked</span>{{end}}</td>
 <td><span class="badge" style="color:{{color .RiskLevel}};border-color:{{color .RiskLevel}}">{{.RiskLevel}}</span></td>
 <td>{{f1 .RiskScore}}</td>
 <td>{{if .Cracked}}{{.PasswordLength}}{{else}}<span class="muted">—</span>{{end}}</td>
+<td class="muted">{{if .Cracked}}{{.Complexity}}{{else}}—{{end}}</td>
+<td>{{if .Cracked}}{{if .MeetsPolicy}}<span style="color:#a3e635">meets</span>{{else}}<span style="color:#fbbf24">fails</span>{{end}}{{else}}<span class="muted">—</span>{{end}}</td>
 <td>{{if .HIBPBreached}}<span style="color:#fb7185">{{.HIBPBreachCount}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
 <td>{{if gt .SharedWith 0}}{{.SharedWith}}{{else}}<span class="muted">0</span>{{end}}</td>
+<td>{{if gt .Controlled 0}}{{.Controlled}}{{else}}<span class="muted">0</span>{{end}}</td>
 <td>{{if .HasDAPathway}}<span style="color:#fb7185">{{.DADomains}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
 <td>{{if .IsCommon}}<span class="wtag">common</span> {{end}}{{if .IsDictionaryWord}}<span class="wtag">dictionary</span> {{end}}{{if gt .BannedWordCount 0}}<span class="wtag">forbidden</span> {{end}}{{if gt .KeyboardPatternCount 0}}<span class="wtag">keyboard</span> {{end}}{{if not .IsWeak}}<span class="muted">—</span>{{end}}</td>
 </tr>{{end}}
-{{if not .Accounts}}<tr><td colspan="10" class="empty">none</td></tr>{{end}}
+{{if not .Accounts}}<tr><td colspan="13" class="empty">none</td></tr>{{end}}
 </table></div>
 <div class="foot">Generated by Password!AtTheDisco · cleartext passwords are never written to disk or included in reports</div>
 </div></body></html>`))
@@ -523,14 +527,17 @@ var weakTemplate = template.Must(template.New("weak").Funcs(tmplFuncs).Parse(
 </div>
 <div class="label">{{.Count}} account{{if ne .Count 1}}s{{end}}</div>
 <div class="panel"><table>
-<tr><th>Username</th><th>Domain</th><th>Risk</th><th>Score</th><th>Weaknesses</th></tr>
+<tr><th>Username</th><th>Domain</th><th>Risk</th><th>Score</th><th>Complexity</th><th>Policy</th><th>Controlled</th><th>Weaknesses</th></tr>
 {{range .Accounts}}<tr>
-<td>{{.Username}}</td><td class="muted">{{.Domain}}</td>
+<td>{{.Username}}{{if not .Enabled}}<span class="muted"> · disabled</span>{{end}}</td><td class="muted">{{.Domain}}</td>
 <td><span class="badge" style="color:{{color .RiskLevel}};border-color:{{color .RiskLevel}}">{{.RiskLevel}}</span></td>
 <td>{{f1 .RiskScore}}</td>
+<td class="muted">{{if .Cracked}}{{.Complexity}}{{else}}—{{end}}</td>
+<td>{{if .Cracked}}{{if .MeetsPolicy}}<span style="color:#a3e635">meets</span>{{else}}<span style="color:#fbbf24">fails</span>{{end}}{{else}}<span class="muted">—</span>{{end}}</td>
+<td>{{if gt .Controlled 0}}{{.Controlled}}{{else}}<span class="muted">0</span>{{end}}</td>
 <td>{{if .IsCommon}}<span class="wtag">common</span> {{end}}{{if .IsDictionaryWord}}<span class="wtag">dictionary</span> {{end}}{{if gt .BannedWordCount 0}}<span class="wtag">forbidden</span> {{end}}{{if gt .KeyboardPatternCount 0}}<span class="wtag">keyboard</span> {{end}}{{if not .IsWeak}}<span class="muted">—</span>{{end}}</td>
 </tr>{{end}}
-{{if not .Accounts}}<tr><td colspan="5" class="empty">none</td></tr>{{end}}
+{{if not .Accounts}}<tr><td colspan="8" class="empty">none</td></tr>{{end}}
 </table></div>
 <div class="foot">Generated by Password!AtTheDisco · cleartext passwords are never written to disk or included in reports</div>
 </div></body></html>`))
@@ -559,7 +566,7 @@ var reuseTemplate = template.Must(template.New("reuse").Funcs(tmplFuncs).Parse(
 {{if gt .HIBPBreachCount 0}}<span class="gtag">HIBP {{.HIBPBreachCount}}</span>{{end}}
 {{if .HasDAPathway}}<span class="gtag" style="color:#fb7185;border-color:#fb7185">Tier-0 reachable</span>{{end}}</div>
 <table><tr><th>Username</th><th>Domain</th><th>Risk</th><th>Score</th><th>Tier-0 pathway</th></tr>
-{{range .Members}}<tr><td>{{.Username}}</td><td class="muted">{{.Domain}}</td>
+{{range .Members}}<tr><td>{{.Username}}{{if not .Enabled}}<span class="muted"> · disabled</span>{{end}}</td><td class="muted">{{.Domain}}</td>
 <td><span class="badge" style="color:{{color .RiskLevel}};border-color:{{color .RiskLevel}}">{{.RiskLevel}}</span></td>
 <td>{{f1 .RiskScore}}</td>
 <td>{{if tier0 .DADomains}}<span style="color:#fb7185">{{.DADomains}}</span>{{else}}<span class="muted">—</span>{{end}}</td>

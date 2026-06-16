@@ -100,6 +100,7 @@ export interface ReportAccount {
   hibp_breach_count: number
   shared_with: number
   da_domains?: string
+  enabled?: boolean
   is_common?: boolean
   is_dictionary_word?: boolean
   banned_word_count?: number
