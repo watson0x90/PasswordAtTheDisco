@@ -91,7 +91,7 @@ func CSV(w io.Writer, accounts []model.Account) error {
 	cw := csv.NewWriter(w)
 	header := []string{
 		"domain", "username", "enabled", "status", "password_length", "complexity",
-		"meets_policy", "risk_level", "risk_score", "hibp_found", "hibp_breach_count",
+		"meets_policy", "risk_level", "risk_score", "risk_vector", "hibp_found", "hibp_breach_count",
 		"reused", "shared_with", "tier0_pathway", "tier0_pathway_domains", "controlled_objects",
 		"common_password", "dictionary_word", "forbidden_words", "keyboard_patterns",
 	}
@@ -112,7 +112,7 @@ func CSV(w io.Writer, accounts []model.Account) error {
 		}
 		row := []string{
 			csvSafe(a.Domain), csvSafe(a.Username), yesNo(a.Enabled), status, pwLen, csvSafe(a.Complexity),
-			yesNo(a.MeetsPolicy), csvSafe(a.RiskLevel), strconv.FormatFloat(a.RiskScore, 'f', 1, 64),
+			yesNo(a.MeetsPolicy), csvSafe(a.RiskLevel), strconv.FormatFloat(a.RiskScore, 'f', 1, 64), csvSafe(a.RiskVector),
 			yesNo(a.HIBPBreached), strconv.Itoa(a.HIBPBreachCount),
 			yesNo(a.SharedWith > 0), strconv.Itoa(a.SharedWith),
 			yesNo(tier0), csvSafe(tier0Domains), strconv.Itoa(a.Controlled),
