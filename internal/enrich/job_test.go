@@ -110,6 +110,24 @@ func TestEnrichJobDoubleStart(t *testing.T) {
 	m.Wait()
 }
 
+func TestEnrichJobCancel(t *testing.T) {
+	s, id := seedStore(t)
+	gate := make(chan struct{})
+	enr := &countingEnricher{calls: map[string]int{}, data: map[string]engine.Enrichment{}}
+	m := NewManager(newEng(slowEnricher{inner: enr, gate: gate}), s)
+	if err := m.Start(id); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Cancel(); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	close(gate) // let the blocked worker(s) drain
+	m.Wait()
+	if m.Status().Phase != PhaseCancelled {
+		t.Fatalf("phase = %s, want cancelled", m.Status().Phase)
+	}
+}
+
 func TestEnrichJobActivityHook(t *testing.T) {
 	s, id := seedStore(t)
 	var held atomic.Int32

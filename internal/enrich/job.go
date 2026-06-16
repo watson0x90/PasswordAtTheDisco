@@ -47,6 +47,9 @@ type Manager struct {
 	eng   *engine.Engine
 	store *store.Store
 
+	// Set these before the first Start; they are not safe to modify concurrently
+	// with a running job.
+
 	// Concurrency sizes the prefetch worker pool (default 8). The BHE client's
 	// own semaphore is the hard bound on in-flight requests.
 	Concurrency int
@@ -63,6 +66,7 @@ type Manager struct {
 	total     int
 	enriched  int
 	startedAt time.Time
+	endedAt   time.Time
 	errMsg    string
 	cancel    context.CancelFunc
 	done      chan struct{}
@@ -94,6 +98,7 @@ func (m *Manager) Start(auditID string) error {
 	m.processed, m.total, m.enriched = 0, 0, 0
 	m.errMsg = ""
 	m.startedAt = m.now()
+	m.endedAt = time.Time{}
 	m.done = make(chan struct{})
 	m.mu.Unlock()
 	go m.run(ctx, auditID)
@@ -122,7 +127,10 @@ func (m *Manager) Cancel() error {
 }
 
 func (m *Manager) run(ctx context.Context, id string) {
-	defer m.closeDone()
+	m.mu.Lock()
+	myDone := m.done
+	m.mu.Unlock()
+	defer close(myDone)
 	if m.ActivityHook != nil {
 		release := m.ActivityHook()
 		defer release()
@@ -221,14 +229,7 @@ func (m *Manager) finish(p Phase, msg string) {
 	m.mu.Lock()
 	m.phase = p
 	m.errMsg = msg
-	m.mu.Unlock()
-}
-
-func (m *Manager) closeDone() {
-	m.mu.Lock()
-	if m.done != nil {
-		close(m.done)
-	}
+	m.endedAt = m.now()
 	m.mu.Unlock()
 }
 
@@ -246,7 +247,10 @@ func (m *Manager) Status() JobStatus {
 	}
 	if !m.startedAt.IsZero() {
 		st.StartedAt = m.startedAt.UTC().Format(time.RFC3339)
-		end := m.now()
+		end := m.endedAt
+		if end.IsZero() {
+			end = m.now()
+		}
 		st.ElapsedSec = int64(end.Sub(m.startedAt).Seconds())
 	}
 	return st
