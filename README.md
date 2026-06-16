@@ -41,6 +41,17 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
+## What's new in 2.4.1
+
+- **Manage Audits** page (lead-only, under **Admin ▾**) — a table of every saved audit with
+  open + delete per row, for easier audit-data management.
+- **Secure delete** — deleting an audit now overwrites its encrypted blob with random bytes
+  (and fsyncs) before unlinking, so ciphertext doesn't linger in freed disk blocks
+  (best-effort on COW/SSD; the data is also crypto-erased via the passphrase-wrapped key).
+- Fixed the audit-switcher dropdown overflowing off-screen when many audits exist.
+
+See [`v2.4.1`](https://github.com/watson0x90/PasswordAtTheDisco/releases/tag/v2.4.1).
+
 ## What's new in 2.4
 
 A **console information-architecture** pass plus report parity fixes:
