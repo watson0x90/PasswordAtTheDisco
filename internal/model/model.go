@@ -117,6 +117,12 @@ type Account struct {
 	IsDictionaryWord     bool `json:"is_dictionary_word,omitempty"`     // exactly a dictionary word
 	BannedWordCount      int  `json:"banned_word_count,omitempty"`      // forbidden words found as substrings
 	KeyboardPatternCount int  `json:"keyboard_pattern_count,omitempty"` // keyboard patterns found as substrings
+	// BannedWords / KeyboardPatterns are the ACTUAL matched substrings -- cleartext
+	// fragments. Like Password/NTHash they are persisted only in the encrypted store
+	// and stripped by Redacted(); they leave the process only via the lead-gated,
+	// audited terms endpoint.
+	BannedWords      []string `json:"banned_words,omitempty"`
+	KeyboardPatterns []string `json:"keyboard_patterns,omitempty"`
 }
 
 // IsWeak reports whether the password matched any wordlist signal (common,
@@ -130,6 +136,8 @@ func (a Account) IsWeak() bool {
 func (a Account) Redacted() Account {
 	a.Password = ""
 	a.NTHash = ""
+	a.BannedWords = nil
+	a.KeyboardPatterns = nil
 	return a
 }
 
