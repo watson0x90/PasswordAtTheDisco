@@ -13,6 +13,7 @@ import { Policies } from "./components/Policies"
 import { Integrations } from "./components/Integrations"
 import { Operators } from "./components/Operators"
 import { Activity } from "./components/Activity"
+import { ManageAudits } from "./components/ManageAudits"
 import { Reports } from "./components/Reports"
 import { Unlock } from "./components/Unlock"
 
@@ -44,6 +45,8 @@ function viewFor(view: View) {
       return <Operators />
     case "activity":
       return <Activity />
+    case "audits":
+      return <ManageAudits />
     default:
       return <Dashboard />
   }
