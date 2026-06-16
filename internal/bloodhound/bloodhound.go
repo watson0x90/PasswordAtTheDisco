@@ -23,6 +23,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/fsutil"
@@ -80,6 +81,11 @@ type Client struct {
 	controllablesLimit int
 
 	sem chan struct{} // counting semaphore: send to acquire a slot, receive to release; cap = max concurrent BHE requests
+
+	domMu       sync.Mutex
+	domCache    []Domain
+	domCachedAt time.Time
+	domTTL      time.Duration
 }
 
 // New builds a Client from a Config.
@@ -116,6 +122,7 @@ func New(cfg Config) *Client {
 		searchLimit:        searchLimit,
 		controllablesLimit: controllablesLimit,
 		sem:                make(chan struct{}, concurrency),
+		domTTL:             60 * time.Second,
 	}
 }
 
@@ -228,8 +235,17 @@ type Domain struct {
 	Type      string `json:"type"`
 }
 
-// GetDomains returns all available domains.
+// GetDomains returns all available domains. Results are cached for domTTL to
+// avoid redundant BHE round-trips when called per-account in GetUserData.
 func (c *Client) GetDomains() ([]Domain, error) {
+	c.domMu.Lock()
+	if c.domCache != nil && time.Since(c.domCachedAt) < c.domTTL {
+		ds := c.domCache
+		c.domMu.Unlock()
+		return ds, nil
+	}
+	c.domMu.Unlock()
+
 	env, status, err := c.get("/api/v2/available-domains")
 	if err != nil {
 		return nil, err
@@ -241,6 +257,10 @@ func (c *Client) GetDomains() ([]Domain, error) {
 	if err := json.Unmarshal(env.Data, &ds); err != nil {
 		return nil, err
 	}
+	c.domMu.Lock()
+	c.domCache = ds
+	c.domCachedAt = time.Now()
+	c.domMu.Unlock()
 	return ds, nil
 }
 

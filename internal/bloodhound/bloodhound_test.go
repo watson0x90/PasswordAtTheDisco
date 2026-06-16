@@ -172,6 +172,28 @@ func TestClientConcurrencySemaphore(t *testing.T) {
 	}
 }
 
+func TestGetDomainsCached(t *testing.T) {
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"name":"CORP","collected":true}]}`))
+	}))
+	defer srv.Close()
+	host, port := splitHostPort(t, srv.URL)
+	c := New(Config{Scheme: "http", Host: host, Port: port})
+
+	for i := 0; i < 5; i++ {
+		ds, err := c.GetDomains()
+		if err != nil || len(ds) != 1 {
+			t.Fatalf("call %d: ds=%v err=%v", i, ds, err)
+		}
+	}
+	if got := atomic.LoadInt32(&hits); got != 1 {
+		t.Fatalf("backend hits = %d, want 1 (cached)", got)
+	}
+}
+
 // splitHostPort extracts host + numeric port from an httptest URL.
 func splitHostPort(t *testing.T, raw string) (string, int) {
 	t.Helper()
