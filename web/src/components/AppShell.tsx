@@ -6,7 +6,7 @@ import { Logo } from "./Logo"
 
 export type View =
   | "overview" | "actionable" | "accounts" | "domains" | "compare" | "reports"
-  | "ingest" | "policies" | "integrations" | "operators" | "activity"
+  | "ingest" | "policies" | "integrations" | "operators" | "activity" | "audits"
 
 const TABS: { id: View; label: string }[] = [
   { id: "overview", label: "Overview" },
@@ -26,6 +26,7 @@ const SETUP_ITEMS: { id: View; label: string }[] = [
 const ADMIN_ITEMS: { id: View; label: string }[] = [
   { id: "operators", label: "Operators" },
   { id: "activity", label: "Activity" },
+  { id: "audits", label: "Manage Audits" },
 ]
 
 export function AppShell({ view, onNav, children }: { view: View; onNav: (v: View) => void; children: ReactNode }) {
@@ -179,32 +180,34 @@ function AuditSwitcher() {
           <div className="audit-backdrop" onClick={() => setMenu(false)} />
           <div className="audit-menu">
             <div className="audit-menu-label">Audits</div>
-            {audits.length === 0 && <div className="audit-empty-row">none yet</div>}
-            {audits.map((a) => (
-              <div key={a.id} className={a.id === activeId ? "audit-item active" : "audit-item"}>
-                <button
-                  className="audit-pick"
-                  onClick={() => {
-                    void open(a.id)
-                    setMenu(false)
-                  }}
-                >
-                  <span className="audit-item-name">{a.name}</span>
-                  <span className="audit-item-meta">{a.total_accounts.toLocaleString()} accts</span>
-                </button>
-                {isLead && (
+            <div className="audit-list">
+              {audits.length === 0 && <div className="audit-empty-row">none yet</div>}
+              {audits.map((a) => (
+                <div key={a.id} className={a.id === activeId ? "audit-item active" : "audit-item"}>
                   <button
-                    className="audit-del"
-                    title="Delete audit"
+                    className="audit-pick"
                     onClick={() => {
-                      if (confirm(`Delete audit "${a.name}"? This cannot be undone.`)) void remove(a.id)
+                      void open(a.id)
+                      setMenu(false)
                     }}
                   >
-                    ×
+                    <span className="audit-item-name">{a.name}</span>
+                    <span className="audit-item-meta">{a.total_accounts.toLocaleString()} accts</span>
                   </button>
-                )}
-              </div>
-            ))}
+                  {isLead && (
+                    <button
+                      className="audit-del"
+                      title="Delete audit"
+                      onClick={() => {
+                        if (confirm(`Delete audit "${a.name}"? This cannot be undone.`)) void remove(a.id)
+                      }}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
             {isLead &&
               (creating ? (
                 <div className="audit-create-form">
