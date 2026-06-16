@@ -221,6 +221,8 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 		IsDictionaryWord:     an.IsDictionaryWord,
 		BannedWordCount:      len(an.BannedWords),
 		KeyboardPatternCount: len(an.KeyboardPatterns),
+		BannedWords:          an.BannedWords,
+		KeyboardPatterns:     an.KeyboardPatterns,
 	}
 }
 

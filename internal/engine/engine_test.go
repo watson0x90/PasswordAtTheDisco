@@ -147,3 +147,28 @@ func TestNormalizeUsername(t *testing.T) {
 		t.Error("should not double-suffix")
 	}
 }
+
+func TestScoreCrackedStoresMatchedWords(t *testing.T) {
+	eng := &Engine{
+		Lists: pwanalysis.Lists{
+			ForbiddenWords:   pwanalysis.NewSet("summer"),
+			KeyboardPatterns: pwanalysis.NewSet("qwerty"),
+			CommonPasswords:  pwanalysis.NewSet(),
+			DictionaryWords:  pwanalysis.NewSet(),
+		},
+		Policies: policy.DefaultSet(),
+		Now:      func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
+	}
+	a := eng.scoreCracked("CORP",
+		secretsdump.ParsedAccount{Username: "alice", Hash: "ABC", Password: "Summerqwerty1", Cracked: true},
+		0, nil, map[string]*pwanalysis.Analysis{}, map[string]float64{}, time.Now())
+	if len(a.BannedWords) == 0 || a.BannedWords[0] != "summer" {
+		t.Fatalf("BannedWords not stored: %+v", a.BannedWords)
+	}
+	if len(a.KeyboardPatterns) == 0 || a.KeyboardPatterns[0] != "qwerty" {
+		t.Fatalf("KeyboardPatterns not stored: %+v", a.KeyboardPatterns)
+	}
+	if a.BannedWordCount != 1 || a.KeyboardPatternCount != 1 {
+		t.Fatalf("counts wrong: %d / %d", a.BannedWordCount, a.KeyboardPatternCount)
+	}
+}
