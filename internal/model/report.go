@@ -18,6 +18,7 @@ type ReportAccount struct {
 	HIBPBreachCount int     `json:"hibp_breach_count"`
 	SharedWith      int     `json:"shared_with"`
 	DADomains       string  `json:"da_domains,omitempty"`
+	Enabled         bool    `json:"enabled"`
 	// wordlist weakness signals (booleans/counts only -- never the matched word)
 	IsCommon             bool `json:"is_common,omitempty"`
 	IsDictionaryWord     bool `json:"is_dictionary_word,omitempty"`
@@ -36,6 +37,7 @@ func toReportAccount(a Account) ReportAccount {
 		HIBPBreachCount:      a.HIBPBreachCount,
 		SharedWith:           a.SharedWith,
 		DADomains:            a.DADomains,
+		Enabled:              a.Enabled,
 		IsCommon:             a.IsCommon,
 		IsDictionaryWord:     a.IsDictionaryWord,
 		BannedWordCount:      a.BannedWordCount,
