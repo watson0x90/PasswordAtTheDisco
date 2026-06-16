@@ -89,8 +89,9 @@ func TestRedactedStripsMatchedWords(t *testing.T) {
 	a := Account{
 		Username: "alice", Domain: "CORP",
 		Password: "Summer2021!", NTHash: "ABC",
-		BannedWords: []string{"summer", "2021"}, KeyboardPatterns: []string{"qwerty"},
-		BannedWordCount: 2, KeyboardPatternCount: 1, IsCommon: true,
+		BannedWords:      []string{"summer", "2021"},
+		KeyboardPatterns: []string{"qwerty"},
+		BannedWordCount:  2, KeyboardPatternCount: 1, IsCommon: true,
 	}
 	r := a.Redacted()
 	if r.BannedWords != nil || r.KeyboardPatterns != nil {
