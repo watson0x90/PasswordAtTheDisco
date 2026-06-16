@@ -13,6 +13,7 @@ import { Policies } from "./components/Policies"
 import { PwnedPasswords } from "./components/PwnedPasswords"
 import { Operators } from "./components/Operators"
 import { Activity } from "./components/Activity"
+import { Reports } from "./components/Reports"
 import { BloodHound } from "./components/BloodHound"
 import { Unlock } from "./components/Unlock"
 
@@ -34,6 +35,8 @@ function viewFor(view: View) {
       return <Insights />
     case "compare":
       return <Compare />
+    case "reports":
+      return <Reports />
     case "ingest":
       return <Ingest />
     case "policies":

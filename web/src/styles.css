@@ -429,6 +429,33 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 .reuse-caret { color: var(--faint); font-size: 11px; flex-shrink: 0; }
 .reuse-members { border-top: 1px solid var(--hairline); padding: 6px 15px 14px; }
 
+/* ---- reports ---- */
+.report-export { margin-bottom: 18px; }
+.report-export-head { display: flex; align-items: center; gap: 16px; justify-content: space-between; }
+.report-export-head .action-sub { margin-top: 4px; max-width: 560px; }
+.report-redaction {
+  margin-top: 16px;
+  font-size: 12.5px;
+  color: var(--low);
+  background: var(--low-bg);
+  border: 1px solid rgba(34, 211, 238, 0.3);
+  border-radius: 12px;
+  padding: 11px 14px;
+}
+.report-cols { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 7px; }
+.report-cols li { display: flex; gap: 12px; align-items: baseline; font-size: 12.5px; }
+.report-cols li code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--accent);
+  background: rgba(56, 189, 248, 0.08);
+  padding: 2px 7px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  min-width: 210px;
+}
+.report-cols li span { color: var(--dim); }
+
 /* ---- domains ---- */
 
 .domain-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 16px; }

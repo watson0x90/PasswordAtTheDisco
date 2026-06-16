@@ -4,7 +4,7 @@ import { useAuth } from "../auth"
 import { useAudits } from "../auditsData"
 import { Logo } from "./Logo"
 
-export type View = "overview" | "actionable" | "domains" | "accounts" | "insights" | "compare" | "ingest" | "policies" | "pwned" | "bhe" | "operators" | "activity"
+export type View = "overview" | "actionable" | "domains" | "accounts" | "insights" | "compare" | "reports" | "ingest" | "policies" | "pwned" | "bhe" | "operators" | "activity"
 
 const TABS: { id: View; label: string }[] = [
   { id: "overview", label: "Overview" },
@@ -13,6 +13,7 @@ const TABS: { id: View; label: string }[] = [
   { id: "accounts", label: "Accounts" },
   { id: "insights", label: "Insights" },
   { id: "compare", label: "Compare" },
+  { id: "reports", label: "Reports" },
 ]
 
 export function AppShell({ view, onNav, children }: { view: View; onNav: (v: View) => void; children: ReactNode }) {

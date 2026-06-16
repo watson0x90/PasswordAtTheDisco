@@ -18,6 +18,7 @@ const LIKELIHOOD_COLOR: Record<string, string> = {
 }
 
 export function Dashboard() {
+  const nav = useNav()
   const { activeId, audits, loading: auditsLoading } = useAudits()
   const { accounts, error } = useAccountsData()
   // Posture comes from the server (single source of truth shared with the HTML
@@ -58,8 +59,7 @@ export function Dashboard() {
       <div className="view-head">
         <div className="section-label">Overview</div>
         <div className="export-actions">
-          <a className="btn" href="/api/export/csv">Export CSV</a>
-          <a className="btn" href="/api/export/html">HTML report</a>
+          <button className="btn" onClick={() => nav("reports")}>Reports &amp; export →</button>
         </div>
       </div>
       <div className="stat-grid">

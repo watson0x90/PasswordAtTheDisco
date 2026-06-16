@@ -84,23 +84,37 @@ func ComputeDiff(a, b []model.Account) Diff {
 }
 
 // CSV writes the accounts as a redacted CSV (no password column).
+// CSV writes the redacted per-account summary: one row per account with crack
+// status, HIBP exposure, password reuse, and any pathway to a Tier-0 / privileged
+// (Domain Admin) account. It never includes a cleartext password or an NT hash.
 func CSV(w io.Writer, accounts []model.Account) error {
 	cw := csv.NewWriter(w)
 	header := []string{
-		"username", "domain", "cracked", "password_length", "complexity",
-		"risk_level", "risk_score", "risk_vector", "hibp_breached", "hibp_breach_count",
-		"da_domains", "controlled_objects", "shared_with", "enabled", "meets_policy",
+		"domain", "username", "enabled", "status", "password_length", "complexity",
+		"meets_policy", "risk_level", "risk_score", "hibp_found", "hibp_breach_count",
+		"reused", "shared_with", "tier0_pathway", "tier0_pathway_domains", "controlled_objects",
 	}
 	if err := cw.Write(header); err != nil {
 		return err
 	}
 	for _, a := range accounts {
+		status := "Uncracked"
+		pwLen := "" // password length is only meaningful for a cracked account
+		if a.Cracked {
+			status = "Cracked"
+			pwLen = strconv.Itoa(a.PasswordLength)
+		}
+		tier0 := a.HasDAPathway() // a path to Domain Admin (Tier 0 / privileged)
+		tier0Domains := ""
+		if tier0 {
+			tier0Domains = a.DADomains
+		}
 		row := []string{
-			a.Username, a.Domain, strconv.FormatBool(a.Cracked), strconv.Itoa(a.PasswordLength), a.Complexity,
-			a.RiskLevel, strconv.FormatFloat(a.RiskScore, 'f', 1, 64), a.RiskVector,
-			strconv.FormatBool(a.HIBPBreached), strconv.Itoa(a.HIBPBreachCount),
-			a.DADomains, strconv.Itoa(a.Controlled), strconv.Itoa(a.SharedWith),
-			strconv.FormatBool(a.Enabled), strconv.FormatBool(a.MeetsPolicy),
+			csvSafe(a.Domain), csvSafe(a.Username), yesNo(a.Enabled), status, pwLen, csvSafe(a.Complexity),
+			yesNo(a.MeetsPolicy), csvSafe(a.RiskLevel), strconv.FormatFloat(a.RiskScore, 'f', 1, 64),
+			yesNo(a.HIBPBreached), strconv.Itoa(a.HIBPBreachCount),
+			yesNo(a.SharedWith > 0), strconv.Itoa(a.SharedWith),
+			yesNo(tier0), csvSafe(tier0Domains), strconv.Itoa(a.Controlled),
 		}
 		if err := cw.Write(row); err != nil {
 			return err
@@ -108,6 +122,27 @@ func CSV(w io.Writer, accounts []model.Account) error {
 	}
 	cw.Flush()
 	return cw.Error()
+}
+
+func yesNo(b bool) string {
+	if b {
+		return "Yes"
+	}
+	return "No"
+}
+
+// csvSafe neutralizes spreadsheet formula injection (CWE-1236): a cell that would
+// start with =, +, -, @, tab or CR is prefixed with a single quote so Excel/Sheets
+// treat it as text. encoding/csv already handles comma/quote/newline quoting.
+func csvSafe(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	}
+	return s
 }
 
 type riskRow struct {

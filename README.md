@@ -157,8 +157,10 @@ guide (env vars, TLS, service management, backup/recovery): **[deploy/DEPLOYMENT
   reports (DA pathways, cracked credentials, accounts sharing a *cracked* password,
   accounts sharing an *uncracked* NT hash, and HIBP-exposed accounts with breach
   counts — reuse grouped server-side by NT hash so the hash never leaves the process),
-  per-**Domain** stats, and a searchable, risk-filtered accounts table with role-gated
-  reveal.
+  per-**Domain** stats, a searchable, risk-filtered accounts table with role-gated
+  reveal, and a **Reports** tab that exports a redacted per-account CSV (crack status,
+  HIBP exposure, password reuse, Tier-0/privileged pathway — never a password or hash)
+  plus a self-contained HTML report.
 - **Administration (lead-only):** runtime **Operator** management (add / disable /
   remove with live effect, no restart; per-account **login lockout** + last-login),
   a searchable, CSV-exportable **Activity** view over the audit log, an **HIBP**
