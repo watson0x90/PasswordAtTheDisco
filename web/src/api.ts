@@ -119,6 +119,23 @@ export interface ReuseGroup {
   members: ReportAccount[]
 }
 
+export interface ViolationCounts {
+  common: number
+  dictionary: number
+  forbidden: number
+  keyboard: number
+}
+
+export interface Term {
+  term: string
+  count: number
+}
+
+export interface Terms {
+  forbidden: Term[]
+  keyboard: Term[]
+}
+
 export interface Report {
   total_accounts: number
   cracked_count: number
@@ -129,6 +146,7 @@ export interface Report {
   uncracked_reuse: ReuseGroup[]
   hibp_exposed: ReportAccount[]
   weak_passwords: ReportAccount[]
+  violation_counts: ViolationCounts
 }
 
 export interface PolicyRule {
@@ -210,6 +228,7 @@ export const api = {
   accounts: () => request<Account[]>("/accounts"),
 
   report: () => request<Report>("/report"),
+  reportTerms: () => request<Terms>("/report/terms"),
 
   revealSecret: (username: string) =>
     request<{ username: string; password: string }>(`/accounts/${encodeURIComponent(username)}/secret`),
