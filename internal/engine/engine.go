@@ -89,9 +89,28 @@ func (e *Engine) now() time.Time {
 	return time.Now()
 }
 
+// CurrentEnricher returns the configured enricher (nil if BHE is off).
+func (e *Engine) CurrentEnricher() Enricher {
+	e.encMu.RLock()
+	defer e.encMu.RUnlock()
+	return e.Enricher
+}
+
 // ProcessDomain scores all cracked and uncracked accounts for a domain and
-// returns the resulting model.Account records.
+// returns the resulting model.Account records. BloodHound enrichment is applied
+// via the currently configured Enricher (if any).
 func (e *Engine) ProcessDomain(domain string, cracked, uncracked []secretsdump.ParsedAccount) []model.Account {
+	return e.processDomainWith(domain, cracked, uncracked, e.CurrentEnricher())
+}
+
+// ProcessDomainNoEnrich scores all cracked and uncracked accounts for a domain
+// without any BloodHound enrichment, even if an Enricher is configured. Use
+// this for fast upload-time scoring where BHE is applied later by a background job.
+func (e *Engine) ProcessDomainNoEnrich(domain string, cracked, uncracked []secretsdump.ParsedAccount) []model.Account {
+	return e.processDomainWith(domain, cracked, uncracked, nil)
+}
+
+func (e *Engine) processDomainWith(domain string, cracked, uncracked []secretsdump.ParsedAccount, enr Enricher) []model.Account {
 	now := e.now()
 
 	pwUsers := map[string]int{}
@@ -119,10 +138,10 @@ func (e *Engine) ProcessDomain(domain string, cracked, uncracked []secretsdump.P
 
 	out := make([]model.Account, 0, len(cracked)+len(uncracked))
 	for _, a := range cracked {
-		out = append(out, e.scoreCracked(domain, a, pwUsers[a.Password]-1, allPasswords, analysisCache, simCache, now))
+		out = append(out, e.scoreCracked(domain, a, pwUsers[a.Password]-1, allPasswords, analysisCache, simCache, now, enr))
 	}
 	for _, a := range uncracked {
-		out = append(out, e.scoreUncracked(domain, a, hashUsers[a.Hash]-1, now))
+		out = append(out, e.scoreUncracked(domain, a, hashUsers[a.Hash]-1, now, enr))
 	}
 	// Cross-domain password-reuse + DA-share escalation is applied at the audit
 	// level (model.EscalateSharedWithDA / RecomputeSharing) by the store, since it
@@ -133,8 +152,19 @@ func (e *Engine) ProcessDomain(domain string, cracked, uncracked []secretsdump.P
 // Rescore re-runs scoring over an existing account set, grouped by domain. An account
 // whose Password is non-empty is scored as cracked, the rest as uncracked. Used after
 // applying newly cracked passwords (by NT hash) to a stored audit, so the formerly
-// uncracked accounts get full cracked scoring. (Re-runs BHE enrichment.)
+// uncracked accounts get full cracked scoring. (Re-runs BHE enrichment via the
+// currently configured Enricher.)
 func (e *Engine) Rescore(accts []model.Account) []model.Account {
+	return e.rescoreWith(accts, e.CurrentEnricher())
+}
+
+// RescoreWith re-runs scoring over an existing account set using an explicit enricher.
+// Pass nil to score without any BloodHound enrichment.
+func (e *Engine) RescoreWith(accts []model.Account, enr Enricher) []model.Account {
+	return e.rescoreWith(accts, enr)
+}
+
+func (e *Engine) rescoreWith(accts []model.Account, enr Enricher) []model.Account {
 	order := []string{}
 	byDomain := map[string][]model.Account{}
 	for _, a := range accts {
@@ -154,12 +184,12 @@ func (e *Engine) Rescore(accts []model.Account) []model.Account {
 				uncracked = append(uncracked, pa)
 			}
 		}
-		out = append(out, e.ProcessDomain(dom, cracked, uncracked)...)
+		out = append(out, e.processDomainWith(dom, cracked, uncracked, enr)...)
 	}
 	return out
 }
 
-func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, sharedWith int, allPasswords []string, analysisCache map[string]*pwanalysis.Analysis, simCache map[string]float64, now time.Time) model.Account {
+func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, sharedWith int, allPasswords []string, analysisCache map[string]*pwanalysis.Analysis, simCache map[string]float64, now time.Time, enr Enricher) model.Account {
 	pw := a.Password
 	pol := e.Policies.For(domain) // ProcessDomain is per-domain, so one policy here
 
@@ -177,14 +207,14 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 	}
 
 	count := e.hibpCount(a.Hash)
-	enr := e.enrich(a.Username, domain, true)
+	enrData := enrichVia(enr, a.Username, domain, true)
 
 	rctx := risk.Context{
 		SharedWith:          sharedWith,
-		DADomains:           enr.DADomains,
-		ControlledObjects:   enr.ControlledObjects,
-		DaysOutOfCompliance: daysOutOfCompliance(enr.PwdLastSet, now, pol.MaxPasswordAgeDays),
-		PasswordExpires:     passwordExpires(enr.PwdNeverExpires),
+		DADomains:           enrData.DADomains,
+		ControlledObjects:   enrData.ControlledObjects,
+		DaysOutOfCompliance: daysOutOfCompliance(enrData.PwdLastSet, now, pol.MaxPasswordAgeDays),
+		PasswordExpires:     passwordExpires(enrData.PwdNeverExpires),
 		HIBPBreachCount:     count,
 	}
 	ran := risk.Analysis{
@@ -210,10 +240,10 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 		RiskVector:      res.Vector,
 		HIBPBreached:    count > 0,
 		HIBPBreachCount: count,
-		DADomains:       joinDA(enr.DADomains),
-		Controlled:      derefInt(enr.ControlledObjects),
+		DADomains:       joinDA(enrData.DADomains),
+		Controlled:      derefInt(enrData.ControlledObjects),
 		SharedWith:      sharedWith,
-		Enabled:         enabledOrUnknown(enr.Enabled),
+		Enabled:         enabledOrUnknown(enrData.Enabled),
 		MeetsPolicy:     an.MeetsPolicy,
 		Complexity:      an.ComplexityLabel,
 		// wordlist weakness signals (counts/booleans + matched substrings; see Redacted())
@@ -228,13 +258,13 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 
 // scoreUncracked applies the simplified uncracked-hash scoring (base 5.0 scaled
 // by privilege/share/HIBP factors). BHE is consulted only for shared hashes.
-func (e *Engine) scoreUncracked(domain string, a secretsdump.ParsedAccount, sharedWith int, now time.Time) model.Account {
+func (e *Engine) scoreUncracked(domain string, a secretsdump.ParsedAccount, sharedWith int, now time.Time, enr Enricher) model.Account {
 	count := e.hibpCount(a.Hash)
-	var enr Enrichment
+	var enrData Enrichment
 	if sharedWith > 0 {
-		enr = e.enrich(a.Username, domain, true)
+		enrData = enrichVia(enr, a.Username, domain, true)
 	}
-	hasDA := len(enr.DADomains) > 0
+	hasDA := len(enrData.DADomains) > 0
 	score := uncrackedScore(hasDA, sharedWith, count)
 
 	return model.Account{
@@ -244,13 +274,13 @@ func (e *Engine) scoreUncracked(domain string, a secretsdump.ParsedAccount, shar
 		Cracked:         false,
 		RiskLevel:       risk.ComputeLevel(score, hasDA),
 		RiskScore:       score,
-		RiskVector:      uncrackedVector(hasDA, enr.ControlledObjects, sharedWith, count),
+		RiskVector:      uncrackedVector(hasDA, enrData.ControlledObjects, sharedWith, count),
 		HIBPBreached:    count > 0,
 		HIBPBreachCount: count,
-		DADomains:       joinDA(enr.DADomains),
-		Controlled:      derefInt(enr.ControlledObjects),
+		DADomains:       joinDA(enrData.DADomains),
+		Controlled:      derefInt(enrData.ControlledObjects),
 		SharedWith:      sharedWith,
-		Enabled:         enabledOrUnknown(enr.Enabled),
+		Enabled:         enabledOrUnknown(enrData.Enabled),
 	}
 }
 
@@ -267,17 +297,13 @@ func (e *Engine) hibpCount(ntlm string) int {
 	return 0
 }
 
-func (e *Engine) enrich(username, domain string, wanted bool) Enrichment {
-	if !wanted {
+// enrichVia fetches enrichment from enr (nil = none). Replaces the old
+// e.enrich method so enrichment source is explicit rather than read from e.Enricher.
+func enrichVia(enr Enricher, username, domain string, wanted bool) Enrichment {
+	if !wanted || enr == nil {
 		return Enrichment{}
 	}
-	e.encMu.RLock()
-	enr := e.Enricher
-	e.encMu.RUnlock()
-	if enr == nil {
-		return Enrichment{}
-	}
-	return enr.Enrich(normalizeUsername(username, domain))
+	return enr.Enrich(NormalizeUsername(username, domain))
 }
 
 func daysOutOfCompliance(pwdLastSet *int64, now time.Time, maxAge int) *int {
@@ -368,7 +394,10 @@ func uncrackedHIBPLevel(n int) string {
 	}
 }
 
-func normalizeUsername(username, domain string) string {
+// NormalizeUsername returns "user@DOMAIN". If username already contains "@" it
+// is returned unchanged; otherwise domain is appended. Used to build the key
+// that BloodHound enrichers expect.
+func NormalizeUsername(username, domain string) string {
 	if strings.Contains(username, "@") {
 		return username
 	}

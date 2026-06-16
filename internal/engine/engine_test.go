@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/pwanalysis"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/secretsdump"
@@ -140,11 +141,38 @@ func TestPasswordExpiresAndDays(t *testing.T) {
 }
 
 func TestNormalizeUsername(t *testing.T) {
-	if normalizeUsername("alice", "CORP") != "alice@CORP" {
+	if NormalizeUsername("alice", "CORP") != "alice@CORP" {
 		t.Error("should append domain")
 	}
-	if normalizeUsername("alice@CORP", "CORP") != "alice@CORP" {
+	if NormalizeUsername("alice@CORP", "CORP") != "alice@CORP" {
 		t.Error("should not double-suffix")
+	}
+}
+
+func TestRescoreWithExplicitEnricher(t *testing.T) {
+	e := newEngine()
+	accts := []model.Account{{
+		Username: "alice", Domain: "CORP", NTHash: "H1", Password: "Summer2024!", Cracked: true,
+	}}
+	plain := e.RescoreWith(accts, nil)
+	if plain[0].DADomains != "None" {
+		t.Fatalf("nil enricher should yield no DA, got %q", plain[0].DADomains)
+	}
+	enr := fakeEnricher{NormalizeUsername("alice", "CORP"): Enrichment{DADomains: []string{"CORP"}}}
+	withDA := e.RescoreWith(accts, enr)
+	if withDA[0].DADomains != "CORP" {
+		t.Fatalf("map enricher should yield DA=CORP, got %q", withDA[0].DADomains)
+	}
+}
+
+func TestProcessDomainNoEnrichSkipsBHE(t *testing.T) {
+	e := newEngine()
+	e.Enricher = fakeEnricher{NormalizeUsername("bob", "CORP"): Enrichment{DADomains: []string{"CORP"}}}
+	out := e.ProcessDomainNoEnrich("CORP", []secretsdump.ParsedAccount{
+		{Username: "bob", Domain: "CORP", Hash: "H2", Password: "pw", Cracked: true},
+	}, nil)
+	if out[0].DADomains != "None" {
+		t.Fatalf("ProcessDomainNoEnrich must ignore e.Enricher, got DA=%q", out[0].DADomains)
 	}
 }
 
@@ -161,7 +189,7 @@ func TestUnknownEnabledTreatedAsEnabled(t *testing.T) {
 	}
 	a := eng.scoreCracked("CORP",
 		secretsdump.ParsedAccount{Username: "x", Hash: "ABC", Password: "Passw0rd!", Cracked: true},
-		0, nil, map[string]*pwanalysis.Analysis{}, map[string]float64{}, time.Now())
+		0, nil, map[string]*pwanalysis.Analysis{}, map[string]float64{}, time.Now(), nil)
 	if !a.Enabled {
 		t.Fatalf("unknown BHE enabled-status should default to Enabled=true, got false")
 	}
@@ -180,7 +208,7 @@ func TestScoreCrackedStoresMatchedWords(t *testing.T) {
 	}
 	a := eng.scoreCracked("CORP",
 		secretsdump.ParsedAccount{Username: "alice", Hash: "ABC", Password: "Summerqwerty1", Cracked: true},
-		0, nil, map[string]*pwanalysis.Analysis{}, map[string]float64{}, time.Now())
+		0, nil, map[string]*pwanalysis.Analysis{}, map[string]float64{}, time.Now(), nil)
 	if len(a.BannedWords) == 0 || a.BannedWords[0] != "summer" {
 		t.Fatalf("BannedWords not stored: %+v", a.BannedWords)
 	}
