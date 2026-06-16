@@ -1360,20 +1360,37 @@ func (s *Server) handleApplyCracks(w http.ResponseWriter, r *http.Request) {
 		_ = rc.SetReadDeadline(time.Now().Add(10 * time.Minute))
 		_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Minute))
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 128<<20)
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, 512<<20)
+	mr, err := r.MultipartReader()
+	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "could not parse upload"})
 		return
 	}
-	cf, _, err := r.FormFile("crackfile")
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a 'crackfile' (user:hash:password lines) is required"})
-		return
+	var cracks map[string]string
+	var crackName string
+	for {
+		part, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "could not parse upload"})
+			return
+		}
+		if part.FormName() == "crackfile" {
+			crackName = part.FileName()
+			cracks, err = secretsdump.CrackMap(part)
+			part.Close()
+			if err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "could not parse crack file"})
+				return
+			}
+		} else {
+			part.Close()
+		}
 	}
-	defer cf.Close()
-	cracks, err := secretsdump.CrackMap(cf)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "could not parse crack file"})
+	if cracks == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a 'crackfile' (user:hash:password lines) is required"})
 		return
 	}
 	accounts, err := s.Store.Accounts(auditID, true) // need NT hashes + any existing cleartext
@@ -1400,6 +1417,10 @@ func (s *Server) handleApplyCracks(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "selected audit no longer exists"})
 		return
 	}
+	_ = s.Store.RecordIngest(auditID, model.IngestEvent{
+		Filename: crackName, Kind: "cracks",
+		HashesMatched: len(matched), NewlyCracked: newly, At: time.Now().UTC(), By: sess.Username,
+	})
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "apply_cracks", Source: r.RemoteAddr, Result: "ok"})
 	writeJSON(w, http.StatusOK, map[string]int{"crack_entries": len(cracks), "hashes_matched": len(matched), "newly_cracked": newly})
 }

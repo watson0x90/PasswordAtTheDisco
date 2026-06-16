@@ -962,6 +962,72 @@ func uploadReq(t *testing.T, cookie *http.Cookie, csrf string, domainFirst bool)
 	return req
 }
 
+// cracksReq builds a multipart POST to /api/upload/cracks with a single
+// "crackfile" part named filename containing body.
+func cracksReq(t *testing.T, cookie *http.Cookie, csrf, filename, body string) *http.Request {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, _ := mw.CreateFormFile("crackfile", filename)
+	_, _ = io.WriteString(fw, body)
+	_ = mw.Close()
+	req := httptest.NewRequest("POST", "/api/upload/cracks", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
+	if csrf != "" {
+		req.Header.Set("X-CSRF-Token", csrf)
+	}
+	return req
+}
+
+func TestApplyCracksRecordsIngest(t *testing.T) {
+	const ntHash = "0011CA32824670FF94EF25961895BE37"
+	const crackLine = "WALTER@CORP:1119:aad3b435b51404eeaad3b435b51404ee:" + ntHash + ":::Hannah2021!\n"
+
+	srv := newServer("secret")
+	srv.Engine = &engine.Engine{Policies: policy.DefaultSet()}
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	id := createAudit(t, srv, lc, lcsrf, "Crack Test") // auto-opens for the lead
+
+	// Seed the audit with an uncracked account that carries the NT hash we'll crack.
+	if err := srv.Store.Replace(id, model.Dataset{
+		Name: "Crack Test",
+		Accounts: []model.Account{
+			{Username: "WALTER", Domain: "CORP", NTHash: ntHash},
+		},
+	}); err != nil {
+		t.Fatalf("seed Replace: %v", err)
+	}
+
+	// POST the crackfile.
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, cracksReq(t, lc, lcsrf, "crack.potfile", crackLine))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("apply cracks: want 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	var result struct {
+		NewlyCracked int `json:"newly_cracked"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil || result.NewlyCracked < 1 {
+		t.Fatalf("apply cracks body: %v / %s", err, rec.Body.String())
+	}
+
+	// Verify a "cracks" ingest event was recorded with the correct filename.
+	ingestsRec := do(srv, "GET", "/api/ingests", lc)
+	if ingestsRec.Code != http.StatusOK {
+		t.Fatalf("GET /api/ingests: want 200, got %d (%s)", ingestsRec.Code, ingestsRec.Body.String())
+	}
+	ingestsBody := ingestsRec.Body.String()
+	if !strings.Contains(ingestsBody, `"kind":"cracks"`) {
+		t.Fatalf("/api/ingests should contain kind=cracks, got: %s", ingestsBody)
+	}
+	if !strings.Contains(ingestsBody, "crack.potfile") {
+		t.Fatalf("/api/ingests should contain filename crack.potfile, got: %s", ingestsBody)
+	}
+}
+
 func TestUploadStreamsAndRecordsIngest(t *testing.T) {
 	// Case 1: domain field BEFORE the file part -> 200 + ingest event recorded.
 	srv := newServer("secret")
