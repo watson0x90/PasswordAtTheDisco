@@ -4,16 +4,28 @@ import { useAuth } from "../auth"
 import { useAudits } from "../auditsData"
 import { Logo } from "./Logo"
 
-export type View = "overview" | "actionable" | "domains" | "accounts" | "insights" | "compare" | "reports" | "ingest" | "policies" | "pwned" | "bhe" | "operators" | "activity"
+export type View =
+  | "overview" | "actionable" | "accounts" | "domains" | "compare" | "reports"
+  | "ingest" | "policies" | "integrations" | "operators" | "activity"
 
 const TABS: { id: View; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "actionable", label: "Actionable" },
-  { id: "domains", label: "Domains" },
   { id: "accounts", label: "Accounts" },
-  { id: "insights", label: "Insights" },
+  { id: "domains", label: "Domains" },
   { id: "compare", label: "Compare" },
   { id: "reports", label: "Reports" },
+]
+
+// Lead-only groups, shown as Setup ▾ / Admin ▾ dropdowns.
+const SETUP_ITEMS: { id: View; label: string }[] = [
+  { id: "ingest", label: "Upload" },
+  { id: "policies", label: "Policies" },
+  { id: "integrations", label: "Integrations" },
+]
+const ADMIN_ITEMS: { id: View; label: string }[] = [
+  { id: "operators", label: "Operators" },
+  { id: "activity", label: "Activity" },
 ]
 
 export function AppShell({ view, onNav, children }: { view: View; onNav: (v: View) => void; children: ReactNode }) {
@@ -26,19 +38,6 @@ export function AppShell({ view, onNav, children }: { view: View; onNav: (v: Vie
       await refresh() // store_unlocked becomes false -> the unlock screen reappears
     }
   }
-  // Ingest (web upload) and Policies editing are lead-only.
-  const tabs =
-    me?.role === "lead"
-      ? [
-          ...TABS,
-          { id: "ingest" as View, label: "Upload" },
-          { id: "policies" as View, label: "Policies" },
-          { id: "pwned" as View, label: "HIBP" },
-          { id: "bhe" as View, label: "BloodHound" },
-          { id: "operators" as View, label: "Operators" },
-          { id: "activity" as View, label: "Activity" },
-        ]
-      : TABS
   return (
     <div className="shell">
       <header className="topbar">
@@ -48,11 +47,17 @@ export function AppShell({ view, onNav, children }: { view: View; onNav: (v: Vie
             <span className="word">Password<b>!AtTheDisco</b></span>
           </div>
           <nav className="nav">
-            {tabs.map((t) => (
+            {TABS.map((t) => (
               <button key={t.id} className={t.id === view ? "nav-tab active" : "nav-tab"} onClick={() => onNav(t.id)}>
                 {t.label}
               </button>
             ))}
+            {me?.role === "lead" && (
+              <>
+                <NavDropdown label="Setup" items={SETUP_ITEMS} view={view} onNav={onNav} />
+                <NavDropdown label="Admin" items={ADMIN_ITEMS} view={view} onNav={onNav} />
+              </>
+            )}
           </nav>
         </div>
         {me && (
@@ -75,6 +80,58 @@ export function AppShell({ view, onNav, children }: { view: View; onNav: (v: Vie
         )}
       </header>
       <main className="main">{children}</main>
+    </div>
+  )
+}
+
+function NavDropdown({
+  label,
+  items,
+  view,
+  onNav,
+}: {
+  label: string
+  items: { id: View; label: string }[]
+  view: View
+  onNav: (v: View) => void
+}) {
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false)
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [open])
+  const active = items.some((i) => i.id === view)
+  return (
+    <div className="nav-dd">
+      <button
+        className={active ? "nav-tab active" : "nav-tab"}
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        {label} ▾
+      </button>
+      {open && (
+        <>
+          <div className="audit-backdrop" onClick={() => setOpen(false)} />
+          <div className="nav-dd-menu">
+            {items.map((i) => (
+              <button
+                key={i.id}
+                className={i.id === view ? "nav-dd-item active" : "nav-dd-item"}
+                onClick={() => {
+                  onNav(i.id)
+                  setOpen(false)
+                }}
+              >
+                {i.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   )
 }
