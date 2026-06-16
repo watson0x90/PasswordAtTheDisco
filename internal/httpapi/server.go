@@ -1283,7 +1283,11 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 		fn := part.FormName() // capture before any Close() call
 		switch fn {
 		case "domain":
-			b, _ := io.ReadAll(part)
+			b, rerr := io.ReadAll(part)
+			if rerr != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "reading domain: " + rerr.Error()})
+				return
+			}
 			domain = strings.TrimSpace(string(b))
 		case "cracked", "uncracked":
 			if domain == "" {

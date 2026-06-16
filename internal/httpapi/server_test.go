@@ -1005,4 +1005,7 @@ func TestUploadStreamsAndRecordsIngest(t *testing.T) {
 	if rec2.Code != http.StatusBadRequest {
 		t.Fatalf("file-before-domain upload: want 400, got %d (%s)", rec2.Code, rec2.Body.String())
 	}
+	if !strings.Contains(rec2.Body.String(), "domain field must be sent before") {
+		t.Fatalf("expected domain-ordering error, got: %s", rec2.Body.String())
+	}
 }
