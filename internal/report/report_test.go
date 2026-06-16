@@ -177,3 +177,26 @@ func TestFocusedHTMLRedactsAndRenders(t *testing.T) {
 // BuildReportFor is a tiny indirection so the test reads clearly; model.BuildReport
 // lives in the model package.
 func BuildReportFor(a []model.Account) model.Report { return model.BuildReport(a) }
+
+func TestWeakPasswordsHTML(t *testing.T) {
+	accts := []model.Account{
+		{Username: "alice", Domain: "CORP", Cracked: true, Password: "Summer2021!",
+			BannedWords: []string{"summer", "2021"}, BannedWordCount: 2, IsCommon: true,
+			RiskLevel: "Critical", RiskScore: 9},
+		{Username: "bob", Domain: "CORP", Cracked: true, KeyboardPatterns: []string{"qwerty"},
+			KeyboardPatternCount: 1, RiskLevel: "High", RiskScore: 7},
+	}
+	var b bytes.Buffer
+	if err := WeakPasswordsHTML(&b, "Eng", time.Unix(1_700_000_000, 0), accts); err != nil {
+		t.Fatal(err)
+	}
+	out := b.String()
+	if !strings.Contains(out, "by violation category") || !strings.Contains(out, "alice") || !strings.Contains(out, "</html>") {
+		t.Fatalf("weak HTML malformed:\n%s", out)
+	}
+	for _, leak := range []string{"summer", "2021", "qwerty", "Summer2021!"} {
+		if strings.Contains(out, leak) {
+			t.Fatalf("weak HTML leaked %q", leak)
+		}
+	}
+}

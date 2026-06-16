@@ -1497,7 +1497,7 @@ func (s *Server) handleExportWeakHTML(w http.ResponseWriter, r *http.Request) {
 	}
 	download(w, meta.Name, "weak-passwords", "html")
 	weak := filterAccounts(accts, func(a model.Account) bool { return a.IsWeak() })
-	_ = report.AccountsHTML(w, meta.Name+" — Weak passwords", "passwords matching a wordlist (common / dictionary / forbidden / keyboard)", time.Now().UTC(), weak)
+	_ = report.WeakPasswordsHTML(w, meta.Name, time.Now().UTC(), weak)
 }
 
 func (s *Server) handleExportReuse(w http.ResponseWriter, r *http.Request) {
