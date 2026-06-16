@@ -217,12 +217,26 @@ func EscalateSharedWithDA(accts []Account) {
 	}
 }
 
+// IngestEvent records one upload into an audit (a dump load or a crack-apply).
+// Metadata only -- no password or NT hash. Stored in the audit's encrypted dataset.
+type IngestEvent struct {
+	Filename       string    `json:"filename"`
+	Kind           string    `json:"kind"` // "dump" | "cracks"
+	Domain         string    `json:"domain,omitempty"`
+	AccountsLoaded int       `json:"accounts_loaded,omitempty"` // dump
+	HashesMatched  int       `json:"hashes_matched,omitempty"`  // cracks
+	NewlyCracked   int       `json:"newly_cracked,omitempty"`   // cracks
+	At             time.Time `json:"at"`
+	By             string    `json:"by"` // operator username
+}
+
 // Dataset is a full audit result ingested from the analysis engine. Name lets a
 // CLI ingest label the audit it creates.
 type Dataset struct {
-	Name        string    `json:"name,omitempty"`
-	GeneratedAt time.Time `json:"generated_at"`
-	Accounts    []Account `json:"accounts"`
+	Name        string        `json:"name,omitempty"`
+	GeneratedAt time.Time     `json:"generated_at"`
+	Accounts    []Account     `json:"accounts"`
+	Ingests     []IngestEvent `json:"ingests,omitempty"`
 }
 
 // Summary is non-sensitive aggregate stats for the dashboard.

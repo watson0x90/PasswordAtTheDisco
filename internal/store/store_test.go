@@ -404,6 +404,44 @@ func mustReopen(t *testing.T, dir string) *vault.Vault {
 	return v
 }
 
+func TestIngestHistoryRecordedAndPreserved(t *testing.T) {
+	s := New() // in-memory store is enough for the history logic
+	m, _ := s.CreateAudit("A", "")
+
+	if err := s.ReplaceDomain(m.ID, "CORP", []model.Account{{Username: "u1", Domain: "CORP", NTHash: "AA"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordIngest(m.ID, model.IngestEvent{Filename: "ntds.pwdump", Kind: "dump", Domain: "CORP", AccountsLoaded: 1, By: "watson"}); err != nil {
+		t.Fatal(err)
+	}
+	// a second domain load must NOT wipe the first ingest
+	if err := s.ReplaceDomain(m.ID, "SUB", []model.Account{{Username: "u2", Domain: "SUB", NTHash: "BB"}}); err != nil {
+		t.Fatal(err)
+	}
+	// a full Replace (the apply-cracks re-score path) must also preserve history
+	cur, _ := s.Accounts(m.ID, true)
+	if err := s.Replace(m.ID, model.Dataset{Accounts: cur}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordIngest(m.ID, model.IngestEvent{Filename: "crack.potfile", Kind: "cracks", HashesMatched: 1, NewlyCracked: 1, By: "watson"}); err != nil {
+		t.Fatal(err)
+	}
+
+	evs, err := s.Ingests(m.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evs) != 2 {
+		t.Fatalf("want 2 ingest events, got %d: %+v", len(evs), evs)
+	}
+	if evs[0].Filename != "ntds.pwdump" || evs[0].Kind != "dump" || evs[0].AccountsLoaded != 1 {
+		t.Fatalf("first event wrong: %+v", evs[0])
+	}
+	if evs[1].Filename != "crack.potfile" || evs[1].Kind != "cracks" || evs[1].NewlyCracked != 1 {
+		t.Fatalf("second event wrong: %+v", evs[1])
+	}
+}
+
 func TestReplaceDomainScoped(t *testing.T) {
 	s := New()
 	idm, _ := s.CreateAudit("x", "")
