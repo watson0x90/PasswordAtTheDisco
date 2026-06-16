@@ -41,6 +41,25 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
+## What's new in 2.3
+
+Deeper **wordlist-violation reporting**, building on 2.2's weak-password signals — every
+output still redacted (no cleartext, no NT hash):
+
+- **Violations by category, charted** — the Actionable **Weak Passwords** section and the
+  weak-passwords HTML export gain a counts-by-category chart (common / dictionary /
+  forbidden / keyboard).
+- **Audited term drill-down (in-app, lead-only)** — reveal the actual recurring *forbidden
+  words* and *keyboard patterns* (the matched substrings) via a lead-gated,
+  **fail-closed audit-logged** endpoint. The words are a cleartext *fragment*, so they're
+  stored encrypted, stripped by redaction, and **never** appear in `/api/report`, any
+  export, or the audit log — only in the live console for an authorized operator. (Common
+  /dictionary are excluded — their "term" is the whole password.)
+
+Delivered through the full brainstorm → spec → plan → subagent-driven TDD workflow; a
+final adversarial review verified the no-leak invariant holds end-to-end. `govulncheck`
+clean. See [`v2.3.0`](https://github.com/watson0x90/PasswordAtTheDisco/releases/tag/v2.3.0).
+
 ## What's new in 2.2
 
 A **reporting** release centered on the **Actionable** view and a dedicated **Reports**
@@ -50,10 +69,8 @@ tab — every output redacted (no cleartext password, no NT hash):
   grouped reports: who's cracked, accounts sharing a *cracked* password, accounts sharing
   an *uncracked* NT hash (lateral-movement risk), HIBP-exposed accounts with breach
   counts, and **weak passwords** matching the wordlists (common / dictionary / forbidden /
-  keyboard) — per-account badges plus a **violations-by-category chart**, and a lead-only,
-  **audit-logged drill-down** into the actual recurring forbidden words / keyboard patterns
-  (shown in-app only; exports stay counts/categories, never the matched word). Reuse is
-  grouped **server-side by NT hash** (the hash never leaves the process), cross-domain.
+  keyboard) — surfaced as per-account badges, counts only (never the matched word). Reuse
+  is grouped **server-side by NT hash** (the hash never leaves the process), cross-domain.
 - **Reports tab — CSV *and* HTML** — a per-account summary (crack status, HIBP exposure,
   reuse, and any pathway to a **Tier-0 / privileged** account), plus focused
   cracked-only, HIBP-exposed, and password-reuse-group reports. Each downloads as a
