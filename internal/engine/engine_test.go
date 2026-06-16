@@ -148,6 +148,25 @@ func TestNormalizeUsername(t *testing.T) {
 	}
 }
 
+func TestUnknownEnabledTreatedAsEnabled(t *testing.T) {
+	// No Enricher configured -> enr.Enabled is nil (unknown). The account must
+	// default to enabled, not disabled.
+	eng := &Engine{Lists: pwanalysis.Lists{
+		ForbiddenWords:   pwanalysis.NewSet(),
+		KeyboardPatterns: pwanalysis.NewSet(),
+		CommonPasswords:  pwanalysis.NewSet(),
+		DictionaryWords:  pwanalysis.NewSet(),
+	},
+		Policies: policy.DefaultSet(),
+	}
+	a := eng.scoreCracked("CORP",
+		secretsdump.ParsedAccount{Username: "x", Hash: "ABC", Password: "Passw0rd!", Cracked: true},
+		0, nil, map[string]*pwanalysis.Analysis{}, map[string]float64{}, time.Now())
+	if !a.Enabled {
+		t.Fatalf("unknown BHE enabled-status should default to Enabled=true, got false")
+	}
+}
+
 func TestScoreCrackedStoresMatchedWords(t *testing.T) {
 	eng := &Engine{
 		Lists: pwanalysis.Lists{
