@@ -41,6 +41,21 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
+## What's new in 2.5
+
+An **upload-experience** overhaul for the Setup → Upload page:
+
+- **Progress feedback** — uploads show a real two-phase indicator: a determinate
+  **Uploading… %** bar (via `XMLHttpRequest`), then **Processing on server…** while the dump
+  is parsed and scored.
+- **Per-audit ingest history** — a "This audit" panel lists every upload (filename, kind,
+  domain, accounts loaded / hashes matched + cracked, time, operator), served from a new
+  `GET /api/ingests`. The history is stored inside the audit's encrypted dataset, so it's
+  securely deleted with the audit. Metadata only — never a password or hash.
+- **Streamed large uploads** — the upload handlers now stream the multipart body
+  (`r.MultipartReader`) instead of `ParseMultipartForm`, so **nothing spills to a cleartext
+  temp file** and memory stays constant; the size cap is raised to **512 MiB**.
+
 ## What's new in 2.4.1
 
 - **Manage Audits** page (lead-only, under **Admin ▾**) — a table of every saved audit with
