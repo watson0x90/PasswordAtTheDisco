@@ -776,6 +776,81 @@ func TestLoginLockout(t *testing.T) {
 	}
 }
 
+func TestReportTermsLeadGatedAndAudited(t *testing.T) {
+	var buf bytes.Buffer
+	srv := newServerAudit("secret", &buf)
+
+	// Create an audit and plant an account with a known BannedWord via the store directly.
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	id := createAudit(t, srv, lc, lcsrf, "Terms Test Audit")
+	if err := srv.Store.Replace(id, model.Dataset{
+		Name: "Terms Test Audit",
+		Accounts: []model.Account{
+			{
+				Username:        "alice",
+				Domain:          "CORP",
+				Password:        "plantedword123",
+				Cracked:         true,
+				BannedWords:     []string{"plantedword"},
+				BannedWordCount: 1,
+				RiskLevel:       "Critical",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("seed account: %v", err)
+	}
+
+	// 1. Non-lead (analyst) gets 403 and a denied audit event.
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	openAudit(t, srv, ac, acsrf, id)
+	buf.Reset()
+	rec := do(srv, "GET", "/api/report/terms", ac)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("analyst /api/report/terms: want 403, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	deniedLog := buf.String()
+	if !strings.Contains(deniedLog, "reveal_violation_terms") {
+		t.Fatalf("denied call not audit-logged (want reveal_violation_terms): %s", deniedLog)
+	}
+	if !strings.Contains(deniedLog, `"result":"denied"`) {
+		t.Fatalf("denied audit event missing result=denied: %s", deniedLog)
+	}
+
+	// 2. Lead gets 200 with plantedword in the body and an ok audit event.
+	buf.Reset()
+	rec = do(srv, "GET", "/api/report/terms", lc)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("lead /api/report/terms: want 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "plantedword") {
+		t.Fatalf("/api/report/terms body should contain plantedword, got: %s", body)
+	}
+	okLog := buf.String()
+	if !strings.Contains(okLog, "reveal_violation_terms") {
+		t.Fatalf("ok call not audit-logged (want reveal_violation_terms): %s", okLog)
+	}
+	if !strings.Contains(okLog, `"result":"ok"`) {
+		t.Fatalf("ok audit event missing result=ok: %s", okLog)
+	}
+
+	// 3. GET /api/report (as lead) must NOT expose plantedword.
+	reportRec := do(srv, "GET", "/api/report", lc)
+	if reportRec.Code != http.StatusOK {
+		t.Fatalf("/api/report: want 200, got %d", reportRec.Code)
+	}
+	if strings.Contains(reportRec.Body.String(), "plantedword") {
+		t.Fatalf("/api/report LEAKED matched word 'plantedword' — must be redacted")
+	}
+
+	// 4. The audit log must never contain the matched word (plantedword is a cleartext fragment).
+	allLogs := buf.String()
+	if strings.Contains(allLogs, "plantedword") {
+		t.Fatalf("AUDIT LOG LEAKED cleartext fragment 'plantedword': %s", allLogs)
+	}
+	_ = acsrf // referenced for loginCSRF completeness
+}
+
 func TestBHEConfig(t *testing.T) {
 	srv := newServer("tok")
 	srvForReq = srv
