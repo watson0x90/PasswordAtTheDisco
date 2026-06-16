@@ -79,7 +79,7 @@ type Client struct {
 	searchLimit        int
 	controllablesLimit int
 
-	sem chan struct{}
+	sem chan struct{} // counting semaphore: send to acquire a slot, receive to release; cap = max concurrent BHE requests
 }
 
 // New builds a Client from a Config.
@@ -136,6 +136,8 @@ func (c *Client) formatURL(uri string) string {
 	return fmt.Sprintf("%s://%s:%d/%s", c.scheme, c.host, c.port, strings.TrimPrefix(uri, "/"))
 }
 
+// acquire/release bracket a single HTTP round-trip; the slot is held only until
+// doRequest returns (callers drain the response body after the semaphore is freed).
 func (c *Client) acquire() { c.sem <- struct{}{} }
 func (c *Client) release() { <-c.sem }
 
