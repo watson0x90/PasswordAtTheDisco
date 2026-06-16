@@ -56,6 +56,8 @@ A **console information-architecture** pass plus report parity fixes:
   only on a **confirmed** BloodHound signal (unknown status is treated as enabled, so it
   never false-flags un-enriched accounts).
 
+See [`v2.4.0`](https://github.com/watson0x90/PasswordAtTheDisco/releases/tag/v2.4.0).
+
 ## What's new in 2.3
 
 Deeper **wordlist-violation reporting**, building on 2.2's weak-password signals — every
