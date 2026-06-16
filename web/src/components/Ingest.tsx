@@ -110,6 +110,7 @@ export function Ingest() {
             value={domain}
             spellCheck={false}
             onChange={(e) => setDomain(e.target.value)}
+            disabled={phase !== "idle"}
           />
         </div>
 
@@ -117,7 +118,7 @@ export function Ingest() {
           <label>
             Dump file <span className="req">required</span>
           </label>
-          <input key={`d-${activeId}`} type="file" onChange={(e) => setDump(e.target.files?.[0] ?? null)} />
+          <input key={`d-${activeId}`} type="file" onChange={(e) => setDump(e.target.files?.[0] ?? null)} disabled={phase !== "idle"} />
           {dump && <div className="hint">{dump.name} · {fmtBytes(dump.size)}</div>}
           <div className="hint">
             impacket secretsdump NTDS output (<code>user:rid:lm:nt:::</code>) or simple <code>user:hash</code>
@@ -157,7 +158,7 @@ export function Ingest() {
           <label>
             Crack file <span className="req">required</span>
           </label>
-          <input key={`k-${activeId}`} type="file" onChange={(e) => setCrackfile(e.target.files?.[0] ?? null)} />
+          <input key={`k-${activeId}`} type="file" onChange={(e) => setCrackfile(e.target.files?.[0] ?? null)} disabled={applyPhase !== "idle"} />
           {crackfile && <div className="hint">{crackfile.name} · {fmtBytes(crackfile.size)}</div>}
           <div className="hint">
             <code>user:hash:password</code> or a bare <code>hash:password</code> potfile
