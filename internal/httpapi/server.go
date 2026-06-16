@@ -137,6 +137,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /api/accounts", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleAccounts))))
 	mux.Handle("GET /api/report", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleReport))))
 	mux.Handle("GET /api/report/terms", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleReportTerms))))
+	mux.Handle("GET /api/ingests", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleIngests))))
 	// Cleartext reveal -- requires lead role, always audit-logged
 	mux.Handle("GET /api/accounts/{username}/secret", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleReveal))))
 	// Web upload of dump files into the active audit (lead)
@@ -1381,6 +1382,29 @@ func optionalUpload(r *http.Request, field, domain string, fn func(io.Reader, st
 // handleListAudits returns all audits' metadata + headline counts.
 func (s *Server) handleListAudits(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.Store.List())
+}
+
+// handleIngests returns the active audit's ingest history (lead only -- it mirrors
+// the lead-only Upload surface). Metadata only; no password or hash.
+func (s *Server) handleIngests(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	id, ok := s.activeAudit(w, sess)
+	if !ok {
+		return
+	}
+	evs, err := s.Store.Ingests(id)
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		return
+	}
+	if evs == nil {
+		evs = []model.IngestEvent{} // emit [] not null
+	}
+	writeJSON(w, http.StatusOK, evs)
 }
 
 // handleDiff compares two audits (a = earlier, b = later), redacted.

@@ -893,3 +893,43 @@ func TestBHEConfig(t *testing.T) {
 		t.Fatalf("analyst status = %d, want 403", rec.Code)
 	}
 }
+
+func TestIngestsEndpoint(t *testing.T) {
+	srv := newServer("secret")
+
+	// Create an audit via the lead session, then seed an ingest event directly into
+	// the store (mirrors how TestReportTermsLeadGatedAndAudited seeds data).
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	id := createAudit(t, srv, lc, lcsrf, "Ingest History Test")
+	if err := srv.Store.RecordIngest(id, model.IngestEvent{
+		Filename:       "x.pwdump",
+		Kind:           "dump",
+		Domain:         "CORP",
+		AccountsLoaded: 3,
+		By:             "watson",
+	}); err != nil {
+		t.Fatalf("seed RecordIngest: %v", err)
+	}
+
+	// 1. Lead GET /api/ingests with the audit open -> 200 containing the filename.
+	rec := do(srv, "GET", "/api/ingests", lc)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("lead /api/ingests: want 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "x.pwdump") {
+		t.Fatalf("/api/ingests body should contain x.pwdump, got: %s", body)
+	}
+
+	// 2. Non-lead (analyst) GET /api/ingests -> 403.
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	openAudit(t, srv, ac, acsrf, id)
+	if rec := do(srv, "GET", "/api/ingests", ac); rec.Code != http.StatusForbidden {
+		t.Fatalf("analyst /api/ingests: want 403, got %d", rec.Code)
+	}
+
+	// 3. Lead response body must not contain password or nt_hash fields.
+	if strings.Contains(body, "password") || strings.Contains(body, "nt_hash") {
+		t.Fatalf("/api/ingests LEAKED secret fields: %s", body)
+	}
+}
