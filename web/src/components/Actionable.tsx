@@ -158,17 +158,26 @@ export function Actionable() {
                 </button>
               ) : (
                 <>
-                  <div className="weak-chart-label">
-                    Top recurring terms <span className="muted">— audit-logged reveal; actual words, in-app only</span>
-                  </div>
-                  {terms.forbidden.length > 0 && (
-                    <BarChart accent="term" rows={terms.forbidden.slice(0, 10).map((t) => ({ label: t.term, n: t.count }))} />
-                  )}
-                  {terms.keyboard.length > 0 && (
-                    <BarChart accent="term" rows={terms.keyboard.slice(0, 10).map((t) => ({ label: t.term, n: t.count }))} />
-                  )}
-                  {terms.forbidden.length === 0 && terms.keyboard.length === 0 && (
+                  {terms.forbidden.length === 0 && terms.keyboard.length === 0 ? (
                     <div className="muted">No recurring forbidden words or keyboard patterns.</div>
+                  ) : (
+                    <>
+                      <div className="weak-chart-label">
+                        Top recurring terms <span className="muted">— audit-logged reveal; actual words, in-app only</span>
+                      </div>
+                      {terms.forbidden.length > 0 && (
+                        <>
+                          <div className="weak-chart-label">Forbidden words</div>
+                          <BarChart accent="term" rows={terms.forbidden.slice(0, 10).map((t) => ({ label: t.term, n: t.count }))} />
+                        </>
+                      )}
+                      {terms.keyboard.length > 0 && (
+                        <>
+                          <div className="weak-chart-label">Keyboard patterns</div>
+                          <BarChart accent="term" rows={terms.keyboard.slice(0, 10).map((t) => ({ label: t.term, n: t.count }))} />
+                        </>
+                      )}
+                    </>
                   )}
                 </>
               )}
