@@ -111,15 +111,16 @@ function NavDropdown({
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        {label} ▾
+        {label} <span aria-hidden="true">▾</span>
       </button>
       {open && (
         <>
           <div className="audit-backdrop" onClick={() => setOpen(false)} />
-          <div className="nav-dd-menu">
+          <div className="nav-dd-menu" role="menu">
             {items.map((i) => (
               <button
                 key={i.id}
+                role="menuitem"
                 className={i.id === view ? "nav-dd-item active" : "nav-dd-item"}
                 onClick={() => {
                   onNav(i.id)

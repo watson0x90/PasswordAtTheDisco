@@ -16,8 +16,9 @@ import { Activity } from "./components/Activity"
 import { Reports } from "./components/Reports"
 import { Unlock } from "./components/Unlock"
 
-// Recharts is heavy (~180KB) and only the chart views need it. Lazy-load them so
-// it's split into a separate chunk fetched after auth, not on the login screen.
+// Recharts is heavy (~180KB). Lazy-load Dashboard and Domains so the charting
+// chunk is deferred until after auth, not on the login screen. (Insights renders
+// inside Dashboard, so it rides in that lazy chunk.)
 const Dashboard = lazy(() => import("./components/Dashboard").then((m) => ({ default: m.Dashboard })))
 const Domains = lazy(() => import("./components/Domains").then((m) => ({ default: m.Domains })))
 
