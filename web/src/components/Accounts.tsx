@@ -159,6 +159,7 @@ export function Accounts() {
                   <button className="link-btn acct-name" onClick={() => setSelected(a)} title="Account details">
                     {a.username}
                   </button>
+                  {!a.enabled && <span className="badge-disabled" title="account disabled in AD">disabled</span>}
                 </td>
                 <td className="muted">{a.domain}</td>
                 <td>
