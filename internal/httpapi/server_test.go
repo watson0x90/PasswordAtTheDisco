@@ -933,3 +933,76 @@ func TestIngestsEndpoint(t *testing.T) {
 		t.Fatalf("/api/ingests LEAKED secret fields: %s", body)
 	}
 }
+
+// uploadReq builds a multipart POST to /api/upload. domainFirst controls whether
+// the domain field is written before or after the file part (the streaming handler
+// requires domain-first).
+func uploadReq(t *testing.T, cookie *http.Cookie, csrf string, domainFirst bool) *http.Request {
+	t.Helper()
+	const line = "WALTER@CORP:1119:aad3b435b51404eeaad3b435b51404ee:0011CA32824670FF94EF25961895BE37:::\n"
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	if domainFirst {
+		_ = mw.WriteField("domain", "CORP")
+	}
+	fw, _ := mw.CreateFormFile("uncracked", "ntds.pwdump")
+	_, _ = io.WriteString(fw, line)
+	if !domainFirst {
+		_ = mw.WriteField("domain", "CORP")
+	}
+	_ = mw.Close()
+	req := httptest.NewRequest("POST", "/api/upload", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
+	if csrf != "" {
+		req.Header.Set("X-CSRF-Token", csrf)
+	}
+	return req
+}
+
+func TestUploadStreamsAndRecordsIngest(t *testing.T) {
+	// Case 1: domain field BEFORE the file part -> 200 + ingest event recorded.
+	srv := newServer("secret")
+	srv.Engine = &engine.Engine{Policies: policy.DefaultSet()}
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	createAudit(t, srv, lc, lcsrf, "Stream Test") // auto-opens for the lead
+
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, uploadReq(t, lc, lcsrf, true))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("domain-first upload: want 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	var result struct {
+		Accounts int `json:"accounts"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil || result.Accounts < 1 {
+		t.Fatalf("domain-first upload body: %v / %s", err, rec.Body.String())
+	}
+
+	// Verify an ingest event was recorded with kind=="dump" and the correct filename.
+	ingestsRec := do(srv, "GET", "/api/ingests", lc)
+	if ingestsRec.Code != http.StatusOK {
+		t.Fatalf("GET /api/ingests: want 200, got %d (%s)", ingestsRec.Code, ingestsRec.Body.String())
+	}
+	ingestsBody := ingestsRec.Body.String()
+	if !strings.Contains(ingestsBody, `"kind":"dump"`) {
+		t.Fatalf("/api/ingests should contain kind=dump, got: %s", ingestsBody)
+	}
+	if !strings.Contains(ingestsBody, "ntds.pwdump") {
+		t.Fatalf("/api/ingests should contain filename ntds.pwdump, got: %s", ingestsBody)
+	}
+
+	// Case 2: file part BEFORE the domain field -> 400 (streaming contract violation).
+	srv2 := newServer("secret")
+	srv2.Engine = &engine.Engine{Policies: policy.DefaultSet()}
+	lc2, lcsrf2 := loginCSRF(t, srv2, "lead", "leadpw")
+	createAudit(t, srv2, lc2, lcsrf2, "Stream Test 2")
+
+	rec2 := httptest.NewRecorder()
+	srv2.Routes().ServeHTTP(rec2, uploadReq(t, lc2, lcsrf2, false))
+	if rec2.Code != http.StatusBadRequest {
+		t.Fatalf("file-before-domain upload: want 400, got %d (%s)", rec2.Code, rec2.Body.String())
+	}
+}

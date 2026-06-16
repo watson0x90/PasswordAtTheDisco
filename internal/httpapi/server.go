@@ -1263,27 +1263,57 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 		_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Minute))
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, 128<<20) // 128 MiB cap
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, 512<<20) // 512 MiB cap, streamed (no temp spill)
+	mr, err := r.MultipartReader()
+	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid upload: " + err.Error()})
 		return
 	}
-	domain := strings.TrimSpace(r.FormValue("domain"))
+	var domain, dumpName string
+	var cracked, uncracked []secretsdump.ParsedAccount
+	for {
+		part, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid upload: " + err.Error()})
+			return
+		}
+		fn := part.FormName() // capture before any Close() call
+		switch fn {
+		case "domain":
+			b, _ := io.ReadAll(part)
+			domain = strings.TrimSpace(string(b))
+		case "cracked", "uncracked":
+			if domain == "" {
+				part.Close()
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the domain field must be sent before the file"})
+				return
+			}
+			parse := secretsdump.ParseUncracked
+			if fn == "cracked" {
+				parse = secretsdump.ParseCracked
+			}
+			accts, perr := parse(part, domain)
+			name := part.FileName()
+			part.Close()
+			if perr != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": fn + " file: " + perr.Error()})
+				return
+			}
+			dumpName = name
+			if fn == "cracked" {
+				cracked = accts
+			} else {
+				uncracked = accts
+			}
+		default:
+			part.Close()
+		}
+	}
 	if domain == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "domain is required"})
-		return
-	}
-
-	// Both files are optional, but at least one is required. This lets you upload
-	// just the full pwdump (everything uncracked) first, then apply hashcat results.
-	cracked, err := optionalUpload(r, "cracked", domain, secretsdump.ParseCracked)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-	uncracked, err := optionalUpload(r, "uncracked", domain, secretsdump.ParseUncracked)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	if len(cracked) == 0 && len(uncracked) == 0 {
@@ -1296,6 +1326,10 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "selected audit no longer exists"})
 		return
 	}
+	_ = s.Store.RecordIngest(auditID, model.IngestEvent{
+		Filename: dumpName, Kind: "dump", Domain: domain,
+		AccountsLoaded: len(accts), At: time.Now().UTC(), By: sess.Username,
+	})
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "audit_upload", Target: domain, Source: r.RemoteAddr, Result: "ok"})
 	writeJSON(w, http.StatusOK, map[string]int{"accounts": len(accts), "cracked": len(cracked), "uncracked": len(uncracked)})
 }
@@ -1364,19 +1398,6 @@ func (s *Server) handleApplyCracks(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "apply_cracks", Source: r.RemoteAddr, Result: "ok"})
 	writeJSON(w, http.StatusOK, map[string]int{"crack_entries": len(cracks), "hashes_matched": len(matched), "newly_cracked": newly})
-}
-
-// optionalUpload parses an optional multipart file part; returns nil if absent.
-func optionalUpload(r *http.Request, field, domain string, fn func(io.Reader, string) ([]secretsdump.ParsedAccount, error)) ([]secretsdump.ParsedAccount, error) {
-	f, _, err := r.FormFile(field)
-	if err == http.ErrMissingFile {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("%s file: %v", field, err)
-	}
-	defer f.Close()
-	return fn(f, domain)
 }
 
 // handleListAudits returns all audits' metadata + headline counts.
