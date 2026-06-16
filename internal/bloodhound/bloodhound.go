@@ -239,7 +239,9 @@ type Domain struct {
 // avoid redundant BHE round-trips when called per-account in GetUserData.
 func (c *Client) GetDomains() ([]Domain, error) {
 	c.domMu.Lock()
-	if c.domCache != nil && time.Since(c.domCachedAt) < c.domTTL {
+	// Lock is released across the network call below; concurrent cold callers may
+	// both fetch once — benign, second write wins.
+	if !c.domCachedAt.IsZero() && time.Since(c.domCachedAt) < c.domTTL {
 		ds := c.domCache
 		c.domMu.Unlock()
 		return ds, nil
