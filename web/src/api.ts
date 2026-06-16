@@ -82,6 +82,11 @@ export interface Account {
   enabled: boolean
   meets_policy: boolean
   complexity: string
+  // wordlist weakness signals (cracked accounts only; counts/booleans, never the matched word)
+  is_common?: boolean
+  is_dictionary_word?: boolean
+  banned_word_count?: number
+  keyboard_pattern_count?: number
 }
 
 // A redacted account row in the Actionable reports — no cleartext, no NT hash.
@@ -95,6 +100,10 @@ export interface ReportAccount {
   hibp_breach_count: number
   shared_with: number
   da_domains?: string
+  is_common?: boolean
+  is_dictionary_word?: boolean
+  banned_word_count?: number
+  keyboard_pattern_count?: number
 }
 
 // A set of accounts sharing one NT hash (= one password). The hash is never exposed.
@@ -119,6 +128,7 @@ export interface Report {
   cracked_reuse: ReuseGroup[]
   uncracked_reuse: ReuseGroup[]
   hibp_exposed: ReportAccount[]
+  weak_passwords: ReportAccount[]
 }
 
 export interface PolicyRule {

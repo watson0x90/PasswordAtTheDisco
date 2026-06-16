@@ -13,6 +13,8 @@ const COLUMNS: [string, string][] = [
   ["reused / shared_with", "does another account share the same hash, and how many"],
   ["tier0_pathway / tier0_pathway_domains", "can this account reach a Tier-0 / privileged (Domain Admin) account, and where"],
   ["controlled_objects", "BloodHound-controlled object count"],
+  ["common_password / dictionary_word", "matched the common-password / dictionary wordlists"],
+  ["forbidden_words / keyboard_patterns", "count of forbidden-word and keyboard-pattern matches (never the matched word)"],
 ]
 
 function FocusedRow({
@@ -113,6 +115,13 @@ export function Reports() {
             sub="The accounts summary filtered to hibp_found = Yes (cracked or uncracked), most-breached first."
             csv="/api/export/hibp.csv"
             html="/api/export/hibp.html"
+          />
+          <FocusedRow
+            title="Weak passwords"
+            tag="filtered"
+            sub="The accounts summary filtered to passwords matching a wordlist — common, dictionary word, forbidden term, or keyboard pattern."
+            csv="/api/export/weak.csv"
+            html="/api/export/weak.html"
           />
           <FocusedRow
             title="Password-reuse groups"

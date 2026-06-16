@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { api, ApiError, type Account } from "../api"
 import { useAccountsData } from "../accountsData"
 import { useAuth } from "../auth"
-import { RISK_CLASS, hasDA } from "../util"
+import { RISK_CLASS, hasDA, weaknessTags } from "../util"
 
 const FILTERS = ["All", "Critical", "High", "Medium", "Low"] as const
 
@@ -95,7 +95,7 @@ export function Accounts() {
   const start = virtual ? Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN) : 0
   const end = virtual ? Math.min(total, Math.ceil((scrollTop + viewH) / ROW_H) + OVERSCAN) : total
   const visible = filtered.slice(start, end)
-  const cols = isLead ? 9 : 8
+  const cols = isLead ? 10 : 9
 
   return (
     <>
@@ -141,6 +141,7 @@ export function Accounts() {
               <th className="num">Score</th>
               <th className="num">HIBP</th>
               <th>Policy</th>
+              <th>Weak</th>
               <th className="num">Shared</th>
               <th>DA Pathway</th>
               {isLead && <th>Secret</th>}
@@ -176,6 +177,7 @@ export function Accounts() {
                     <span className="c-high">✗ fails</span>
                   )}
                 </td>
+                <td><WeakCell a={a} /></td>
                 <td className="num">{a.shared_with > 0 ? a.shared_with : <span className="muted">0</span>}</td>
                 <td>{hasDA(a.da_domains) ? <span className="badge crit">{a.da_domains}</span> : <span className="muted">—</span>}</td>
                 {isLead && (
@@ -219,6 +221,22 @@ export function Accounts() {
   )
 }
 
+// WeakCell shows wordlist-weakness badges (common / dictionary / forbidden /
+// keyboard). The matched word itself is never shown — only the category.
+function WeakCell({ a }: { a: Account }) {
+  const tags = weaknessTags(a)
+  if (!tags.length) return <span className="muted">—</span>
+  return (
+    <span className="wtags" title="password matched a wordlist">
+      {tags.map((t) => (
+        <span key={t} className="badge wtag">
+          {t}
+        </span>
+      ))}
+    </span>
+  )
+}
+
 function AccountDrawer({ account: a, onClose }: { account: Account; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose()
@@ -235,6 +253,10 @@ function AccountDrawer({ account: a, onClose }: { account: Account; onClose: () 
     ["Complexity", a.cracked ? a.complexity : "—"],
     ["Password length", a.cracked ? a.password_length : "—"],
     ["Meets policy", a.cracked ? (a.meets_policy ? "Yes" : "No") : "—"],
+    [
+      "Weaknesses",
+      !a.cracked ? "—" : weaknessTags(a).length ? <WeakCell a={a} /> : <span className="muted">none</span>,
+    ],
     ["Shared with", a.shared_with],
     ["DA pathway", hasDA(a.da_domains) ? a.da_domains : "—"],
     ["Controlled objects", a.controlled_object_count],

@@ -216,6 +216,11 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 		Enabled:         derefBool(enr.Enabled),
 		MeetsPolicy:     an.MeetsPolicy,
 		Complexity:      an.ComplexityLabel,
+		// wordlist weakness signals (counts/booleans only -- never the matched word)
+		IsCommon:             an.IsCommon,
+		IsDictionaryWord:     an.IsDictionaryWord,
+		BannedWordCount:      len(an.BannedWords),
+		KeyboardPatternCount: len(an.KeyboardPatterns),
 	}
 }
 

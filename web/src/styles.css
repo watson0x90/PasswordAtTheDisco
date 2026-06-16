@@ -481,6 +481,16 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 }
 .report-tag.net-new { color: var(--med); background: var(--med-bg); border-color: rgba(163, 230, 53, 0.3); }
 
+/* wordlist-weakness badges (common / dictionary / forbidden / keyboard) */
+.wtags { display: inline-flex; gap: 4px; white-space: nowrap; }
+.badge.wtag {
+  color: var(--high);
+  background: var(--high-bg);
+  border-color: rgba(251, 191, 36, 0.4);
+  font-size: 10px;
+  padding: 1px 7px;
+}
+
 /* ---- domains ---- */
 
 .domain-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 16px; }

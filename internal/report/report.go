@@ -93,6 +93,7 @@ func CSV(w io.Writer, accounts []model.Account) error {
 		"domain", "username", "enabled", "status", "password_length", "complexity",
 		"meets_policy", "risk_level", "risk_score", "hibp_found", "hibp_breach_count",
 		"reused", "shared_with", "tier0_pathway", "tier0_pathway_domains", "controlled_objects",
+		"common_password", "dictionary_word", "forbidden_words", "keyboard_patterns",
 	}
 	if err := cw.Write(header); err != nil {
 		return err
@@ -115,6 +116,8 @@ func CSV(w io.Writer, accounts []model.Account) error {
 			yesNo(a.HIBPBreached), strconv.Itoa(a.HIBPBreachCount),
 			yesNo(a.SharedWith > 0), strconv.Itoa(a.SharedWith),
 			yesNo(tier0), csvSafe(tier0Domains), strconv.Itoa(a.Controlled),
+			// wordlist weakness signals (counts/booleans only -- never the matched word)
+			yesNo(a.IsCommon), yesNo(a.IsDictionaryWord), strconv.Itoa(a.BannedWordCount), strconv.Itoa(a.KeyboardPatternCount),
 		}
 		if err := cw.Write(row); err != nil {
 			return err
@@ -315,6 +318,7 @@ th{text-align:left;color:var(--faint);font-size:11px;text-transform:uppercase;le
 td{padding:7px 10px;border-bottom:1px solid #1b2236;white-space:nowrap}
 .badge{font-size:11px;font-weight:600;padding:2px 9px;border-radius:999px;border:1px solid}
 .muted{color:var(--faint)}
+.wtag{display:inline-block;font-size:10px;color:#fbbf24;border:1px solid rgba(251,191,36,.4);background:rgba(251,191,36,.1);border-radius:999px;padding:1px 7px;margin:1px 2px 1px 0}
 .foot{color:var(--faint);font-size:11px;margin-top:30px;text-align:center}
 </style></head>
 <body><div class="wrap">
@@ -358,7 +362,7 @@ td{padding:7px 10px;border-bottom:1px solid #1b2236;white-space:nowrap}
 
 <div class="label">Accounts ({{.Total}})</div>
 <div class="panel"><table>
-<tr><th>Username</th><th>Domain</th><th>Risk</th><th>Score</th><th>HIBP</th><th>Complexity</th><th>Policy</th><th>Shared</th><th>DA</th></tr>
+<tr><th>Username</th><th>Domain</th><th>Risk</th><th>Score</th><th>HIBP</th><th>Complexity</th><th>Policy</th><th>Shared</th><th>DA</th><th>Weaknesses</th></tr>
 {{range .Accounts}}<tr>
 <td>{{.Username}}</td><td class="muted">{{.Domain}}</td>
 <td><span class="badge" style="color:{{color .RiskLevel}};border-color:{{color .RiskLevel}}">{{.RiskLevel}}</span></td>
@@ -368,6 +372,7 @@ td{padding:7px 10px;border-bottom:1px solid #1b2236;white-space:nowrap}
 <td>{{if .Cracked}}{{if .MeetsPolicy}}<span style="color:#a3e635">meets</span>{{else}}<span style="color:#fbbf24">fails</span>{{end}}{{else}}<span class="muted">—</span>{{end}}</td>
 <td>{{if gt .SharedWith 0}}{{.SharedWith}}{{else}}<span class="muted">0</span>{{end}}</td>
 <td>{{if .HasDAPathway}}<span style="color:#fb7185">{{.DADomains}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
+<td>{{if .IsCommon}}<span class="wtag">common</span> {{end}}{{if .IsDictionaryWord}}<span class="wtag">dictionary</span> {{end}}{{if gt .BannedWordCount 0}}<span class="wtag">forbidden</span> {{end}}{{if gt .KeyboardPatternCount 0}}<span class="wtag">keyboard</span> {{end}}{{if not .IsWeak}}<span class="muted">—</span>{{end}}</td>
 </tr>{{end}}
 </table></div>
 
@@ -403,6 +408,7 @@ td{padding:7px 10px;border-bottom:1px solid #1b2236;white-space:nowrap}
 .ghead{font-size:13px;margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .gsize{font-family:ui-monospace,monospace;font-weight:700;color:#fb7185}
 .gtag{font-size:11px;border:1px solid var(--line);border-radius:999px;padding:2px 8px;color:var(--dim)}
+.wtag{display:inline-block;font-size:10px;color:#fbbf24;border:1px solid rgba(251,191,36,.4);background:rgba(251,191,36,.1);border-radius:999px;padding:1px 7px;margin:1px 2px 1px 0}
 .empty{color:var(--dim);font-size:13px}`
 
 type focusedData struct {
@@ -429,7 +435,7 @@ var focusedAccountsTemplate = template.Must(template.New("focused-accounts").Fun
 <span class="redact">Redacted report · no cleartext passwords or hashes</span>
 <div class="label">{{.Count}} account{{if ne .Count 1}}s{{end}}</div>
 <div class="panel"><table>
-<tr><th>Username</th><th>Domain</th><th>Status</th><th>Risk</th><th>Score</th><th>Length</th><th>HIBP</th><th>Shared</th><th>Tier-0 pathway</th></tr>
+<tr><th>Username</th><th>Domain</th><th>Status</th><th>Risk</th><th>Score</th><th>Length</th><th>HIBP</th><th>Shared</th><th>Tier-0 pathway</th><th>Weaknesses</th></tr>
 {{range .Accounts}}<tr>
 <td>{{.Username}}</td><td class="muted">{{.Domain}}</td>
 <td>{{if .Cracked}}Cracked{{else}}<span class="muted">Uncracked</span>{{end}}</td>
@@ -439,8 +445,9 @@ var focusedAccountsTemplate = template.Must(template.New("focused-accounts").Fun
 <td>{{if .HIBPBreached}}<span style="color:#fb7185">{{.HIBPBreachCount}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
 <td>{{if gt .SharedWith 0}}{{.SharedWith}}{{else}}<span class="muted">0</span>{{end}}</td>
 <td>{{if .HasDAPathway}}<span style="color:#fb7185">{{.DADomains}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
+<td>{{if .IsCommon}}<span class="wtag">common</span> {{end}}{{if .IsDictionaryWord}}<span class="wtag">dictionary</span> {{end}}{{if gt .BannedWordCount 0}}<span class="wtag">forbidden</span> {{end}}{{if gt .KeyboardPatternCount 0}}<span class="wtag">keyboard</span> {{end}}{{if not .IsWeak}}<span class="muted">—</span>{{end}}</td>
 </tr>{{end}}
-{{if not .Accounts}}<tr><td colspan="9" class="empty">none</td></tr>{{end}}
+{{if not .Accounts}}<tr><td colspan="10" class="empty">none</td></tr>{{end}}
 </table></div>
 <div class="foot">Generated by Password!AtTheDisco · cleartext passwords are never written to disk or included in reports</div>
 </div></body></html>`))

@@ -146,10 +146,12 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /api/export/cracked.csv", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportCracked))))
 	mux.Handle("GET /api/export/hibp.csv", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportHIBP))))
 	mux.Handle("GET /api/export/reuse.csv", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportReuse))))
+	mux.Handle("GET /api/export/weak.csv", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportWeak))))
 	mux.Handle("GET /api/export/html", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportHTML))))
 	mux.Handle("GET /api/export/cracked.html", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportCrackedHTML))))
 	mux.Handle("GET /api/export/hibp.html", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportHIBPHTML))))
 	mux.Handle("GET /api/export/reuse.html", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportReuseHTML))))
+	mux.Handle("GET /api/export/weak.html", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportWeakHTML))))
 	// Per-domain password policies: any operator may read; lead may edit
 	mux.Handle("GET /api/policies", s.requireAuth(http.HandlerFunc(s.handleGetPolicies)))
 	mux.Handle("PUT /api/policies", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleSetPolicies))))
@@ -1447,6 +1449,25 @@ func (s *Server) handleExportHIBP(w http.ResponseWriter, r *http.Request) {
 	}
 	download(w, meta.Name, "hibp", "csv")
 	_ = report.CSV(w, byBreachDesc(filterAccounts(accts, func(a model.Account) bool { return a.HIBPBreached })))
+}
+
+func (s *Server) handleExportWeak(w http.ResponseWriter, r *http.Request) {
+	meta, accts, ok := s.exportAccounts(w, r, "weak-passwords CSV")
+	if !ok {
+		return
+	}
+	download(w, meta.Name, "weak-passwords", "csv")
+	_ = report.CSV(w, filterAccounts(accts, func(a model.Account) bool { return a.IsWeak() }))
+}
+
+func (s *Server) handleExportWeakHTML(w http.ResponseWriter, r *http.Request) {
+	meta, accts, ok := s.exportAccounts(w, r, "weak-passwords HTML")
+	if !ok {
+		return
+	}
+	download(w, meta.Name, "weak-passwords", "html")
+	weak := filterAccounts(accts, func(a model.Account) bool { return a.IsWeak() })
+	_ = report.AccountsHTML(w, meta.Name+" — Weak passwords", "passwords matching a wordlist (common / dictionary / forbidden / keyboard)", time.Now().UTC(), weak)
 }
 
 func (s *Server) handleExportReuse(w http.ResponseWriter, r *http.Request) {

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { api, ApiError, type Report, type ReportAccount, type ReuseGroup } from "../api"
 import { useAudits } from "../auditsData"
-import { RISK_CLASS } from "../util"
+import { RISK_CLASS, weaknessTags } from "../util"
 
 const TOP = 50
 
@@ -53,6 +53,7 @@ export function Actionable() {
         <Stat n={report.cracked_reuse.length} label="cracked-password groups" tone="crit" />
         <Stat n={report.uncracked_reuse.length} label="uncracked-hash groups" tone="med" />
         <Stat n={report.hibp_exposed.length} label="in HIBP" tone="high" />
+        <Stat n={report.weak_passwords.length} label="weak (wordlist)" tone="high" />
       </div>
 
       <Section
@@ -110,6 +111,32 @@ export function Actionable() {
           metricHead="HIBP breaches"
           metric={(a) => <span className="c-crit">{a.hibp_breach_count.toLocaleString()}</span>}
           sharedCol
+        />
+      </Section>
+
+      <Section
+        title="Weak Passwords"
+        action="Cracked password matched a wordlist — common password, dictionary word, forbidden term, or keyboard pattern; force reset"
+        count={report.weak_passwords.length}
+        tone="high"
+      >
+        <AccountTable
+          rows={report.weak_passwords}
+          metricHead="Matched"
+          metric={(a) => {
+            const t = weaknessTags(a)
+            return t.length ? (
+              <span className="wtags">
+                {t.map((x) => (
+                  <span key={x} className="badge wtag">
+                    {x}
+                  </span>
+                ))}
+              </span>
+            ) : (
+              <span className="muted">—</span>
+            )
+          }}
         />
       </Section>
     </>

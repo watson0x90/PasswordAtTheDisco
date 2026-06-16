@@ -18,19 +18,28 @@ type ReportAccount struct {
 	HIBPBreachCount int     `json:"hibp_breach_count"`
 	SharedWith      int     `json:"shared_with"`
 	DADomains       string  `json:"da_domains,omitempty"`
+	// wordlist weakness signals (booleans/counts only -- never the matched word)
+	IsCommon             bool `json:"is_common,omitempty"`
+	IsDictionaryWord     bool `json:"is_dictionary_word,omitempty"`
+	BannedWordCount      int  `json:"banned_word_count,omitempty"`
+	KeyboardPatternCount int  `json:"keyboard_pattern_count,omitempty"`
 }
 
 func toReportAccount(a Account) ReportAccount {
 	return ReportAccount{
-		Username:        a.Username,
-		Domain:          a.Domain,
-		Cracked:         a.Cracked,
-		PasswordLength:  a.PasswordLength,
-		RiskLevel:       a.RiskLevel,
-		RiskScore:       a.RiskScore,
-		HIBPBreachCount: a.HIBPBreachCount,
-		SharedWith:      a.SharedWith,
-		DADomains:       a.DADomains,
+		Username:             a.Username,
+		Domain:               a.Domain,
+		Cracked:              a.Cracked,
+		PasswordLength:       a.PasswordLength,
+		RiskLevel:            a.RiskLevel,
+		RiskScore:            a.RiskScore,
+		HIBPBreachCount:      a.HIBPBreachCount,
+		SharedWith:           a.SharedWith,
+		DADomains:            a.DADomains,
+		IsCommon:             a.IsCommon,
+		IsDictionaryWord:     a.IsDictionaryWord,
+		BannedWordCount:      a.BannedWordCount,
+		KeyboardPatternCount: a.KeyboardPatternCount,
 	}
 }
 
@@ -58,6 +67,7 @@ type Report struct {
 	CrackedReuse   []ReuseGroup    `json:"cracked_reuse"`   // groups sharing a cracked password
 	UncrackedReuse []ReuseGroup    `json:"uncracked_reuse"` // groups sharing an uncracked NT hash
 	HIBPExposed    []ReportAccount `json:"hibp_exposed"`    // accounts whose hash is in HIBP + the count
+	WeakPasswords  []ReportAccount `json:"weak_passwords"`  // cracked pw matched a wordlist (common/dictionary/forbidden/keyboard)
 }
 
 // BuildReport groups accounts by NT hash and produces the redacted Actionable
@@ -70,6 +80,7 @@ func BuildReport(accts []Account) Report {
 		CrackedReuse:   []ReuseGroup{},
 		UncrackedReuse: []ReuseGroup{},
 		HIBPExposed:    []ReportAccount{},
+		WeakPasswords:  []ReportAccount{},
 	}
 
 	byHash := map[string][]Account{}
@@ -86,6 +97,9 @@ func BuildReport(accts []Account) Report {
 		}
 		if a.HasDAPathway() {
 			rep.DAPathways = append(rep.DAPathways, toReportAccount(a))
+		}
+		if a.IsWeak() {
+			rep.WeakPasswords = append(rep.WeakPasswords, toReportAccount(a))
 		}
 		if k := reuseKey(a.NTHash); k != "" {
 			if _, ok := byHash[k]; !ok {
@@ -131,6 +145,7 @@ func BuildReport(accts []Account) Report {
 	sort.SliceStable(rep.Cracked, func(i, j int) bool { return rep.Cracked[i].RiskScore > rep.Cracked[j].RiskScore })
 	sort.SliceStable(rep.DAPathways, func(i, j int) bool { return rep.DAPathways[i].RiskScore > rep.DAPathways[j].RiskScore })
 	sort.SliceStable(rep.HIBPExposed, func(i, j int) bool { return rep.HIBPExposed[i].HIBPBreachCount > rep.HIBPExposed[j].HIBPBreachCount })
+	sort.SliceStable(rep.WeakPasswords, func(i, j int) bool { return rep.WeakPasswords[i].RiskScore > rep.WeakPasswords[j].RiskScore })
 	sortGroups := func(g []ReuseGroup) {
 		sort.SliceStable(g, func(i, j int) bool {
 			if g[i].Size != g[j].Size {
