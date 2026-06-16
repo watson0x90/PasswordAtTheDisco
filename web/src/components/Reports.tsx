@@ -15,11 +15,16 @@ const COLUMNS: [string, string][] = [
   ["controlled_objects", "BloodHound-controlled object count"],
 ]
 
-function FocusedRow({ title, sub, href }: { title: string; sub: string; href: string }) {
+function FocusedRow({ title, sub, href, tag }: { title: string; sub: string; href: string; tag: "filtered" | "net-new" }) {
   return (
     <div className="report-focused-row">
       <div>
-        <div className="report-focused-title">{title}</div>
+        <div className="report-focused-title">
+          {title}
+          <span className={`report-tag ${tag === "net-new" ? "net-new" : ""}`}>
+            {tag === "net-new" ? "net-new" : "filtered view"}
+          </span>
+        </div>
         <div className="action-sub">{sub}</div>
       </div>
       <a className="btn" href={href} download>
@@ -71,21 +76,29 @@ export function Reports() {
 
       <div className="panel report-export">
         <div className="action-title">Focused reports (CSV)</div>
-        <div className="action-sub">Subsets of the audit, same redaction — no passwords or hashes.</div>
+        <div className="action-sub">
+          Same redaction — no passwords or hashes. The first two are <b>pre-filtered views</b> of the accounts summary
+          above (same columns, fewer rows) — a convenience so you don't have to filter it yourself. Password-reuse
+          groups is the exception: it shows <i>which</i> accounts share a password, which the per-account file can't
+          express (the grouping needs the redacted NT hash).
+        </div>
         <div className="report-focused">
           <FocusedRow
             title="Cracked accounts"
-            sub="Only accounts whose password was recovered — the force-reset worklist."
+            tag="filtered"
+            sub="The accounts summary filtered to status = Cracked — the force-reset worklist."
             href="/api/export/cracked.csv"
           />
           <FocusedRow
             title="HIBP-exposed accounts"
-            sub="Only accounts whose NT hash is in Have I Been Pwned (cracked or uncracked), most-breached first."
+            tag="filtered"
+            sub="The accounts summary filtered to hibp_found = Yes (cracked or uncracked), most-breached first."
             href="/api/export/hibp.csv"
           />
           <FocusedRow
             title="Password-reuse groups"
-            sub="One row per shared-password group (by NT hash): size, domains spanned, HIBP count, Tier-0 reach, and member usernames."
+            tag="net-new"
+            sub="One row per shared-password group (by NT hash): size, domains spanned, HIBP count, Tier-0 reach, and member usernames. Not derivable from the accounts summary."
             href="/api/export/reuse.csv"
           />
         </div>

@@ -465,7 +465,20 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
   border-top: 1px solid var(--hairline);
 }
 .report-focused-row .action-sub { max-width: 620px; }
-.report-focused-title { font-size: 13.5px; font-weight: 600; }
+.report-focused-title { font-size: 13.5px; font-weight: 600; display: flex; align-items: center; gap: 9px; }
+.report-tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--faint);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.report-tag.net-new { color: var(--med); background: var(--med-bg); border-color: rgba(163, 230, 53, 0.3); }
 
 /* ---- domains ---- */
 
