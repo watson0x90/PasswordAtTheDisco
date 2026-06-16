@@ -150,6 +150,34 @@ func TestDeleteAudit(t *testing.T) {
 	}
 }
 
+func TestSecureEraseOverwrites(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "blob.enc")
+	secret := strings.Repeat("SECRET-CIPHERTEXT", 100)
+	if err := os.WriteFile(path, []byte(secret), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := secureErase(path); err != nil {
+		t.Fatal(err)
+	}
+	// secureErase overwrites the bytes in place; it does NOT remove the file.
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("file should still exist after secureErase: %v", err)
+	}
+	if len(got) != len(secret) {
+		t.Fatalf("size changed: got %d want %d", len(got), len(secret))
+	}
+	if strings.Contains(string(got), "SECRET-CIPHERTEXT") {
+		t.Fatal("secureErase did not overwrite the original bytes")
+	}
+}
+
+func TestSecureEraseMissingIsNotExist(t *testing.T) {
+	if err := secureErase(filepath.Join(t.TempDir(), "nope.enc")); !os.IsNotExist(err) {
+		t.Fatalf("missing file should yield a not-exist error, got %v", err)
+	}
+}
+
 func TestChangePassphrase(t *testing.T) {
 	dir := t.TempDir()
 	v, _ := Open(dir)

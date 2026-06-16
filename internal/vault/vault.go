@@ -543,11 +543,59 @@ func (v *Vault) ListAudits() ([]string, error) {
 
 // DeleteAudit removes an audit's encrypted file (no error if already gone).
 func (v *Vault) DeleteAudit(id string) error {
-	err := os.Remove(v.auditPath(id))
-	if errors.Is(err, os.ErrNotExist) {
+	path := v.auditPath(id)
+	// Overwrite the (already-encrypted) blob before unlinking, so its ciphertext
+	// doesn't linger in freed disk blocks. Missing file -> nothing to do.
+	if err := secureErase(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+// secureErase best-effort overwrites a file's contents with random bytes and fsyncs
+// before the caller unlinks it, so the ciphertext does not linger in freed blocks.
+// On copy-on-write filesystems / SSDs with wear-leveling this is best-effort; the
+// data is also crypto-erased (the DEK is wrapped by the passphrase, never on disk).
+func secureErase(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err // includes os.ErrNotExist
+	}
+	size := info.Size()
+	if size == 0 {
 		return nil
 	}
-	return err
+	f, err := os.OpenFile(path, os.O_WRONLY, 0)
+	if err != nil {
+		return err
+	}
+	buf := make([]byte, 32*1024)
+	for remaining := size; remaining > 0; {
+		n := int64(len(buf))
+		if remaining < n {
+			n = remaining
+		}
+		if _, err := rand.Read(buf[:n]); err != nil {
+			f.Close()
+			return err
+		}
+		if _, err := f.Write(buf[:n]); err != nil {
+			f.Close()
+			return err
+		}
+		remaining -= n
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 // LoadAll decrypts every stored audit, returning id -> plaintext.
