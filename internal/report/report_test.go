@@ -141,3 +141,39 @@ func TestReuseGroupsCSV(t *testing.T) {
 		t.Errorf("uncracked group row malformed:\n%s", out)
 	}
 }
+
+func TestFocusedHTMLRedactsAndRenders(t *testing.T) {
+	const hashA = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	accts := []model.Account{
+		{Username: "alice", Domain: "CORP", Password: "Secret123!", NTHash: hashA, Cracked: true, PasswordLength: 10, RiskLevel: "Critical", RiskScore: 9, HIBPBreached: true, HIBPBreachCount: 42, SharedWith: 1, DADomains: "CORP"},
+		{Username: "bob", Domain: "CORP", Password: "Secret123!", NTHash: hashA, Cracked: true, PasswordLength: 10, RiskLevel: "High", RiskScore: 7, SharedWith: 1},
+	}
+	when := time.Unix(1_700_000_000, 0)
+
+	var accHTML, reuseHTML bytes.Buffer
+	if err := AccountsHTML(&accHTML, "Eng — Cracked", "cracked accounts", when, accts); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReuseGroupsHTML(&reuseHTML, "Eng — Reuse", when, BuildReportFor(accts)); err != nil {
+		t.Fatal(err)
+	}
+	for name, out := range map[string]string{"accounts": accHTML.String(), "reuse": reuseHTML.String()} {
+		if strings.Contains(out, "Secret123!") {
+			t.Fatalf("%s HTML LEAKED CLEARTEXT", name)
+		}
+		if strings.Contains(out, hashA) {
+			t.Fatalf("%s HTML LEAKED NT HASH", name)
+		}
+		if !strings.Contains(out, "alice") || !strings.Contains(out, "</html>") {
+			t.Fatalf("%s HTML missing content / not well-formed", name)
+		}
+	}
+	// the reuse report should show the shared group (2 accounts)
+	if !strings.Contains(reuseHTML.String(), "accounts share a cracked password") {
+		t.Errorf("reuse HTML missing group heading:\n%s", reuseHTML.String())
+	}
+}
+
+// BuildReportFor is a tiny indirection so the test reads clearly; model.BuildReport
+// lives in the model package.
+func BuildReportFor(a []model.Account) model.Report { return model.BuildReport(a) }

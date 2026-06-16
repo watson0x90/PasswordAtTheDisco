@@ -147,6 +147,9 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /api/export/hibp.csv", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportHIBP))))
 	mux.Handle("GET /api/export/reuse.csv", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportReuse))))
 	mux.Handle("GET /api/export/html", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportHTML))))
+	mux.Handle("GET /api/export/cracked.html", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportCrackedHTML))))
+	mux.Handle("GET /api/export/hibp.html", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportHIBPHTML))))
+	mux.Handle("GET /api/export/reuse.html", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportReuseHTML))))
 	// Per-domain password policies: any operator may read; lead may edit
 	mux.Handle("GET /api/policies", s.requireAuth(http.HandlerFunc(s.handleGetPolicies)))
 	mux.Handle("PUT /api/policies", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleSetPolicies))))
@@ -214,7 +217,7 @@ func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"name": "passwordatthedisco-api", "version": "2.1.0"})
+	writeJSON(w, http.StatusOK, map[string]string{"name": "passwordatthedisco-api", "version": "2.2.0"})
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -1375,73 +1378,79 @@ func (s *Server) exportResolve(w http.ResponseWriter, r *http.Request, label str
 	return meta, id, true
 }
 
-// csvDownload sets CSV download headers; suffix distinguishes focused reports.
-func csvDownload(w http.ResponseWriter, name, suffix string) {
+// download sets attachment headers for a report file (ext "csv" or "html").
+func download(w http.ResponseWriter, name, suffix, ext string) {
 	fn := safeFilename(name)
 	if suffix != "" {
 		fn += "_" + suffix
 	}
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+fn+".csv"+`"`)
+	ctype := "text/csv; charset=utf-8"
+	if ext == "html" {
+		ctype = "text/html; charset=utf-8"
+	}
+	w.Header().Set("Content-Type", ctype)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+fn+"."+ext+`"`)
 }
 
-func (s *Server) handleExportCSV(w http.ResponseWriter, r *http.Request) {
-	meta, id, ok := s.exportResolve(w, r, "accounts")
+// exportAccounts resolves the active audit, audit-logs the export, and returns its
+// redacted accounts. Callers filter as needed (the data is already cleartext-free).
+func (s *Server) exportAccounts(w http.ResponseWriter, r *http.Request, label string) (store.AuditMeta, []model.Account, bool) {
+	meta, id, ok := s.exportResolve(w, r, label)
 	if !ok {
-		return
+		return store.AuditMeta{}, nil, false
 	}
 	accts, err := s.Store.Accounts(id, false) // redacted -- never cleartext
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		return store.AuditMeta{}, nil, false
+	}
+	return meta, accts, true
+}
+
+func filterAccounts(accts []model.Account, keep func(model.Account) bool) []model.Account {
+	out := make([]model.Account, 0)
+	for _, a := range accts {
+		if keep(a) {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+func byBreachDesc(a []model.Account) []model.Account {
+	sort.SliceStable(a, func(i, j int) bool { return a[i].HIBPBreachCount > a[j].HIBPBreachCount })
+	return a
+}
+
+func (s *Server) handleExportCSV(w http.ResponseWriter, r *http.Request) {
+	meta, accts, ok := s.exportAccounts(w, r, "accounts CSV")
+	if !ok {
 		return
 	}
-	csvDownload(w, meta.Name, "")
+	download(w, meta.Name, "", "csv")
 	_ = report.CSV(w, accts)
 }
 
 func (s *Server) handleExportCracked(w http.ResponseWriter, r *http.Request) {
-	meta, id, ok := s.exportResolve(w, r, "cracked")
+	meta, accts, ok := s.exportAccounts(w, r, "cracked CSV")
 	if !ok {
 		return
 	}
-	accts, err := s.Store.Accounts(id, false)
-	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
-		return
-	}
-	cracked := make([]model.Account, 0)
-	for _, a := range accts {
-		if a.Cracked {
-			cracked = append(cracked, a)
-		}
-	}
-	csvDownload(w, meta.Name, "cracked")
-	_ = report.CSV(w, cracked)
+	download(w, meta.Name, "cracked", "csv")
+	_ = report.CSV(w, filterAccounts(accts, func(a model.Account) bool { return a.Cracked }))
 }
 
 func (s *Server) handleExportHIBP(w http.ResponseWriter, r *http.Request) {
-	meta, id, ok := s.exportResolve(w, r, "hibp")
+	meta, accts, ok := s.exportAccounts(w, r, "HIBP CSV")
 	if !ok {
 		return
 	}
-	accts, err := s.Store.Accounts(id, false)
-	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
-		return
-	}
-	hibp := make([]model.Account, 0)
-	for _, a := range accts {
-		if a.HIBPBreached {
-			hibp = append(hibp, a)
-		}
-	}
-	sort.SliceStable(hibp, func(i, j int) bool { return hibp[i].HIBPBreachCount > hibp[j].HIBPBreachCount })
-	csvDownload(w, meta.Name, "hibp")
-	_ = report.CSV(w, hibp)
+	download(w, meta.Name, "hibp", "csv")
+	_ = report.CSV(w, byBreachDesc(filterAccounts(accts, func(a model.Account) bool { return a.HIBPBreached })))
 }
 
 func (s *Server) handleExportReuse(w http.ResponseWriter, r *http.Request) {
-	meta, id, ok := s.exportResolve(w, r, "reuse-groups")
+	meta, id, ok := s.exportResolve(w, r, "reuse-groups CSV")
 	if !ok {
 		return
 	}
@@ -1450,23 +1459,51 @@ func (s *Server) handleExportReuse(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
 		return
 	}
-	csvDownload(w, meta.Name, "reuse-groups")
+	download(w, meta.Name, "reuse-groups", "csv")
 	_ = report.ReuseGroupsCSV(w, model.BuildReport(accts))
 }
 
 func (s *Server) handleExportHTML(w http.ResponseWriter, r *http.Request) {
-	meta, id, ok := s.exportResolve(w, r, "html")
+	meta, accts, ok := s.exportAccounts(w, r, "full HTML")
 	if !ok {
 		return
 	}
-	accts, err := s.Store.Accounts(id, false)
+	download(w, meta.Name, "", "html")
+	_ = report.HTML(w, meta.Name, time.Now().UTC(), accts)
+}
+
+func (s *Server) handleExportCrackedHTML(w http.ResponseWriter, r *http.Request) {
+	meta, accts, ok := s.exportAccounts(w, r, "cracked HTML")
+	if !ok {
+		return
+	}
+	download(w, meta.Name, "cracked", "html")
+	cracked := filterAccounts(accts, func(a model.Account) bool { return a.Cracked })
+	_ = report.AccountsHTML(w, meta.Name+" — Cracked accounts", "cracked accounts", time.Now().UTC(), cracked)
+}
+
+func (s *Server) handleExportHIBPHTML(w http.ResponseWriter, r *http.Request) {
+	meta, accts, ok := s.exportAccounts(w, r, "HIBP HTML")
+	if !ok {
+		return
+	}
+	download(w, meta.Name, "hibp", "html")
+	hibp := byBreachDesc(filterAccounts(accts, func(a model.Account) bool { return a.HIBPBreached }))
+	_ = report.AccountsHTML(w, meta.Name+" — HIBP-exposed accounts", "accounts whose NT hash is in HIBP", time.Now().UTC(), hibp)
+}
+
+func (s *Server) handleExportReuseHTML(w http.ResponseWriter, r *http.Request) {
+	meta, id, ok := s.exportResolve(w, r, "reuse-groups HTML")
+	if !ok {
+		return
+	}
+	accts, err := s.Store.Accounts(id, true) // need NT hashes to group; output is redacted
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+safeFilename(meta.Name)+".html"+`"`)
-	_ = report.HTML(w, meta.Name, time.Now().UTC(), accts)
+	download(w, meta.Name, "reuse-groups", "html")
+	_ = report.ReuseGroupsHTML(w, meta.Name+" — Password-reuse groups", time.Now().UTC(), model.BuildReport(accts))
 }
 
 // safeFilename keeps only filename-safe characters from an audit name.

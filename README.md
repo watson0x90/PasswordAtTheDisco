@@ -41,6 +41,26 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
+## What's new in 2.2
+
+A **reporting** release centered on the **Actionable** view and a dedicated **Reports**
+tab — every output redacted (no cleartext password, no NT hash):
+
+- **Actionable reports** — the dump+apply workflow's NT-hash equality now powers full,
+  grouped reports: who's cracked, accounts sharing a *cracked* password, accounts sharing
+  an *uncracked* NT hash (lateral-movement risk), and HIBP-exposed accounts with breach
+  counts. Reuse is grouped **server-side by NT hash** (the hash never leaves the process)
+  and is cross-domain.
+- **Reports tab — CSV *and* HTML** — a per-account summary (crack status, HIBP exposure,
+  reuse, and any pathway to a **Tier-0 / privileged** account), plus focused
+  cracked-only, HIBP-exposed, and password-reuse-group reports. Each downloads as a
+  spreadsheet-ready CSV (formula-injection-hardened) or a self-contained HTML report.
+- **Pwdump-first ingest** — load the full secretsdump/pwdump (every account by NT hash),
+  then apply hashcat output matched **by hash** — one cracked hash flips every account
+  that shares it, across domains, and re-scores live.
+
+See [`v2.2.0`](https://github.com/watson0x90/PasswordAtTheDisco/releases/tag/v2.2.0).
+
 ## What's new in 2.1
 
 Building on the 2.0 secure core (encrypted-at-rest store, data-key rotation, single
@@ -158,10 +178,10 @@ guide (env vars, TLS, service management, backup/recovery): **[deploy/DEPLOYMENT
   accounts sharing an *uncracked* NT hash, and HIBP-exposed accounts with breach
   counts — reuse grouped server-side by NT hash so the hash never leaves the process),
   per-**Domain** stats, a searchable, risk-filtered accounts table with role-gated
-  reveal, and a **Reports** tab that exports redacted CSVs — a per-account summary
-  (crack status, HIBP exposure, password reuse, Tier-0/privileged pathway — never a
-  password or hash), plus focused cracked-only, HIBP-exposed, and password-reuse-group
-  reports, and a self-contained HTML report.
+  reveal, and a **Reports** tab that exports redacted reports as **CSV or HTML** — a
+  per-account summary (crack status, HIBP exposure, password reuse, Tier-0/privileged
+  pathway — never a password or hash), plus focused cracked-only, HIBP-exposed, and
+  password-reuse-group reports.
 - **Administration (lead-only):** runtime **Operator** management (add / disable /
   remove with live effect, no restart; per-account **login lockout** + last-login),
   a searchable, CSV-exportable **Activity** view over the audit log, an **HIBP**

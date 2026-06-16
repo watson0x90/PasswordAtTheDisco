@@ -15,7 +15,19 @@ const COLUMNS: [string, string][] = [
   ["controlled_objects", "BloodHound-controlled object count"],
 ]
 
-function FocusedRow({ title, sub, href, tag }: { title: string; sub: string; href: string; tag: "filtered" | "net-new" }) {
+function FocusedRow({
+  title,
+  sub,
+  csv,
+  html,
+  tag,
+}: {
+  title: string
+  sub: string
+  csv: string
+  html: string
+  tag: "filtered" | "net-new"
+}) {
   return (
     <div className="report-focused-row">
       <div>
@@ -27,9 +39,14 @@ function FocusedRow({ title, sub, href, tag }: { title: string; sub: string; hre
         </div>
         <div className="action-sub">{sub}</div>
       </div>
-      <a className="btn" href={href} download>
-        Download CSV
-      </a>
+      <div className="report-focused-actions">
+        <a className="btn" href={csv} download>
+          CSV
+        </a>
+        <a className="btn" href={html} download>
+          HTML
+        </a>
+      </div>
     </div>
   )
 }
@@ -77,29 +94,32 @@ export function Reports() {
       <div className="panel report-export">
         <div className="action-title">Focused reports (CSV)</div>
         <div className="action-sub">
-          Same redaction — no passwords or hashes. The first two are <b>pre-filtered views</b> of the accounts summary
-          above (same columns, fewer rows) — a convenience so you don't have to filter it yourself. Password-reuse
-          groups is the exception: it shows <i>which</i> accounts share a password, which the per-account file can't
-          express (the grouping needs the redacted NT hash).
+          Same redaction — no passwords or hashes — each available as <b>CSV or HTML</b>. The first two are{" "}
+          <b>pre-filtered views</b> of the accounts summary above (same columns, fewer rows) — a convenience so you
+          don't have to filter it yourself. Password-reuse groups is the exception: it shows <i>which</i> accounts share
+          a password, which the per-account file can't express (the grouping needs the redacted NT hash).
         </div>
         <div className="report-focused">
           <FocusedRow
             title="Cracked accounts"
             tag="filtered"
             sub="The accounts summary filtered to status = Cracked — the force-reset worklist."
-            href="/api/export/cracked.csv"
+            csv="/api/export/cracked.csv"
+            html="/api/export/cracked.html"
           />
           <FocusedRow
             title="HIBP-exposed accounts"
             tag="filtered"
             sub="The accounts summary filtered to hibp_found = Yes (cracked or uncracked), most-breached first."
-            href="/api/export/hibp.csv"
+            csv="/api/export/hibp.csv"
+            html="/api/export/hibp.html"
           />
           <FocusedRow
             title="Password-reuse groups"
             tag="net-new"
             sub="One row per shared-password group (by NT hash): size, domains spanned, HIBP count, Tier-0 reach, and member usernames. Not derivable from the accounts summary."
-            href="/api/export/reuse.csv"
+            csv="/api/export/reuse.csv"
+            html="/api/export/reuse.html"
           />
         </div>
       </div>
