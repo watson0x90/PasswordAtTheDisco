@@ -627,6 +627,10 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 .ingest-ok b { color: var(--text); }
 .ingest-ok .btn { margin-left: auto; padding: 6px 12px; }
 
+.upload-progress { margin: 10px 0; }
+.upload-progress .bar { height: 8px; background: #11182b; border-radius: 4px; overflow: hidden; }
+.upload-progress .fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, #0e7490, #22d3ee); transition: width 0.2s ease; }
+
 /* ---- policies ---- */
 
 .policy-panel { max-width: 720px; }
