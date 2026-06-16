@@ -86,6 +86,19 @@ func TestBuildReport(t *testing.T) {
 	}
 }
 
+func TestBuildReportViolationCounts(t *testing.T) {
+	accts := []Account{
+		{Username: "a", Domain: "C", Cracked: true, IsCommon: true, BannedWordCount: 1}, // common + forbidden
+		{Username: "b", Domain: "C", Cracked: true, IsDictionaryWord: true},             // dictionary
+		{Username: "c", Domain: "C", Cracked: true, KeyboardPatternCount: 2},            // keyboard
+		{Username: "d", Domain: "C", Cracked: true},                                     // clean
+	}
+	vc := BuildReport(accts).ViolationCounts
+	if vc.Common != 1 || vc.Dictionary != 1 || vc.Forbidden != 1 || vc.Keyboard != 1 {
+		t.Fatalf("violation counts wrong: %+v", vc)
+	}
+}
+
 func TestBuildReportEmpty(t *testing.T) {
 	rep := BuildReport(nil)
 	// JSON-friendly: slices are non-nil so the API emits [] not null

@@ -57,17 +57,26 @@ type ReuseGroup struct {
 	Members         []ReportAccount `json:"members"`
 }
 
+// ViolationCounts is the number of accounts tripping each wordlist category.
+type ViolationCounts struct {
+	Common     int `json:"common"`
+	Dictionary int `json:"dictionary"`
+	Forbidden  int `json:"forbidden"`
+	Keyboard   int `json:"keyboard"`
+}
+
 // Report is the Actionable section's set of redacted reports.
 type Report struct {
-	TotalAccounts  int             `json:"total_accounts"`
-	CrackedCount   int             `json:"cracked_count"`
-	UncrackedCount int             `json:"uncracked_count"`
-	DAPathways     []ReportAccount `json:"da_pathways"`
-	Cracked        []ReportAccount `json:"cracked"`         // whose password has been cracked
-	CrackedReuse   []ReuseGroup    `json:"cracked_reuse"`   // groups sharing a cracked password
-	UncrackedReuse []ReuseGroup    `json:"uncracked_reuse"` // groups sharing an uncracked NT hash
-	HIBPExposed    []ReportAccount `json:"hibp_exposed"`    // accounts whose hash is in HIBP + the count
-	WeakPasswords  []ReportAccount `json:"weak_passwords"`  // cracked pw matched a wordlist (common/dictionary/forbidden/keyboard)
+	TotalAccounts   int             `json:"total_accounts"`
+	CrackedCount    int             `json:"cracked_count"`
+	UncrackedCount  int             `json:"uncracked_count"`
+	DAPathways      []ReportAccount `json:"da_pathways"`
+	Cracked         []ReportAccount `json:"cracked"`         // whose password has been cracked
+	CrackedReuse    []ReuseGroup    `json:"cracked_reuse"`   // groups sharing a cracked password
+	UncrackedReuse  []ReuseGroup    `json:"uncracked_reuse"` // groups sharing an uncracked NT hash
+	HIBPExposed     []ReportAccount `json:"hibp_exposed"`    // accounts whose hash is in HIBP + the count
+	WeakPasswords   []ReportAccount `json:"weak_passwords"`  // cracked pw matched a wordlist (common/dictionary/forbidden/keyboard)
+	ViolationCounts ViolationCounts `json:"violation_counts"`
 }
 
 // BuildReport groups accounts by NT hash and produces the redacted Actionable
@@ -100,6 +109,18 @@ func BuildReport(accts []Account) Report {
 		}
 		if a.IsWeak() {
 			rep.WeakPasswords = append(rep.WeakPasswords, toReportAccount(a))
+		}
+		if a.IsCommon {
+			rep.ViolationCounts.Common++
+		}
+		if a.IsDictionaryWord {
+			rep.ViolationCounts.Dictionary++
+		}
+		if a.BannedWordCount > 0 {
+			rep.ViolationCounts.Forbidden++
+		}
+		if a.KeyboardPatternCount > 0 {
+			rep.ViolationCounts.Keyboard++
 		}
 		if k := reuseKey(a.NTHash); k != "" {
 			if _, ok := byHash[k]; !ok {
