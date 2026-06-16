@@ -17,6 +17,7 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/auth"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/bloodhound"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/engine"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/enrich"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/store"
@@ -1073,5 +1074,113 @@ func TestUploadStreamsAndRecordsIngest(t *testing.T) {
 	}
 	if !strings.Contains(rec2.Body.String(), "domain field must be sent before") {
 		t.Fatalf("expected domain-ordering error, got: %s", rec2.Body.String())
+	}
+}
+
+// fakeTestEnricher is a trivial engine.Enricher for httpapi tests.
+type fakeTestEnricher struct{}
+
+func (fakeTestEnricher) Enrich(username string) engine.Enrichment {
+	return engine.Enrichment{DADomains: []string{"CORP"}}
+}
+
+func TestEnrichEndpoints(t *testing.T) {
+	// Build a server with an engine that has an enricher and an enrich.Manager.
+	eng := &engine.Engine{Policies: policy.DefaultSet()}
+	eng.SwapEnricher(fakeTestEnricher{})
+	st := store.New()
+	srv := &Server{
+		Store:        st,
+		IngestToken:  "secret",
+		Engine:       eng,
+		Enrich:       enrich.NewManager(eng, st),
+		Users:        newServer("secret").Users,
+		Sessions:     auth.NewSessionStore(time.Hour, time.Hour),
+		Audit:        audit.New(io.Discard),
+		LoginLimiter: auth.NewLimiter(50, time.Minute),
+	}
+
+	// Seed an audit with at least one account so the job has work.
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	id := createAudit(t, srv, lc, lcsrf, "Enrich Test")
+	if err := srv.Store.Replace(id, model.Dataset{
+		Name: "Enrich Test",
+		Accounts: []model.Account{
+			{Username: "alice", Domain: "CORP", NTHash: "AAAA", Cracked: true, Password: "Welcome1"},
+		},
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	openAudit(t, srv, ac, acsrf, id)
+
+	// (a) POST /api/enrich as analyst -> 403.
+	if r := postJSON(srv, "/api/enrich", ac, acsrf, ""); r.Code != http.StatusForbidden {
+		t.Fatalf("analyst POST /api/enrich: want 403, got %d (%s)", r.Code, r.Body.String())
+	}
+
+	// (b) POST /api/enrich as lead -> 200, response contains "phase".
+	r := postJSON(srv, "/api/enrich", lc, lcsrf, "")
+	if r.Code != http.StatusOK {
+		t.Fatalf("lead POST /api/enrich: want 200, got %d (%s)", r.Code, r.Body.String())
+	}
+	if !strings.Contains(r.Body.String(), `"phase"`) {
+		t.Fatalf("POST /api/enrich response should contain phase, got: %s", r.Body.String())
+	}
+
+	// Wait for the async job to finish before checking GET.
+	srv.Enrich.Wait()
+
+	// (c) GET /api/enrich/job -> 200 with "phase".
+	gr := do(srv, "GET", "/api/enrich/job", lc)
+	if gr.Code != http.StatusOK {
+		t.Fatalf("GET /api/enrich/job: want 200, got %d (%s)", gr.Code, gr.Body.String())
+	}
+	if !strings.Contains(gr.Body.String(), `"phase"`) {
+		t.Fatalf("GET /api/enrich/job response should contain phase, got: %s", gr.Body.String())
+	}
+}
+
+func TestEnrichJobAnalystForbidden(t *testing.T) {
+	srv := newServer("secret")
+	srv.Engine = &engine.Engine{Policies: policy.DefaultSet()}
+	srv.Engine.SwapEnricher(fakeTestEnricher{})
+	srv.Enrich = enrich.NewManager(srv.Engine, srv.Store)
+
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	id := createAudit(t, srv, lc, lcsrf, "Enrich Test 2")
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	openAudit(t, srv, ac, acsrf, id)
+
+	if r := do(srv, "GET", "/api/enrich/job", ac); r.Code != http.StatusForbidden {
+		t.Fatalf("analyst GET /api/enrich/job: want 403, got %d", r.Code)
+	}
+	if r := postJSON(srv, "/api/enrich/cancel", ac, acsrf, ""); r.Code != http.StatusForbidden {
+		t.Fatalf("analyst POST /api/enrich/cancel: want 403, got %d", r.Code)
+	}
+}
+
+func TestHoldReleaseActivity(t *testing.T) {
+	srv := newServer("secret")
+	now := time.Now()
+	idle := 30 * time.Minute
+	stale := now.Add(-31 * time.Minute)
+
+	// Before HoldActivity: stale + unlocked + no in-flight -> should auto-lock.
+	if !shouldAutoLock(true, srv.inFlight.Load(), stale, idle, now) {
+		t.Fatal("before hold: should auto-lock with stale activity")
+	}
+
+	// After HoldActivity: inFlight > 0 -> must NOT auto-lock.
+	srv.HoldActivity()
+	if shouldAutoLock(true, srv.inFlight.Load(), stale, idle, now) {
+		t.Fatal("after HoldActivity: must not auto-lock while held")
+	}
+
+	// After ReleaseActivity: inFlight back to 0 -> should auto-lock again.
+	srv.ReleaseActivity()
+	if !shouldAutoLock(true, srv.inFlight.Load(), stale, idle, now) {
+		t.Fatal("after ReleaseActivity: should auto-lock again")
 	}
 }
