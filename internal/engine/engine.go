@@ -389,8 +389,6 @@ func derefInt(p *int) int {
 	return *p
 }
 
-func derefBool(p *bool) bool { return p != nil && *p }
-
 // enabledOrUnknown treats a missing enabled-status (no BloodHound data) as enabled,
 // so a "disabled" flag fires only on an explicit disabled signal -- not on absent data.
 func enabledOrUnknown(p *bool) bool { return p == nil || *p }
