@@ -237,3 +237,6 @@ internal/webui/dist/
 # Browser-test artifacts + ad-hoc verification screenshots (root-level PNGs)
 .playwright-mcp/
 /*.png
+
+# Visual brainstorming companion (superpowers)
+.superpowers/
