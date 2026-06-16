@@ -79,6 +79,57 @@ type Report struct {
 	ViolationCounts ViolationCounts `json:"violation_counts"`
 }
 
+// Term is one recurring wordlist match and how many accounts' passwords contain it.
+type Term struct {
+	Term  string `json:"term"`
+	Count int    `json:"count"`
+}
+
+// Terms is the recurring forbidden words + keyboard patterns. The matched strings
+// are cleartext fragments -- this is only ever returned by the lead-gated, audited
+// terms endpoint, never persisted or exported. Common/dictionary are deliberately
+// excluded: their "term" is the whole password.
+type Terms struct {
+	Forbidden []Term `json:"forbidden"`
+	Keyboard  []Term `json:"keyboard"`
+}
+
+// AggregateTerms counts each distinct matched term once per account and returns the
+// top-N of each kind, sorted by count (desc), then term (asc) for stability.
+func AggregateTerms(accts []Account, topN int) Terms {
+	tally := func(get func(Account) []string) []Term {
+		counts := map[string]int{}
+		for _, a := range accts {
+			seen := map[string]bool{}
+			for _, t := range get(a) {
+				if t == "" || seen[t] {
+					continue
+				}
+				seen[t] = true
+				counts[t]++
+			}
+		}
+		out := make([]Term, 0, len(counts))
+		for t, c := range counts {
+			out = append(out, Term{Term: t, Count: c})
+		}
+		sort.SliceStable(out, func(i, j int) bool {
+			if out[i].Count != out[j].Count {
+				return out[i].Count > out[j].Count
+			}
+			return out[i].Term < out[j].Term
+		})
+		if topN > 0 && len(out) > topN {
+			out = out[:topN]
+		}
+		return out
+	}
+	return Terms{
+		Forbidden: tally(func(a Account) []string { return a.BannedWords }),
+		Keyboard:  tally(func(a Account) []string { return a.KeyboardPatterns }),
+	}
+}
+
 // BuildReport groups accounts by NT hash and produces the redacted Actionable
 // reports. Grouping is done here (server-side) because the NT hash is not exposed.
 func BuildReport(accts []Account) Report {
