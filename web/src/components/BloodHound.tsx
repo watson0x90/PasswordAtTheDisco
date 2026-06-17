@@ -95,7 +95,7 @@ export function BloodHound() {
     if (!me) return
     setEnrichErr("")
     try {
-      setEnrichJob(await api.enrich(me.csrf_token))
+      setEnrichJob(await api.enrich(csrf))
     } catch (e) {
       setEnrichErr(e instanceof ApiError ? e.message : "could not start enrichment")
     }
