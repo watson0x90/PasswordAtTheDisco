@@ -43,6 +43,7 @@ export function Ingest() {
     setCrackfile(null)
     setApplyResult(null)
     setApplyError("")
+    setEnrichJob(null)
     setPhase("idle"); setPct(0); setApplyPhase("idle"); setApplyPct(0)
   }, [activeId])
 

@@ -14,5 +14,7 @@ describe("enrich api", () => {
     expect(st.phase).toBe("running")
     expect(st.processed).toBe(3)
     expect(st.total).toBe(10)
+    expect(st.enriched).toBe(2)
+    expect(st.elapsed_sec).toBe(1)
   })
 })
