@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { api, ApiError, type BHEStatus, type BHETestResult, type BHEConfigInput } from "../api"
+import { api, ApiError, type BHEStatus, type BHETestResult, type BHEConfigInput, type EnrichJob } from "../api"
 import { useAuth } from "../auth"
 
 export function BloodHound() {
@@ -74,6 +74,30 @@ export function BloodHound() {
       setError(e instanceof ApiError ? e.message : "save failed")
     } finally {
       setSaving(false)
+    }
+  }
+
+  const [enrichJob, setEnrichJob] = useState<EnrichJob | null>(null)
+  const [enrichErr, setEnrichErr] = useState("")
+
+  useEffect(() => {
+    // pick up an in-progress job on mount
+    api.enrichJob().then(setEnrichJob).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!enrichJob || enrichJob.phase !== "running") return
+    const t = setInterval(() => { api.enrichJob().then(setEnrichJob).catch(() => {}) }, 1500)
+    return () => clearInterval(t)
+  }, [enrichJob?.phase])
+
+  async function runEnrich() {
+    if (!me) return
+    setEnrichErr("")
+    try {
+      setEnrichJob(await api.enrich(me.csrf_token))
+    } catch (e) {
+      setEnrichErr(e instanceof ApiError ? e.message : "could not start enrichment")
     }
   }
 
@@ -164,6 +188,25 @@ export function BloodHound() {
           ) : (
             <div className="error">Connection failed: {test.error}</div>
           ))}
+
+        <div className="field">
+          <button type="button" className="btn" onClick={runEnrich}
+                  disabled={enrichJob?.phase === "running" || !status?.active}>
+            {enrichJob?.phase === "running" ? "Enriching…" : "Run BloodHound enrichment on this audit"}
+          </button>
+          {enrichErr && <div className="error">{enrichErr}</div>}
+          {enrichJob && enrichJob.phase !== "idle" && (
+            <div className="hint">
+              {enrichJob.phase === "running"
+                ? `Enriching… ${enrichJob.processed}/${enrichJob.total}`
+                : enrichJob.phase === "done"
+                  ? `Done — enriched ${enrichJob.enriched}/${enrichJob.total}.`
+                  : enrichJob.phase === "failed"
+                    ? `Failed: ${enrichJob.error ?? "unknown"}`
+                    : enrichJob.phase}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
