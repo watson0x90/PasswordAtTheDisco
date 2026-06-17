@@ -28,6 +28,7 @@ import (
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/audit"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/auth"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/enrich"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/hibp"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/httpapi"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/pwned"
@@ -135,8 +136,16 @@ func main() {
 	)
 	logins.SeedFromAudit(auditPath)
 
+	st := store.NewPersistent(vlt)
+
+	// Enrichment job manager: drives BloodHound prefetch + rescore in the background.
+	// Concurrency is left at the default (8); the BHE client's own semaphore — sized
+	// from the BHE config when the client is built lazily in handleBHEConfig — is the
+	// real in-flight bound, so there is nothing useful to set here.
+	enrichMgr := enrich.NewManager(eng, st)
+
 	api := &httpapi.Server{
-		Store:         store.NewPersistent(vlt),
+		Store:         st,
 		StaticFS:      webui.FS, // embedded SPA when built with -tags embed; else nil
 		StaticDir:     env("PATD_STATIC_DIR", "web/dist"),
 		IngestToken:   os.Getenv("PATD_INGEST_TOKEN"),
@@ -155,6 +164,14 @@ func main() {
 		HIBPPath:      hibpPath,
 		BHEPath:       bhePath,
 		Downloads:     downloads,
+		Enrich:        enrichMgr,
+	}
+
+	// Wire the enrichment manager's activity hook so a running job holds the
+	// idle auto-lock open for its duration.
+	enrichMgr.ActivityHook = func() func() {
+		api.HoldActivity()
+		return func() { api.ReleaseActivity() }
 	}
 
 	// Idle auto-lock: drop the key + clear decrypted data after inactivity so
