@@ -43,15 +43,12 @@ export function JobsProvider({ children }: { children: ReactNode }) {
     let alive = true
     let timer: number | undefined
     const poll = async () => {
-      try {
-        const [e, h] = await Promise.allSettled([api.enrichJob(), api.pwnedJob()])
-        if (!alive) return
-        if (e.status === "fulfilled") setEnrich(e.value)
-        if (h.status === "fulfilled") setHibp(h.value)
-      } catch {
-        /* transient (locked/network): keep last state */
-      }
+      // allSettled never rejects; a transient error on one endpoint (locked /
+      // network) leaves that job's last state intact while the other still updates.
+      const [e, h] = await Promise.allSettled([api.enrichJob(), api.pwnedJob()])
       if (!alive) return
+      if (e.status === "fulfilled") setEnrich(e.value)
+      if (h.status === "fulfilled") setHibp(h.value)
       timer = window.setTimeout(poll, runningRef.current ? 1500 : 5000)
     }
     void poll()
