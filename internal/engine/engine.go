@@ -92,6 +92,15 @@ func (e *Engine) ForbiddenWords() pwanalysis.Set {
 	return e.Lists.ForbiddenWords
 }
 
+// snapshotLists returns a copy of the wordlists read entirely under the read
+// lock, so the analysis path never reads the swappable ForbiddenWords field
+// lock-free (which would race SwapForbiddenWords).
+func (e *Engine) snapshotLists() pwanalysis.Lists {
+	e.listsMu.RLock()
+	defer e.listsMu.RUnlock()
+	return e.Lists
+}
+
 // HasEnricher reports whether BloodHound enrichment is currently active.
 func (e *Engine) HasEnricher() bool {
 	e.encMu.RLock()
@@ -212,9 +221,7 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 
 	an, ok := analysisCache[pw]
 	if !ok {
-		lists := e.Lists
-		lists.ForbiddenWords = e.ForbiddenWords()
-		an = pwanalysis.Analyze(pw, lists, nil, pol.Analysis())
+		an = pwanalysis.Analyze(pw, e.snapshotLists(), nil, pol.Analysis())
 		analysisCache[pw] = an
 	}
 	simMax, ok := simCache[pw]
