@@ -163,6 +163,33 @@ func TestIngestRejectsMissingToken(t *testing.T) {
 	}
 }
 
+func TestMeAnonymousIs200(t *testing.T) {
+	srv := newServer("secret")
+	rr := do(srv, "GET", "/api/me", nil) // no cookie
+	if rr.Code != http.StatusOK {
+		t.Fatalf("anon /api/me = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `"authenticated":false`) {
+		t.Fatalf("missing authenticated:false: %s", rr.Body.String())
+	}
+}
+
+func TestMeAuthenticatedIs200(t *testing.T) {
+	srv := newServer("secret")
+	cookie, _ := loginCSRF(t, srv, "lead", "leadpw")
+	rr := do(srv, "GET", "/api/me", cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("auth /api/me = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `"authenticated":true`) {
+		t.Fatalf("missing authenticated:true: %s", body)
+	}
+	if !strings.Contains(body, `"role":"lead"`) {
+		t.Fatalf("missing role:lead: %s", body)
+	}
+}
+
 func TestForbiddenWordsPutGet(t *testing.T) {
 	var buf bytes.Buffer
 	srv := newServerAudit("secret", &buf)

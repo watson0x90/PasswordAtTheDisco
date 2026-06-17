@@ -104,7 +104,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/ingest", s.requireIngestToken(s.requireUnlocked(http.HandlerFunc(s.handleIngest))))
 	// Authenticated operators (any role) -- redacted data only
 	mux.Handle("POST /api/logout", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleLogout))))
-	mux.Handle("GET /api/me", s.requireAuth(http.HandlerFunc(s.handleMe)))
+	mux.Handle("GET /api/me", http.HandlerFunc(s.handleMe))
 	// Unlock / first-run passphrase / change-passphrase / re-lock (lead)
 	mux.Handle("POST /api/unlock", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleUnlock))))
 	mux.Handle("POST /api/lock", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleLock))))
@@ -336,13 +336,27 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// handleMe reports the caller's session state. It is reachable anonymously and
+// always returns 200 with an "authenticated" flag (the SPA probes it on every
+// fresh load; a 401 here would log a red console error each visit). Authenticated
+// callers get their full payload; protected routes still gate on requireAuth.
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
-	sess, _ := sessionFrom(r.Context())
+	c, err := r.Cookie(sessionCookie)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"authenticated": false})
+		return
+	}
+	sess, ok := s.Sessions.Get(c.Value)
+	if !ok {
+		writeJSON(w, http.StatusOK, map[string]any{"authenticated": false})
+		return
+	}
 	active := sess.ActiveAudit
 	if active != "" && (!s.Store.Unlocked() || !s.Store.Has(active)) {
 		active = "" // store locked, or the selected audit was deleted
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
+		"authenticated":     true,
 		"username":          sess.Username,
 		"role":              string(sess.Role),
 		"csrf_token":        sess.CSRF,

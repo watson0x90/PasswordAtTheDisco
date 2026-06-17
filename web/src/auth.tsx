@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react"
-import { api, ApiError, type Me } from "./api"
+import { api, type Me } from "./api"
 
 type Status = "loading" | "authenticated" | "anonymous"
 
@@ -36,19 +36,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     api
       .me()
       .then((m) => {
-        if (active) {
-          setMe(m)
-          setStatus("authenticated")
-        }
-      })
-      .catch((err) => {
         if (!active) return
-        if (err instanceof ApiError && err.status === 401) {
+        if (m.authenticated === false) {
           setStatus("anonymous")
-        } else {
-          // network/other: treat as anonymous so the login screen shows.
-          setStatus("anonymous")
+          return
         }
+        setMe(m)
+        setStatus("authenticated")
+      })
+      .catch(() => {
+        // network/other: treat as anonymous so the login screen shows.
+        if (active) setStatus("anonymous")
       })
     return () => {
       active = false

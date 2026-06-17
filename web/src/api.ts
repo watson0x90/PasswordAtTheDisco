@@ -5,6 +5,9 @@
 export type Role = "analyst" | "lead"
 
 export interface Me {
+  // false for an anonymous probe (GET /api/me is reachable without a session and
+  // returns 200 so a fresh page load logs no console 401); absent/true otherwise.
+  authenticated?: boolean
   username: string
   role: Role
   csrf_token: string
