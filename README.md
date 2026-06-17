@@ -56,6 +56,13 @@ CISO / blue-team threat triage:
   · shared, with the lead-gated reveal). The Overview gains a headline strip:
   cracked∩DA · cracked∩HIBP · cross-domain-shared.
 
+- **Editable forbidden-words list + UI polish.** Manage the password-analysis
+  banned-words list from **Setup → Policies** (lead-only, audit-logged with a
+  count — never the words; applies to newly ingested / re-analyzed data). Plus
+  consistent table widths (overflow scrolls within the panel), a spacing-token CSS
+  system with a guard test, and calm "no data yet" empty states — a fresh session
+  no longer logs 409s to the browser console.
+
 - **Data goes live instantly.** A shared "audit data changed" signal refreshes
   every view (Overview, Accounts, Domains, Actionable) the moment an upload,
   apply-cracks, delete, or enrichment finishes — no more blank screens after
