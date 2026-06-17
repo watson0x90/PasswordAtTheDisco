@@ -985,3 +985,12 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
 .tier-head.t2 { border-left-color: #fbbf24; }
 .bridge-clusters { margin-top: 12px; }
 .bridge-cluster-row { padding: 6px 0; border-bottom: 1px solid #161d30; font-size: 13px; }
+
+.forbidden-words-area {
+  width: 100%;
+  min-height: 220px;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.6;
+  resize: vertical;
+}

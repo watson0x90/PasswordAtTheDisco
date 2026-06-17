@@ -155,12 +155,80 @@ export function Policies() {
         </div>
       </div>
 
+      <div className="section-label">Forbidden words</div>
+      <ForbiddenWords csrf={me.csrf_token} />
+
       <div className="section-label">Store passphrase</div>
       <ChangePassphrase csrf={me.csrf_token} />
 
       <div className="section-label">Data key</div>
       <RotateDataKey csrf={me.csrf_token} />
     </>
+  )
+}
+
+function ForbiddenWords({ csrf }: { csrf: string }) {
+  const [text, setText] = useState("")
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState("")
+  const [okMsg, setOkMsg] = useState("")
+
+  useEffect(() => {
+    api
+      .getForbiddenWords()
+      .then((r) => setText(r.words.join("\n")))
+      .catch((e) => setErr(e instanceof ApiError ? e.message : "failed to load forbidden words"))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const words = text
+    .split("\n")
+    .map((w) => w.trim())
+    .filter(Boolean)
+
+  async function save() {
+    setBusy(true)
+    setErr("")
+    setOkMsg("")
+    try {
+      const r = await api.setForbiddenWords(words, csrf)
+      setOkMsg(`saved — ${r.count} word(s), persisted to ${r.persisted}`)
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : "save failed")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="panel ingest-form">
+      <p className="ingest-note">
+        Words that should never appear in a password (company name, product names, local slang). Each
+        match adds to the dictionary penalty in scoring. One word per line; case-insensitive substring
+        match. Changes apply to newly ingested or re-analyzed data — existing account scores are unchanged.
+      </p>
+      {loading ? (
+        <div className="spinner">loading words</div>
+      ) : (
+        <>
+          <textarea
+            className="search forbidden-words-area"
+            rows={10}
+            spellCheck={false}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={"acme\nsummer\nwinter"}
+          />
+          <div className="field-hint">{words.length} word(s)</div>
+          {err && <div className="error">{err}</div>}
+          {okMsg && <div className="ingest-ok">✓ {okMsg}</div>}
+          <button type="button" className="btn btn-primary" onClick={save} disabled={busy}>
+            {busy ? "Saving…" : "Save forbidden words"}
+          </button>
+        </>
+      )}
+    </div>
   )
 }
 
