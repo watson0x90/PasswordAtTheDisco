@@ -65,6 +65,8 @@ export function crossDomainBridges(report: Report): CrossDomain {
       hibpMax: g.hibp_breach_count, members: g.members,
     })
   }
+  // DA clusters first, then by blast radius = size × distinct-domain count.
+  // (BridgeCluster.domains is the string[] of domains, not ReuseGroup.domains the count.)
   clusters.sort(
     (x, y) =>
       (y.hasDA ? 1 : 0) - (x.hasDA ? 1 : 0) ||
