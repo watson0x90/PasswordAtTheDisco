@@ -41,9 +41,11 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
-## What's new in 2.5
+## What's new in 2.6
 
-An **upload-experience** overhaul for the Setup → Upload page:
+A trio of upgrades — a faster, clearer **upload** experience, **decoupled
+BloodHound enrichment** (no more multi-minute upload hangs), and a **domain
+drill-down + background-job visibility** layer:
 
 - **Progress feedback** — uploads show a real two-phase indicator: a determinate
   **Uploading… %** bar (via `XMLHttpRequest`), then **Processing on server…** while the dump
