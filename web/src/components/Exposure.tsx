@@ -140,8 +140,10 @@ export function Exposure() {
                 </button>
               </div>
             )}
-            {shown.map((c, idx) => {
-              const cid = c.domains.join("/") + "#" + idx
+            {shown.map((c) => {
+              // Key on the cluster's position in the UNFILTERED list so open
+              // state survives a pairFilter change (filtered-index keys shift).
+              const cid = c.domains.join("/") + "#" + bridges.clusters.indexOf(c)
               return (
                 <div key={cid} className="bridge-cluster-row">
                   <span className="muted">{c.domains.join(" ↔ ")}</span>
