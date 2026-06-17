@@ -223,6 +223,8 @@ config/*.json
 /patd
 /patd.exe
 *.exe
+*.exe~
+*~
 # Operator credentials (argon2id hashes) and live audit log -- never commit
 users.json
 audit.log

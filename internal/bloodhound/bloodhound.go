@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -173,8 +174,35 @@ type envelope struct {
 	Count int             `json:"count"`
 }
 
+// getRetries is the max attempts for a transient (429/5xx) BHE response.
+const getRetries = 3
+
 // get issues a GET and returns the decoded {"data","count"} envelope and status.
+// Transient errors (429 / 5xx) are retried up to getRetries times with linear
+// back-off; a WARN is logged on each retry and on any non-200 final status.
 func (c *Client) get(uri string) (envelope, int, error) {
+	var lastStatus int
+	for attempt := 0; attempt < getRetries; attempt++ {
+		env, status, err := c.getOnce(uri)
+		if err != nil {
+			return env, status, err
+		}
+		lastStatus = status
+		if status == http.StatusTooManyRequests || status >= 500 {
+			log.Printf("bloodhound: %s -> %d (attempt %d/%d), backing off", uri, status, attempt+1, getRetries)
+			time.Sleep(time.Duration(150*(attempt+1)) * time.Millisecond)
+			continue
+		}
+		if status != http.StatusOK {
+			log.Printf("bloodhound: %s -> %d", uri, status)
+		}
+		return env, status, nil
+	}
+	return envelope{}, lastStatus, nil
+}
+
+// getOnce issues a single GET and returns the decoded envelope and status code.
+func (c *Client) getOnce(uri string) (envelope, int, error) {
 	resp, err := c.doRequest("GET", uri, nil)
 	if err != nil {
 		return envelope{}, 0, err
@@ -360,6 +388,9 @@ func (c *Client) GetUserControllables(objectID string) (map[string]map[string]in
 	}
 	if status != http.StatusOK {
 		return out, nil
+	}
+	if env.Count == 0 {
+		return out, nil // nothing to fetch; avoids a limit=0 round-trip
 	}
 	env, status, err = c.get(fmt.Sprintf("/api/v2/base/%s/controllables?skip=0&limit=%d&type=list", objectID, env.Count))
 	if err != nil {

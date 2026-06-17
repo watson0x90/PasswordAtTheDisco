@@ -442,6 +442,35 @@ func TestIngestHistoryRecordedAndPreserved(t *testing.T) {
 	}
 }
 
+func TestMutateOperatesOnCurrentState(t *testing.T) {
+	s := New()
+	meta, _ := s.CreateAudit("t", "")
+	if err := s.ReplaceDomain(meta.ID, "A", []model.Account{{Username: "a", Domain: "A", NTHash: "H1"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReplaceDomain(meta.ID, "B", []model.Account{{Username: "b", Domain: "B", NTHash: "H2"}}); err != nil {
+		t.Fatal(err)
+	}
+	err := s.Mutate(meta.ID, func(cur []model.Account) []model.Account {
+		if len(cur) != 2 {
+			t.Fatalf("Mutate fn saw %d accounts, want 2 (current state)", len(cur))
+		}
+		out := make([]model.Account, len(cur))
+		copy(out, cur)
+		for i := range out {
+			out[i].RiskScore = 9
+		}
+		return out
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Accounts(meta.ID, false)
+	if len(got) != 2 {
+		t.Fatalf("after Mutate: %d accounts, want 2 (no data loss)", len(got))
+	}
+}
+
 func TestReplaceDomainScoped(t *testing.T) {
 	s := New()
 	idm, _ := s.CreateAudit("x", "")

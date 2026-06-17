@@ -1,7 +1,7 @@
 {
   "name": "passwordatthedisco-web",
   "private": true,
-  "version": "0.1.0",
+  "version": "2.6.0",
   "type": "module",
   "description": "v2 secure-delivery frontend (built to static assets, served by the Go API)",
   "scripts": {

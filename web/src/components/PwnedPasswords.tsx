@@ -1,20 +1,20 @@
 import { useCallback, useEffect, useState } from "react"
 import { api, ApiError, type PwnedStatus, type PwnedBuild, type PwnedProbe, type PwnedJob, type PwnedPhase } from "../api"
 import { useAuth } from "../auth"
+import { useJobs } from "../jobs"
 import { fmtBytes, fmtDuration } from "../format"
 
-const POLL_MS = 2500
 const isActive = (p?: PwnedPhase) => p === "downloading" || p === "indexing"
 
 export function PwnedPasswords() {
   const { me } = useAuth()
+  const { hibp: job, refresh } = useJobs()
   const [status, setStatus] = useState<PwnedStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [building, setBuilding] = useState(false)
   const [probing, setProbing] = useState(false)
   const [buildRes, setBuildRes] = useState<PwnedBuild | null>(null)
   const [probeRes, setProbeRes] = useState<PwnedProbe | null>(null)
-  const [job, setJob] = useState<PwnedJob | null>(null)
   const [resume, setResume] = useState(false)
   const [error, setError] = useState("")
 
@@ -30,24 +30,12 @@ export function PwnedPasswords() {
 
   useEffect(() => {
     void loadStatus()
-    // pick up an already-running job after a page refresh
-    api.pwnedJob().then(setJob).catch(() => {})
   }, [loadStatus])
 
-  // poll while a job is active; refresh status when it finishes
+  // When the shared job transitions to a terminal/idle phase, refresh the corpus status panel.
   useEffect(() => {
-    if (!isActive(job?.phase)) return
-    const id = setInterval(async () => {
-      try {
-        const j = await api.pwnedJob()
-        setJob(j)
-        if (!isActive(j.phase)) void loadStatus()
-      } catch {
-        /* transient; keep polling */
-      }
-    }, POLL_MS)
-    return () => clearInterval(id)
-  }, [job?.phase, loadStatus])
+    if (job && (job.phase === "done" || job.phase === "idle")) void loadStatus()
+  }, [job?.phase])
 
   async function doBuild() {
     if (!me) return
@@ -90,7 +78,8 @@ export function PwnedPasswords() {
     if (!confirm(msg)) return
     setError("")
     try {
-      setJob(await api.pwnedDownload(resume, me.csrf_token))
+      await api.pwnedDownload(resume, me.csrf_token)
+      refresh()
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "failed to start download")
     }
@@ -100,7 +89,8 @@ export function PwnedPasswords() {
     if (!me) return
     setError("")
     try {
-      setJob(await api.pwnedIndex(me.csrf_token))
+      await api.pwnedIndex(me.csrf_token)
+      refresh()
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "failed to start index build")
     }
@@ -109,7 +99,8 @@ export function PwnedPasswords() {
   async function doCancel() {
     if (!me) return
     try {
-      setJob(await api.pwnedCancel(me.csrf_token))
+      await api.pwnedCancel(me.csrf_token)
+      refresh()
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "failed to cancel")
     }

@@ -194,6 +194,28 @@ func TestGetDomainsCached(t *testing.T) {
 	}
 }
 
+func TestGetRetriesOnThrottle(t *testing.T) {
+	var n int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&n, 1) == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"name":"CORP","collected":true}]}`))
+	}))
+	defer srv.Close()
+	host, port := splitHostPort(t, srv.URL)
+	c := New(Config{Scheme: "http", Host: host, Port: port})
+	ds, err := c.GetDomains()
+	if err != nil || len(ds) != 1 {
+		t.Fatalf("after retry: ds=%v err=%v (n=%d)", ds, err, atomic.LoadInt32(&n))
+	}
+	if atomic.LoadInt32(&n) < 2 {
+		t.Fatalf("expected a retry, server hit %d times", atomic.LoadInt32(&n))
+	}
+}
+
 // splitHostPort extracts host + numeric port from an httptest URL.
 func splitHostPort(t *testing.T, raw string) (string, int) {
 	t.Helper()

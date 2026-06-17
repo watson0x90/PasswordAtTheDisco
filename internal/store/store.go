@@ -490,6 +490,33 @@ func (s *Store) Replace(id string, ds model.Dataset) error {
 	return s.swap(id, &audit{meta: meta, ds: ds})
 }
 
+// Mutate atomically read-modify-writes an audit's accounts under the per-audit
+// lock: fn receives the CURRENT committed accounts and returns the replacement.
+// Unlike Replace (which writes a caller-held snapshot and can clobber concurrent
+// changes), Mutate always re-reads the latest state, so a long-running re-score
+// never overwrites an intervening upload or apply-cracks. fn must not mutate the
+// slice it receives (it is the cached, shared copy); it returns a new slice.
+// fn is called under the per-audit write lock, so it must be non-blocking (e.g.
+// an in-memory re-score, not network I/O).
+func (s *Store) Mutate(id string, fn func(current []model.Account) []model.Account) error {
+	unlock := s.mutate.lock(id)
+	defer unlock()
+	cur, err := s.ensureLoaded(id)
+	if err != nil {
+		return err
+	}
+	next := fn(cur.ds.Accounts)
+	now := s.now()
+	model.RecomputeSharing(next)
+	model.EscalateSharedWithDA(next)
+	ds := cur.ds
+	ds.Accounts = next
+	ds.GeneratedAt = now
+	meta := cur.meta
+	meta.UpdatedAt = now
+	return s.swap(id, &audit{meta: meta, ds: ds})
+}
+
 // RecordIngest appends an ingest event to the audit's history (copy-on-write) and
 // persists. The accounts are untouched.
 func (s *Store) RecordIngest(id string, ev model.IngestEvent) error {

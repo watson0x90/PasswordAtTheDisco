@@ -46,7 +46,7 @@ export function JobPill() {
 
   return (
     <div className="jobpill-wrap" ref={wrapRef}>
-      <button className="jobpill" onClick={() => setOpen((o) => !o)} title="Background jobs">
+      <button className="jobpill" onClick={() => setOpen((o) => !o)} title="Background jobs" aria-haspopup="menu" aria-expanded={open}>
         <span className="spin">⟳</span> {label}
       </button>
       {open && (
@@ -54,13 +54,13 @@ export function JobPill() {
           {enrichRunning && (
             <div className="jobpop-row">
               <span>BloodHound enrichment — {enrich!.processed}/{enrich!.total} ({enrich!.enriched} enriched)</span>
-              <button className="link-btn" onClick={() => void cancelEnrich()}>cancel</button>
+              <button className="link-btn" role="menuitem" onClick={() => void cancelEnrich()}>cancel</button>
             </div>
           )}
           {hibpRunning && (
             <div className="jobpop-row">
               <span>HIBP corpus — {hibp!.phase}</span>
-              <button className="link-btn" onClick={() => void cancelHibp()}>cancel</button>
+              <button className="link-btn" role="menuitem" onClick={() => void cancelHibp()}>cancel</button>
             </div>
           )}
           {err && <div className="error">{err}</div>}

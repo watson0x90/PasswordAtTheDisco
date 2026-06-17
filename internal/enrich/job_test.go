@@ -146,3 +146,43 @@ func TestEnrichJobActivityHook(t *testing.T) {
 		t.Fatalf("activity hook not released, held=%d", held.Load())
 	}
 }
+
+func TestEnrichDoesNotClobberMidRunUpload(t *testing.T) {
+	s, id := seedStore(t)
+	gate := make(chan struct{})
+	key := engine.NormalizeUsername("alice", "CORP")
+	enr := &countingEnricher{calls: map[string]int{}, data: map[string]engine.Enrichment{key: {DADomains: []string{"CORP"}}}}
+	m := NewManager(newEng(slowEnricher{inner: enr, gate: gate}), s)
+	if err := m.Start(id); err != nil {
+		t.Fatal(err)
+	}
+	// Give the worker goroutine time to block on the gate before we upload EU.
+	// This ensures the job's initial snapshot (alice/CORP only) is taken BEFORE
+	// bob/EU is added, so the stale-overwrite bug is reliably triggered.
+	time.Sleep(20 * time.Millisecond)
+	if err := s.ReplaceDomain(id, "EU", []model.Account{{Username: "bob", Domain: "EU", NTHash: "H9"}}); err != nil {
+		t.Fatal(err)
+	}
+	close(gate)
+	m.Wait()
+	time.Sleep(20 * time.Millisecond) // let the pending re-kick (if any) start
+	m.Wait()                          // wait out the re-kicked run
+	got, _ := s.Accounts(id, false)
+	doms := map[string]bool{}
+	for _, a := range got {
+		doms[a.Domain] = true
+	}
+	if !doms["CORP"] || !doms["EU"] {
+		t.Fatalf("lost a domain: have %v, want CORP+EU", doms)
+	}
+	var aliceDA string
+	for _, a := range got {
+		if a.Username == "alice" && a.Domain == "CORP" {
+			aliceDA = a.DADomains
+			break
+		}
+	}
+	if aliceDA != "CORP" {
+		t.Fatalf("alice lost enrichment: DADomains=%q, want CORP", aliceDA)
+	}
+}
