@@ -52,7 +52,8 @@ type Engine struct {
 	Enricher Enricher // guarded by encMu for hot-swap; read via enrich
 	encMu    sync.RWMutex
 	Lists    pwanalysis.Lists
-	Policies *policy.Set // per-domain password policies (length/classes + max age)
+	listsMu  sync.RWMutex // guards Lists.ForbiddenWords for hot-swap
+	Policies *policy.Set  // per-domain password policies (length/classes + max age)
 	Now      func() time.Time
 }
 
@@ -73,6 +74,22 @@ func (e *Engine) SwapEnricher(enr Enricher) {
 	e.encMu.Lock()
 	defer e.encMu.Unlock()
 	e.Enricher = enr
+}
+
+// SwapForbiddenWords atomically replaces the analysis forbidden-words set so the
+// list can be edited from the UI and take effect for the next analysis without a
+// restart.
+func (e *Engine) SwapForbiddenWords(set pwanalysis.Set) {
+	e.listsMu.Lock()
+	defer e.listsMu.Unlock()
+	e.Lists.ForbiddenWords = set
+}
+
+// ForbiddenWords returns the current forbidden-words set under the read lock.
+func (e *Engine) ForbiddenWords() pwanalysis.Set {
+	e.listsMu.RLock()
+	defer e.listsMu.RUnlock()
+	return e.Lists.ForbiddenWords
 }
 
 // HasEnricher reports whether BloodHound enrichment is currently active.
@@ -195,7 +212,9 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 
 	an, ok := analysisCache[pw]
 	if !ok {
-		an = pwanalysis.Analyze(pw, e.Lists, nil, pol.Analysis())
+		lists := e.Lists
+		lists.ForbiddenWords = e.ForbiddenWords()
+		an = pwanalysis.Analyze(pw, lists, nil, pol.Analysis())
 		analysisCache[pw] = an
 	}
 	simMax, ok := simCache[pw]
