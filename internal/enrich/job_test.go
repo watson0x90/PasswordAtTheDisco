@@ -165,10 +165,8 @@ func TestEnrichDoesNotClobberMidRunUpload(t *testing.T) {
 	}
 	close(gate)
 	m.Wait()
-	for i := 0; i < 50 && m.Status().Phase == PhaseRunning; i++ {
-		time.Sleep(5 * time.Millisecond)
-	}
-	m.Wait()
+	time.Sleep(20 * time.Millisecond) // let the pending re-kick (if any) start
+	m.Wait()                          // wait out the re-kicked run
 	got, _ := s.Accounts(id, false)
 	doms := map[string]bool{}
 	for _, a := range got {
@@ -176,5 +174,15 @@ func TestEnrichDoesNotClobberMidRunUpload(t *testing.T) {
 	}
 	if !doms["CORP"] || !doms["EU"] {
 		t.Fatalf("lost a domain: have %v, want CORP+EU", doms)
+	}
+	var aliceDA string
+	for _, a := range got {
+		if a.Username == "alice" && a.Domain == "CORP" {
+			aliceDA = a.DADomains
+			break
+		}
+	}
+	if aliceDA != "CORP" {
+		t.Fatalf("alice lost enrichment: DADomains=%q, want CORP", aliceDA)
 	}
 }

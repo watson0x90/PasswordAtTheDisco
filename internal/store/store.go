@@ -496,6 +496,8 @@ func (s *Store) Replace(id string, ds model.Dataset) error {
 // changes), Mutate always re-reads the latest state, so a long-running re-score
 // never overwrites an intervening upload or apply-cracks. fn must not mutate the
 // slice it receives (it is the cached, shared copy); it returns a new slice.
+// fn is called under the per-audit write lock, so it must be non-blocking (e.g.
+// an in-memory re-score, not network I/O).
 func (s *Store) Mutate(id string, fn func(current []model.Account) []model.Account) error {
 	unlock := s.mutate.lock(id)
 	defer unlock()

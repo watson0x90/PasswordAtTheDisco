@@ -219,7 +219,7 @@ func (m *Manager) maybeRekick(id string) {
 	m.pending = false
 	m.mu.Unlock()
 	if again {
-		_ = m.Start(id)
+		_ = m.Start(id) // cannot fail here: we just set PhaseDone, so Start won't see PhaseRunning
 	}
 }
 
