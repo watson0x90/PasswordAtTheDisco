@@ -73,6 +73,8 @@ export function Exposure() {
   if (error && !accounts) {
     return <div className="center-state">{error}</div>
   }
+  if (report && report.total_accounts === 0)
+    return <div className="center-state">No data yet — select or create an audit and upload a dump.</div>
 
   const bridges = report ? crossDomainBridges(report) : { matrix: {}, clusters: [] as BridgeCluster[], domains: [] as string[] }
   const triage = report ? hibpTriage(report) : { tier1: [] as ReportAccount[], tier2: [] as ReportAccount[] }

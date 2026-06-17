@@ -47,6 +47,8 @@ export function Domains() {
       </div>
     )
   }
+  if (report && report.total_accounts === 0)
+    return <div className="center-state">No data yet — select or create an audit and upload a dump.</div>
 
   if (selected) {
     const domainAccts = accounts.filter((a) => a.domain === selected)

@@ -62,6 +62,8 @@ export function Actionable() {
     )
   }
   if (!report) return null
+  if (report.total_accounts === 0)
+    return <div className="center-state">No data yet — select or create an audit and upload a dump.</div>
 
   return (
     <>
