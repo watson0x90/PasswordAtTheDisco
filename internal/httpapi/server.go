@@ -1956,6 +1956,7 @@ type forbiddenWordsPayload struct {
 func (s *Server) handleGetForbiddenWords(w http.ResponseWriter, r *http.Request) {
 	sess, _ := sessionFrom(r.Context())
 	if sess.Role != auth.RoleLead {
+		s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "forbidden_words_read", Source: r.RemoteAddr, Result: "denied"})
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
 		return
 	}
@@ -2004,7 +2005,7 @@ func (s *Server) handleSetForbiddenWords(w http.ResponseWriter, r *http.Request)
 		if word == "" {
 			continue
 		}
-		if len(word) > 64 {
+		if len([]rune(word)) > 64 {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "word too long (max 64 chars)"})
 			return
 		}

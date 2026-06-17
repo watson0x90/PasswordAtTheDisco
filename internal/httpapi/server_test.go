@@ -164,7 +164,8 @@ func TestIngestRejectsMissingToken(t *testing.T) {
 }
 
 func TestForbiddenWordsPutGet(t *testing.T) {
-	srv := newServer("secret")
+	var buf bytes.Buffer
+	srv := newServerAudit("secret", &buf)
 	srv.Engine = &engine.Engine{Lists: pwanalysis.Lists{ForbiddenWords: pwanalysis.NewSet()}}
 	srv.ForbiddenWordsPath = filepath.Join(t.TempDir(), "forbidden_words.txt")
 
@@ -193,6 +194,15 @@ func TestForbiddenWordsPutGet(t *testing.T) {
 	// analyst cannot read
 	if g := do(srv, "GET", "/api/forbidden-words", ac); g.Code != http.StatusForbidden {
 		t.Fatalf("analyst GET should be 403, got %d", g.Code)
+	}
+
+	// Audit log records the update (count only) and never the cleartext words.
+	logs := buf.String()
+	if !strings.Contains(logs, "forbidden_words_update") || !strings.Contains(logs, "2 word(s)") {
+		t.Fatalf("forbidden-words update not audited: %s", logs)
+	}
+	if strings.Contains(logs, "acme") || strings.Contains(logs, "summer") {
+		t.Fatalf("AUDIT LOG LEAKED FORBIDDEN WORDS: %s", logs)
 	}
 }
 
