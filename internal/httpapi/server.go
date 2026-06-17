@@ -150,6 +150,7 @@ func (s *Server) Routes() http.Handler {
 	// Web upload of dump files into the active audit (lead)
 	mux.Handle("POST /api/upload", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleAudit)))))
 	mux.Handle("POST /api/upload/cracks", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleApplyCracks)))))
+	mux.Handle("DELETE /api/domains/{domain}", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleDeleteDomain)))))
 	// Redacted exports of the active audit (any operator)
 	mux.Handle("GET /api/export/csv", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportCSV))))
 	mux.Handle("GET /api/export/cracked.csv", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportCracked))))
@@ -1425,6 +1426,11 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	wasEmpty := true
+	if existing, err := s.Store.Accounts(auditID, false); err == nil && len(existing) > 0 {
+		wasEmpty = false
+	}
+
 	accts := s.Engine.ProcessDomainNoEnrich(domain, cracked, uncracked)
 	if err := s.Store.ReplaceDomain(auditID, domain, accts); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "selected audit no longer exists"})
@@ -1439,7 +1445,9 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 		log.Printf("record ingest event (dump %s/%s): %v", domain, dumpName, err)
 	}
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "audit_upload", Target: domain, Source: r.RemoteAddr, Result: "ok"})
-	s.kickEnrich(auditID)
+	if wasEmpty {
+		s.kickEnrich(auditID) // auto-enrich once, on the first data load
+	}
 	writeJSON(w, http.StatusOK, map[string]int{"accounts": len(accts), "cracked": len(cracked), "uncracked": len(uncracked)})
 }
 
@@ -1530,8 +1538,52 @@ func (s *Server) handleApplyCracks(w http.ResponseWriter, r *http.Request) {
 		log.Printf("record ingest event (cracks %s): %v", crackName, err)
 	}
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "apply_cracks", Source: r.RemoteAddr, Result: "ok"})
-	s.kickEnrich(auditID)
 	writeJSON(w, http.StatusOK, map[string]int{"crack_entries": len(cracks), "hashes_matched": len(matched), "newly_cracked": newly})
+}
+
+// handleDeleteDomain removes one domain's accounts from the active audit (lead only).
+func (s *Server) handleDeleteDomain(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	domain := r.PathValue("domain")
+	if domain == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "domain is required"})
+		return
+	}
+	auditID, ok := s.activeAudit(w, sess)
+	if !ok {
+		return
+	}
+	before, err := s.Store.Accounts(auditID, false)
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "selected audit no longer exists"})
+		return
+	}
+	removed := 0
+	for _, a := range before {
+		if a.Domain == domain {
+			removed++
+		}
+	}
+	if removed == 0 {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no accounts for domain " + domain})
+		return
+	}
+	if err := s.Store.ReplaceDomain(auditID, domain, nil); err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "selected audit no longer exists"})
+		return
+	}
+	if err := s.Store.RecordIngest(auditID, model.IngestEvent{
+		Filename: domain, Kind: "domain_delete", Domain: domain,
+		AccountsLoaded: removed, At: time.Now().UTC(), By: sess.Username,
+	}); err != nil {
+		log.Printf("record domain_delete ingest (%s): %v", domain, err)
+	}
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "domain_delete", Target: domain, Source: r.RemoteAddr, Result: "ok"})
+	writeJSON(w, http.StatusOK, map[string]int{"removed": removed})
 }
 
 // handleListAudits returns all audits' metadata + headline counts.

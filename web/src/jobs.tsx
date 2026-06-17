@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { api, type EnrichJob, type PwnedJob } from "./api"
 import { useAuth } from "./auth"
+import { useAudits } from "./auditsData"
 
 interface JobsState {
   enrich: EnrichJob | null
@@ -24,6 +25,7 @@ export function computeAnyRunning(enrich: EnrichJob | null, hibp: PwnedJob | nul
 // it polls only for leads. Cadence: 5s idle, 1.5s while a job runs.
 export function JobsProvider({ children }: { children: ReactNode }) {
   const { me } = useAuth()
+  const { bumpData } = useAudits()
   const isLead = me?.role === "lead"
   const [enrich, setEnrich] = useState<EnrichJob | null>(null)
   const [hibp, setHibp] = useState<PwnedJob | null>(null)
@@ -33,6 +35,12 @@ export function JobsProvider({ children }: { children: ReactNode }) {
   const anyRunning = computeAnyRunning(enrich, hibp)
   const runningRef = useRef(anyRunning)
   runningRef.current = anyRunning
+
+  const prevEnrichPhase = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (prevEnrichPhase.current === "running" && enrich?.phase === "done") bumpData()
+    prevEnrichPhase.current = enrich?.phase
+  }, [enrich?.phase, bumpData])
 
   useEffect(() => {
     if (!isLead) {

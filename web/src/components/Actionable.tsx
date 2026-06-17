@@ -8,7 +8,7 @@ import { BarChart } from "./BarChart"
 const TOP = 50
 
 export function Actionable() {
-  const { activeId } = useAudits()
+  const { activeId, dataVersion } = useAudits()
   const { me } = useAuth()
   const [report, setReport] = useState<Report | null>(null)
   const [error, setError] = useState("")
@@ -51,7 +51,7 @@ export function Actionable() {
     return () => {
       live = false
     }
-  }, [activeId])
+  }, [activeId, dataVersion])
 
   if (error && !report) return <div className="center-state">{error}</div>
   if (loading && !report) {

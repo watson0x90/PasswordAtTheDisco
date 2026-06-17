@@ -421,6 +421,12 @@ export const api = {
       body: JSON.stringify(cfg),
     }),
 
+  deleteDomain: (domain: string, csrf: string) =>
+    request<{ removed: number }>(`/domains/${encodeURIComponent(domain)}`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrf },
+    }),
+
   enrich: (csrf: string) =>
     request<EnrichJob>("/enrich", { method: "POST", headers: { "X-CSRF-Token": csrf } }),
 
@@ -568,7 +574,7 @@ export interface ApplyCracksResult {
 
 export interface IngestEvent {
   filename: string
-  kind: "dump" | "cracks"
+  kind: "dump" | "cracks" | "domain_delete" | "enrich"
   domain?: string
   accounts_loaded?: number
   hashes_matched?: number

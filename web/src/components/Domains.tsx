@@ -26,7 +26,7 @@ export function Domains() {
   const [selected, setSelected] = useState<string | null>(null)
   const [report, setReport] = useState<Report | null>(null)
   const [reportErr, setReportErr] = useState("")
-  const { activeId } = useAudits()
+  const { activeId, dataVersion } = useAudits()
 
   useEffect(() => {
     if (selected && accounts && !accounts.some((a) => a.domain === selected)) setSelected(null)
@@ -37,7 +37,7 @@ export function Domains() {
     setReport(null); setReportErr("")
     api.report().then((r) => alive && setReport(r)).catch((e) => alive && setReportErr(e instanceof ApiError ? e.message : "report unavailable"))
     return () => { alive = false }
-  }, [activeId])
+  }, [activeId, dataVersion])
 
   if (error && !accounts) return <div className="center-state">{error}</div>
   if (!accounts) {

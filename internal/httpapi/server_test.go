@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1084,6 +1085,74 @@ func (fakeTestEnricher) Enrich(username string) engine.Enrichment {
 	return engine.Enrichment{DADomains: []string{"CORP"}}
 }
 
+// countingTestEnricher counts how many times Enrich has been called across all goroutines.
+type countingTestEnricher struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (c *countingTestEnricher) Enrich(username string) engine.Enrichment {
+	c.mu.Lock()
+	c.calls++
+	c.mu.Unlock()
+	return engine.Enrichment{DADomains: []string{"CORP"}}
+}
+
+func (c *countingTestEnricher) Calls() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.calls
+}
+
+func TestAutoEnrichOnlyOnFirstData(t *testing.T) {
+	// Build an engine with a counting enricher so we can verify call counts.
+	eng := &engine.Engine{Policies: policy.DefaultSet()}
+	counter := &countingTestEnricher{}
+	eng.SwapEnricher(counter)
+	st := store.New()
+	srv := &Server{
+		Store:        st,
+		IngestToken:  "secret",
+		Engine:       eng,
+		Enrich:       enrich.NewManager(eng, st),
+		Users:        newServer("secret").Users,
+		Sessions:     auth.NewSessionStore(time.Hour, time.Hour),
+		Audit:        audit.New(io.Discard),
+		LoginLimiter: auth.NewLimiter(50, time.Minute),
+	}
+
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	// Create an empty audit (auto-opens for the lead session).
+	createAudit(t, srv, lc, lcsrf, "AutoEnrich Test")
+
+	const crackBody = "alice:1001:aad3b435b51404eeaad3b435b51404ee:NTLMHASHVALUE:::Welcome1\n"
+
+	// First upload to the EMPTY audit — should auto-kick enrichment.
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, auditReq(t, lc, lcsrf, "CORP", crackBody))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("first upload: want 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	srv.Enrich.Wait()
+	callsAfterFirst := counter.Calls()
+	if callsAfterFirst == 0 {
+		t.Fatal("enricher should have been called after the first (empty-audit) upload")
+	}
+
+	// Second upload (different domain) — the audit is non-empty now; should NOT auto-kick.
+	rec2 := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec2, auditReq(t, lc, lcsrf, "EU", crackBody))
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("second upload: want 200, got %d (%s)", rec2.Code, rec2.Body.String())
+	}
+	srv.Enrich.Wait()
+	callsAfterSecond := counter.Calls()
+	if callsAfterSecond != callsAfterFirst {
+		t.Fatalf("enricher should NOT be called again after a second upload; calls before=%d after=%d",
+			callsAfterFirst, callsAfterSecond)
+	}
+}
+
 func TestEnrichEndpoints(t *testing.T) {
 	// Build a server with an engine that has an enricher and an enrich.Manager.
 	eng := &engine.Engine{Policies: policy.DefaultSet()}
@@ -1305,5 +1374,87 @@ func TestHandleVersionDefaultsWhenUnstamped(t *testing.T) {
 	s.handleVersion(rec, httptest.NewRequest("GET", "/api/version", nil))
 	if !strings.Contains(rec.Body.String(), `"version":"dev"`) {
 		t.Fatalf("expected dev default, got %s", rec.Body.String())
+	}
+}
+
+func TestDeleteDomain(t *testing.T) {
+	srv := newServer("secret")
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	id := createAudit(t, srv, lc, lcsrf, "Delete Domain Test")
+
+	// Seed domain A (3 accounts) and domain B (2 accounts) directly into the store.
+	if err := srv.Store.ReplaceDomain(id, "CORP_A", []model.Account{
+		{Username: "alice", Domain: "CORP_A"},
+		{Username: "bob", Domain: "CORP_A"},
+		{Username: "carol", Domain: "CORP_A"},
+	}); err != nil {
+		t.Fatalf("seed CORP_A: %v", err)
+	}
+	if err := srv.Store.ReplaceDomain(id, "CORP_B", []model.Account{
+		{Username: "dave", Domain: "CORP_B"},
+		{Username: "eve", Domain: "CORP_B"},
+	}); err != nil {
+		t.Fatalf("seed CORP_B: %v", err)
+	}
+
+	// Analyst DELETE /api/domains/CORP_A -> 403.
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	openAudit(t, srv, ac, acsrf, id)
+	req := httptest.NewRequest("DELETE", "/api/domains/CORP_A", nil)
+	req.AddCookie(ac)
+	req.Header.Set("X-CSRF-Token", acsrf)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("analyst DELETE /api/domains/CORP_A: want 403, got %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	// Lead DELETE /api/domains/CORP_A -> 200.
+	req2 := httptest.NewRequest("DELETE", "/api/domains/CORP_A", nil)
+	req2.AddCookie(lc)
+	req2.Header.Set("X-CSRF-Token", lcsrf)
+	rec2 := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("lead DELETE /api/domains/CORP_A: want 200, got %d (%s)", rec2.Code, rec2.Body.String())
+	}
+	var result struct {
+		Removed int `json:"removed"`
+	}
+	if err := json.Unmarshal(rec2.Body.Bytes(), &result); err != nil || result.Removed != 3 {
+		t.Fatalf("delete response: err=%v body=%s (want removed=3)", err, rec2.Body.String())
+	}
+
+	// CORP_A accounts are gone; CORP_B's 2 remain.
+	accts, err := srv.Store.Accounts(id, false)
+	if err != nil {
+		t.Fatalf("Accounts after delete: %v", err)
+	}
+	for _, a := range accts {
+		if a.Domain == "CORP_A" {
+			t.Fatalf("CORP_A account %s still present after delete", a.Username)
+		}
+	}
+	if len(accts) != 2 {
+		t.Fatalf("expected 2 CORP_B accounts remaining, got %d", len(accts))
+	}
+
+	// A domain_delete ingest event for "CORP_A" was recorded.
+	ingests, err := srv.Store.Ingests(id)
+	if err != nil {
+		t.Fatalf("Ingests: %v", err)
+	}
+	found := false
+	for _, ev := range ingests {
+		if ev.Kind == "domain_delete" && ev.Domain == "CORP_A" {
+			found = true
+			if ev.AccountsLoaded != 3 {
+				t.Fatalf("domain_delete ingest event: want accounts_loaded=3, got %d", ev.AccountsLoaded)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("no domain_delete ingest event for CORP_A found in: %+v", ingests)
 	}
 }

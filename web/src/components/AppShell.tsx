@@ -8,6 +8,7 @@ import { JobPill } from "./JobPill"
 export type View =
   | "overview" | "actionable" | "accounts" | "domains" | "compare" | "reports"
   | "ingest" | "policies" | "integrations" | "operators" | "activity" | "audits"
+  | "audit-data"
 
 const TABS: { id: View; label: string }[] = [
   { id: "overview", label: "Overview" },
@@ -21,6 +22,7 @@ const TABS: { id: View; label: string }[] = [
 // Lead-only groups, shown as Setup ▾ / Admin ▾ dropdowns.
 const SETUP_ITEMS: { id: View; label: string }[] = [
   { id: "ingest", label: "Upload" },
+  { id: "audit-data", label: "Audit Data" },
   { id: "policies", label: "Policies" },
   { id: "integrations", label: "Integrations" },
 ]
@@ -163,7 +165,7 @@ function NavDropdown({
 
 function AuditSwitcher() {
   const { me } = useAuth()
-  const { audits, active, activeId, open, create, remove } = useAudits()
+  const { audits, active, activeId, open, create } = useAudits()
   const isLead = me?.role === "lead"
   const [menu, setMenu] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -216,17 +218,6 @@ function AuditSwitcher() {
                     <span className="audit-item-name">{a.name}</span>
                     <span className="audit-item-meta">{a.total_accounts.toLocaleString()} accts</span>
                   </button>
-                  {isLead && (
-                    <button
-                      className="audit-del"
-                      title="Delete audit"
-                      onClick={() => {
-                        if (confirm(`Delete audit "${a.name}"? This cannot be undone.`)) void remove(a.id)
-                      }}
-                    >
-                      ×
-                    </button>
-                  )}
                 </div>
               ))}
             </div>
