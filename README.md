@@ -41,7 +41,7 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
-## What's new in 2.7
+## What's new in 2.8
 
 An **audit-data UX overhaul** so uploaded data is visible immediately and the
 upload page stops doing four jobs at once — plus a new **Exposure** view for
