@@ -1426,6 +1426,11 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	wasEmpty := true
+	if existing, err := s.Store.Accounts(auditID, false); err == nil && len(existing) > 0 {
+		wasEmpty = false
+	}
+
 	accts := s.Engine.ProcessDomainNoEnrich(domain, cracked, uncracked)
 	if err := s.Store.ReplaceDomain(auditID, domain, accts); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "selected audit no longer exists"})
@@ -1440,7 +1445,9 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 		log.Printf("record ingest event (dump %s/%s): %v", domain, dumpName, err)
 	}
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "audit_upload", Target: domain, Source: r.RemoteAddr, Result: "ok"})
-	s.kickEnrich(auditID)
+	if wasEmpty {
+		s.kickEnrich(auditID) // auto-enrich once, on the first data load
+	}
 	writeJSON(w, http.StatusOK, map[string]int{"accounts": len(accts), "cracked": len(cracked), "uncracked": len(uncracked)})
 }
 
@@ -1531,7 +1538,6 @@ func (s *Server) handleApplyCracks(w http.ResponseWriter, r *http.Request) {
 		log.Printf("record ingest event (cracks %s): %v", crackName, err)
 	}
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "apply_cracks", Source: r.RemoteAddr, Result: "ok"})
-	s.kickEnrich(auditID)
 	writeJSON(w, http.StatusOK, map[string]int{"crack_entries": len(cracks), "hashes_matched": len(matched), "newly_cracked": newly})
 }
 

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1082,6 +1083,74 @@ type fakeTestEnricher struct{}
 
 func (fakeTestEnricher) Enrich(username string) engine.Enrichment {
 	return engine.Enrichment{DADomains: []string{"CORP"}}
+}
+
+// countingTestEnricher counts how many times Enrich has been called across all goroutines.
+type countingTestEnricher struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (c *countingTestEnricher) Enrich(username string) engine.Enrichment {
+	c.mu.Lock()
+	c.calls++
+	c.mu.Unlock()
+	return engine.Enrichment{DADomains: []string{"CORP"}}
+}
+
+func (c *countingTestEnricher) Calls() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.calls
+}
+
+func TestAutoEnrichOnlyOnFirstData(t *testing.T) {
+	// Build an engine with a counting enricher so we can verify call counts.
+	eng := &engine.Engine{Policies: policy.DefaultSet()}
+	counter := &countingTestEnricher{}
+	eng.SwapEnricher(counter)
+	st := store.New()
+	srv := &Server{
+		Store:        st,
+		IngestToken:  "secret",
+		Engine:       eng,
+		Enrich:       enrich.NewManager(eng, st),
+		Users:        newServer("secret").Users,
+		Sessions:     auth.NewSessionStore(time.Hour, time.Hour),
+		Audit:        audit.New(io.Discard),
+		LoginLimiter: auth.NewLimiter(50, time.Minute),
+	}
+
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	// Create an empty audit (auto-opens for the lead session).
+	createAudit(t, srv, lc, lcsrf, "AutoEnrich Test")
+
+	const crackBody = "alice:1001:aad3b435b51404eeaad3b435b51404ee:NTLMHASHVALUE:::Welcome1\n"
+
+	// First upload to the EMPTY audit — should auto-kick enrichment.
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, auditReq(t, lc, lcsrf, "CORP", crackBody))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("first upload: want 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	srv.Enrich.Wait()
+	callsAfterFirst := counter.Calls()
+	if callsAfterFirst == 0 {
+		t.Fatal("enricher should have been called after the first (empty-audit) upload")
+	}
+
+	// Second upload (different domain) — the audit is non-empty now; should NOT auto-kick.
+	rec2 := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec2, auditReq(t, lc, lcsrf, "EU", crackBody))
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("second upload: want 200, got %d (%s)", rec2.Code, rec2.Body.String())
+	}
+	srv.Enrich.Wait()
+	callsAfterSecond := counter.Calls()
+	if callsAfterSecond != callsAfterFirst {
+		t.Fatalf("enricher should NOT be called again after a second upload; calls before=%d after=%d",
+			callsAfterFirst, callsAfterSecond)
+	}
 }
 
 func TestEnrichEndpoints(t *testing.T) {

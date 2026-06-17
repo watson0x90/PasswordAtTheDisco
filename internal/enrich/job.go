@@ -61,7 +61,6 @@ type Manager struct {
 
 	mu        sync.Mutex
 	phase     Phase
-	pending   bool
 	auditID   string
 	processed int
 	total     int
@@ -85,16 +84,13 @@ func (m *Manager) now() time.Time {
 	return time.Now()
 }
 
-// Start launches enrichment for an audit. Errors if a job is already running
-// (but marks a pending re-kick so a domain uploaded mid-run gets enriched too).
+// Start launches enrichment for an audit. Errors if a job is already running.
 func (m *Manager) Start(auditID string) error {
 	m.mu.Lock()
 	if m.phase == PhaseRunning {
-		m.pending = true
 		m.mu.Unlock()
 		return errors.New("enrichment already running")
 	}
-	m.pending = false
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
 	m.phase = PhaseRunning
@@ -206,21 +202,11 @@ func (m *Manager) run(ctx context.Context, id string) {
 		m.finish(PhaseFailed, "save: "+err.Error())
 		return
 	}
+	// wg.Wait() has already joined all workers above, so m.enriched is stable here.
+	_ = m.store.RecordIngest(id, model.IngestEvent{
+		Kind: "enrich", AccountsLoaded: m.enriched, At: time.Now().UTC(), By: "system",
+	})
 	m.finish(PhaseDone, "")
-	m.maybeRekick(id)
-}
-
-// maybeRekick re-runs enrichment if a Start was attempted while the job ran
-// (e.g. another domain was uploaded mid-run), so newly-added accounts get
-// enriched too.
-func (m *Manager) maybeRekick(id string) {
-	m.mu.Lock()
-	again := m.pending
-	m.pending = false
-	m.mu.Unlock()
-	if again {
-		_ = m.Start(id) // cannot fail here: we just set PhaseDone, so Start won't see PhaseRunning
-	}
 }
 
 // hasData reports whether an enrichment actually carries BHE data.

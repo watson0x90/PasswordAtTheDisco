@@ -165,8 +165,6 @@ func TestEnrichDoesNotClobberMidRunUpload(t *testing.T) {
 	}
 	close(gate)
 	m.Wait()
-	time.Sleep(20 * time.Millisecond) // let the pending re-kick (if any) start
-	m.Wait()                          // wait out the re-kicked run
 	got, _ := s.Accounts(id, false)
 	doms := map[string]bool{}
 	for _, a := range got {
