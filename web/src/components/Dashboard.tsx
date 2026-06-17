@@ -114,7 +114,11 @@ export function Dashboard() {
 }
 
 function BackgroundJobsCard() {
+  const { me } = useAuth()
   const { enrich, hibp } = useJobs()
+  // Jobs are lead-operated and the provider only polls for leads (non-leads always
+  // read idle), so the card has nothing to show for analysts.
+  if (me?.role !== "lead") return null
   const enrichLabel =
     !enrich || enrich.phase === "idle" ? "idle"
     : enrich.phase === "running" ? `running ${enrich.processed}/${enrich.total}`
