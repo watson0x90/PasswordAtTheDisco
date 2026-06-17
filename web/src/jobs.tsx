@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { api, type EnrichJob, type PwnedJob } from "./api"
 import { useAuth } from "./auth"
 
@@ -28,7 +28,7 @@ export function JobsProvider({ children }: { children: ReactNode }) {
   const [enrich, setEnrich] = useState<EnrichJob | null>(null)
   const [hibp, setHibp] = useState<PwnedJob | null>(null)
   const [tick, setTick] = useState(0)
-  const refresh = () => setTick((t) => t + 1)
+  const refresh = useCallback(() => setTick((t) => t + 1), [])
 
   const anyRunning = computeAnyRunning(enrich, hibp)
   const runningRef = useRef(anyRunning)
@@ -44,10 +44,10 @@ export function JobsProvider({ children }: { children: ReactNode }) {
     let timer: number | undefined
     const poll = async () => {
       try {
-        const [e, h] = await Promise.all([api.enrichJob(), api.pwnedJob()])
+        const [e, h] = await Promise.allSettled([api.enrichJob(), api.pwnedJob()])
         if (!alive) return
-        setEnrich(e)
-        setHibp(h)
+        if (e.status === "fulfilled") setEnrich(e.value)
+        if (h.status === "fulfilled") setHibp(h.value)
       } catch {
         /* transient (locked/network): keep last state */
       }
@@ -61,7 +61,8 @@ export function JobsProvider({ children }: { children: ReactNode }) {
     }
   }, [isLead, tick])
 
-  return <Ctx.Provider value={{ enrich, hibp, anyRunning, refresh }}>{children}</Ctx.Provider>
+  const value = useMemo(() => ({ enrich, hibp, anyRunning, refresh }), [enrich, hibp, anyRunning, refresh])
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 
 export function useJobs(): JobsState {

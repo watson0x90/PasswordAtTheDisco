@@ -51,4 +51,7 @@ describe("domainData", () => {
     expect(domainPolicy(accts)).toEqual({ meets: 1, fails: 1, disabled: 1 })
     expect(domainWordlist(accts)).toEqual({ common: 1, dictionary: 0, banned: 0, keyboard: 1 })
   })
+  it("disabled accounts are counted once (not in meets/fails)", () => {
+    expect(domainPolicy([acct({ cracked: true, meets_policy: false, enabled: false })])).toEqual({ meets: 0, fails: 0, disabled: 1 })
+  })
 })

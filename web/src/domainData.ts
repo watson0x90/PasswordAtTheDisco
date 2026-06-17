@@ -25,10 +25,8 @@ export function domainQuickWins(domainAccts: Account[], n: number): Account[] {
 export function domainPolicy(domainAccts: Account[]): { meets: number; fails: number; disabled: number } {
   let meets = 0, fails = 0, disabled = 0
   for (const a of domainAccts) {
-    if (!a.enabled) { disabled++ }
-    if (a.cracked) {
-      if (a.meets_policy) { meets++ } else { fails++ }
-    }
+    if (!a.enabled) { disabled++; continue }
+    if (a.cracked) { if (a.meets_policy) meets++; else fails++ }
   }
   return { meets, fails, disabled }
 }

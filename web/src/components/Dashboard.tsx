@@ -126,7 +126,7 @@ function BackgroundJobsCard() {
     : enrich.phase
   const hibpLabel = !hibp || hibp.phase === "idle" ? "idle" : hibp.phase
   return (
-    <div className="panel jobs-card">
+    <div className="panel">
       <div className="section-label">Background jobs</div>
       <div className="jobs-card-row"><span>BloodHound enrichment</span><span className="muted">{enrichLabel}</span></div>
       <div className="jobs-card-row"><span>HIBP corpus</span><span className="muted">{hibpLabel}</span></div>

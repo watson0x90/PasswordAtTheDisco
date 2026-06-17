@@ -217,7 +217,7 @@ export function Ingest() {
               </thead>
               <tbody>
                 {[...history].reverse().map((ev, i) => (
-                  <tr key={i}>
+                  <tr key={`${ev.at}-${ev.kind}-${i}`}>
                     <td className="muted">{fmtWhen(ev.at)}</td>
                     <td>{ev.filename || <span className="muted">—</span>}</td>
                     <td>{ev.kind}</td>

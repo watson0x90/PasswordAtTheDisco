@@ -33,6 +33,7 @@ export function AccountsTable({ accounts }: { accounts: Account[] }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewH, setViewH] = useState(560)
+  const timers = useRef<number[]>([])
 
   useEffect(() => {
     const el = scrollRef.current
@@ -41,7 +42,9 @@ export function AccountsTable({ accounts }: { accounts: Account[] }) {
     const ro = new ResizeObserver(() => setViewH(el.clientHeight)) // keep the window correct on resize
     ro.observe(el)
     return () => ro.disconnect()
-  }, [accounts])
+  }, [])
+
+  useEffect(() => () => { timers.current.forEach(clearTimeout) }, [])
 
   // reset scroll to top when the accounts set changes (e.g. filter/search in parent)
   useEffect(() => {
@@ -63,7 +66,7 @@ export function AccountsTable({ accounts }: { accounts: Account[] }) {
     try {
       const r = await api.revealSecret(username)
       setRevealed((prev) => ({ ...prev, [username]: r.password }))
-      window.setTimeout(() => hide(username), 45000) // auto-hide after 45s
+      timers.current.push(window.setTimeout(() => hide(username), 45000)) // auto-hide after 45s
     } catch (e) {
       setRevealError(e instanceof ApiError ? `reveal failed: ${e.message}` : "reveal failed")
     } finally {
