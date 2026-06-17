@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import type { Account } from "./api"
-import { posture, riskDistribution, hibpSplit } from "./insights"
+import { posture, riskDistribution, hibpSplit, complexityLabel } from "./insights"
 
 function acct(p: Partial<Account>): Account {
   return {
@@ -74,5 +74,17 @@ describe("distributions", () => {
     const d = hibpSplit([acct({ hibp_breached: true }), acct({ hibp_breached: false }), acct({ hibp_breached: false })])
     const breached = d.find((x) => /breach/i.test(x.name))
     expect(breached?.value).toBe(1)
+  })
+})
+
+describe("complexityLabel", () => {
+  it("maps the full-class key to class tokens", () => {
+    expect(complexityLabel("mixedalphaspecialnum")).toBe("a–z A–Z 0–9 !@#")
+  })
+  it("maps a partial key", () => {
+    expect(complexityLabel("loweralphanum")).toBe("a–z 0–9")
+  })
+  it("passes through unknown keys unchanged", () => {
+    expect(complexityLabel("weird")).toBe("weird")
   })
 })
