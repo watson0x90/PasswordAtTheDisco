@@ -14,6 +14,18 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# Resolve a Python 3 interpreter that actually RUNS (not just one on PATH). On
+# Windows, `python3` is often a Microsoft Store alias stub that prints "Python was
+# not found" and exits non-zero — so verify each candidate executes Python 3.
+PY=""
+for cand in python3 python py; do
+  if command -v "$cand" >/dev/null 2>&1 \
+     && "$cand" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)' >/dev/null 2>&1; then
+    PY="$cand"; break
+  fi
+done
+[ -n "$PY" ] || { echo "ERROR: no working Python 3 on PATH (tried python3, python, py)"; exit 1; }
+
 PORT="127.0.0.1:8444"
 BASE="http://$PORT"
 DATA="$ROOT/.devdata"
@@ -43,7 +55,7 @@ if [ "${1:-}" = "--stop" ]; then stop; exit 0; fi
 stop >/dev/null 2>&1 || true
 
 echo "==> 1/6 synthetic data"
-if [ ! -f "$SYN/cracks.txt" ]; then python tools/gen_synthetic.py; else echo "    present ($SYN)"; fi
+if [ ! -f "$SYN/cracks.txt" ]; then "$PY" tools/gen_synthetic.py; else echo "    present ($SYN)"; fi
 
 echo "==> 2/6 throwaway operator ($DEV_USER, lead)"
 DEVHASH="$(printf '%s\n' "$DEV_PASS" | go run ./cmd/patd hashpw 2>/dev/null | grep -E '^\$argon2' | head -1)"
@@ -68,14 +80,14 @@ J="$ROOT/.devcookies.txt"; rm -f "$J"
 echo "==> 4/6 login + unlock (init store)"
 CSRF="$(curl -s -c "$J" -X POST "$BASE/api/login" -H 'Content-Type: application/json' \
   -d "{\"username\":\"$DEV_USER\",\"password\":\"$DEV_PASS\"}" \
-  | python -c 'import sys,json; print(json.load(sys.stdin)["csrf_token"])')"
+  | "$PY" -c 'import sys,json; print(json.load(sys.stdin)["csrf_token"])')"
 curl -s -b "$J" -X POST "$BASE/api/unlock" -H 'Content-Type: application/json' \
   -H "X-CSRF-Token: $CSRF" -d "{\"passphrase\":\"$DEV_PHRASE\"}" >/dev/null
 
 echo "==> 5/6 create audit + upload 3 domains + apply cracks"
 AID="$(curl -s -b "$J" -X POST "$BASE/api/audits" -H 'Content-Type: application/json' \
   -H "X-CSRF-Token: $CSRF" -d '{"name":"Dev Seed","notes":"synthetic"}' \
-  | python -c 'import sys,json; print(json.load(sys.stdin)["id"])')"
+  | "$PY" -c 'import sys,json; print(json.load(sys.stdin)["id"])')"
 curl -s -b "$J" -X POST "$BASE/api/audits/$AID/open" -H "X-CSRF-Token: $CSRF" -o /dev/null
 for D in "${DOMAINS[@]}"; do
   curl -s -b "$J" -X POST "$BASE/api/upload" -H "X-CSRF-Token: $CSRF" \

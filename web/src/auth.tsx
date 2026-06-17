@@ -70,8 +70,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [me])
 
   // refresh re-reads /me (e.g. after unlocking the store, to pick up the new state).
+  // Guard on the authenticated flag like the bootstrap effect: if the session
+  // lapsed between actions, /me now returns 200 {authenticated:false} (not a 401),
+  // so fall back to anonymous rather than storing a payload-less Me.
   const refresh = useCallback(async () => {
-    setMe(await api.me())
+    const m = await api.me()
+    if (m.authenticated === false) {
+      setMe(null)
+      setStatus("anonymous")
+      return
+    }
+    setMe(m)
     setAutoLocked(false)
   }, [])
 
