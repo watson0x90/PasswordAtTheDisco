@@ -62,6 +62,12 @@ An **upload-experience** overhaul for the Setup → Upload page:
   an upload and can be **re-run** from **Setup → Integrations → BloodHound**. Live progress
   is polled from `GET /api/enrich/job`. Previously a large dump could block the upload
   request for tens of minutes while BloodHound was queried per account.
+- **Domain drill-down + job visibility.** Each domain now opens an investigative page —
+  a per-domain accounts table, password-**reuse clusters** (cracked vs. shared-uncracked
+  lateral-movement), **BloodHound DA-pathway accounts**, a **quick-win** remediation list,
+  and policy + wordlist breakdowns (all redacted — no hash, no cleartext). A header **jobs
+  pill** shows live HIBP / BloodHound-enrichment progress from anywhere in the app (with a
+  cancel popover), plus an Overview **Background jobs** card.
 
 ## What's new in 2.4.1
 
