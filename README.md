@@ -55,6 +55,13 @@ An **upload-experience** overhaul for the Setup → Upload page:
 - **Streamed large uploads** — the upload handlers now stream the multipart body
   (`r.MultipartReader`) instead of `ParseMultipartForm`, so **nothing spills to a cleartext
   temp file** and memory stays constant; the size cap is raised to **512 MiB**.
+- **Fast uploads + background BloodHound enrichment** — uploads now return in seconds:
+  they parse, HIBP-score, and store immediately, with **no inline BloodHound calls**.
+  DA-pathway enrichment runs as a separate **background job** (concurrent prefetch →
+  atomic re-score; bounded by `enrich_concurrency`, default 8) that **auto-starts** after
+  an upload and can be **re-run** from **Setup → Integrations → BloodHound**. Live progress
+  is polled from `GET /api/enrich/job`. Previously a large dump could block the upload
+  request for tens of minutes while BloodHound was queried per account.
 
 ## What's new in 2.4.1
 
