@@ -171,6 +171,11 @@ func similarityFactor(max float64) float64 {
 
 // floorBase applies the evidence-based cracked-password risk floor: a cracked
 // password always carries baseline risk, tiered by HIBP exposure / weakness.
+//
+// This is an INTENTIONAL divergence from the Python v1 scorer (which had no
+// floor, so a long/complex but cracked password could score ~0). The fact that a
+// password was cracked is itself a risk signal, so we floor it at >=2.0. Every
+// other scoring formula/constant is a faithful port of v1.
 func floorBase(base float64, a Analysis, hibpCount int) float64 {
 	switch {
 	case hibpCount >= 1000000:
