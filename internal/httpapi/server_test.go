@@ -1307,3 +1307,85 @@ func TestHandleVersionDefaultsWhenUnstamped(t *testing.T) {
 		t.Fatalf("expected dev default, got %s", rec.Body.String())
 	}
 }
+
+func TestDeleteDomain(t *testing.T) {
+	srv := newServer("secret")
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	id := createAudit(t, srv, lc, lcsrf, "Delete Domain Test")
+
+	// Seed domain A (3 accounts) and domain B (2 accounts) directly into the store.
+	if err := srv.Store.ReplaceDomain(id, "CORP_A", []model.Account{
+		{Username: "alice", Domain: "CORP_A"},
+		{Username: "bob", Domain: "CORP_A"},
+		{Username: "carol", Domain: "CORP_A"},
+	}); err != nil {
+		t.Fatalf("seed CORP_A: %v", err)
+	}
+	if err := srv.Store.ReplaceDomain(id, "CORP_B", []model.Account{
+		{Username: "dave", Domain: "CORP_B"},
+		{Username: "eve", Domain: "CORP_B"},
+	}); err != nil {
+		t.Fatalf("seed CORP_B: %v", err)
+	}
+
+	// Analyst DELETE /api/domains/CORP_A -> 403.
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	openAudit(t, srv, ac, acsrf, id)
+	req := httptest.NewRequest("DELETE", "/api/domains/CORP_A", nil)
+	req.AddCookie(ac)
+	req.Header.Set("X-CSRF-Token", acsrf)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("analyst DELETE /api/domains/CORP_A: want 403, got %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	// Lead DELETE /api/domains/CORP_A -> 200.
+	req2 := httptest.NewRequest("DELETE", "/api/domains/CORP_A", nil)
+	req2.AddCookie(lc)
+	req2.Header.Set("X-CSRF-Token", lcsrf)
+	rec2 := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("lead DELETE /api/domains/CORP_A: want 200, got %d (%s)", rec2.Code, rec2.Body.String())
+	}
+	var result struct {
+		Removed int `json:"removed"`
+	}
+	if err := json.Unmarshal(rec2.Body.Bytes(), &result); err != nil || result.Removed != 3 {
+		t.Fatalf("delete response: err=%v body=%s (want removed=3)", err, rec2.Body.String())
+	}
+
+	// CORP_A accounts are gone; CORP_B's 2 remain.
+	accts, err := srv.Store.Accounts(id, false)
+	if err != nil {
+		t.Fatalf("Accounts after delete: %v", err)
+	}
+	for _, a := range accts {
+		if a.Domain == "CORP_A" {
+			t.Fatalf("CORP_A account %s still present after delete", a.Username)
+		}
+	}
+	if len(accts) != 2 {
+		t.Fatalf("expected 2 CORP_B accounts remaining, got %d", len(accts))
+	}
+
+	// A domain_delete ingest event for "CORP_A" was recorded.
+	ingests, err := srv.Store.Ingests(id)
+	if err != nil {
+		t.Fatalf("Ingests: %v", err)
+	}
+	found := false
+	for _, ev := range ingests {
+		if ev.Kind == "domain_delete" && ev.Domain == "CORP_A" {
+			found = true
+			if ev.AccountsLoaded != 3 {
+				t.Fatalf("domain_delete ingest event: want accounts_loaded=3, got %d", ev.AccountsLoaded)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("no domain_delete ingest event for CORP_A found in: %+v", ingests)
+	}
+}
