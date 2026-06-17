@@ -352,6 +352,14 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  getForbiddenWords: () => request<{ words: string[] }>("/forbidden-words"),
+  setForbiddenWords: (words: string[], csrf: string) =>
+    request<{ count: number; persisted: string }>("/forbidden-words", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+      body: JSON.stringify({ words }),
+    }),
+
   pwnedStatus: () => request<PwnedStatus>("/pwned/status"),
 
   pwnedBuild: (csrf: string) =>
