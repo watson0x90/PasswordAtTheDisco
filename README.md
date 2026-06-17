@@ -41,6 +41,24 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
+## What's new in 2.7
+
+An **audit-data UX overhaul** so uploaded data is visible immediately and the
+upload page stops doing four jobs at once:
+
+- **Data goes live instantly.** A shared "audit data changed" signal refreshes
+  every view (Overview, Accounts, Domains, Actionable) the moment an upload,
+  apply-cracks, delete, or enrichment finishes — no more blank screens after
+  loading data into the active audit.
+- **Upload is just the two actions** (load dump · apply hashcat cracks); a new
+  **Setup → Audit Data** page owns the audit's state: a per-domain status table
+  (accounts · cracked · enrichment freshness ✓/⚠/✗ · loaded-when), a first-class
+  **Run BloodHound enrichment** card, the ingest history (cracks now read "all
+  domains"), and **per-domain delete** (`DELETE /api/domains/{domain}`).
+- **Enrichment runs once, then on demand.** It auto-runs a single time when an
+  audit first gets data; after that you trigger it from the Audit Data page.
+- Whole-audit delete moves out of the top-bar switcher into **Admin → Manage Audits**.
+
 ## What's new in 2.6
 
 > Note: there is no 2.5.0 tag — that work shipped as part of 2.6.0.
