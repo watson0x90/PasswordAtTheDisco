@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { api, ApiError, type Account, type Report, type ReportAccount, type ReuseGroup } from "../api"
 import { useAccountsData } from "../accountsData"
+import { useAudits } from "../auditsData"
 import { hasDA } from "../util"
 import { hibpSplit, posture, riskDistribution } from "../insights"
 import { ChartCard, Donut, PostureGauge } from "./Charts"
@@ -23,10 +24,20 @@ interface DomainStat {
 export function Domains() {
   const { accounts, error } = useAccountsData()
   const [selected, setSelected] = useState<string | null>(null)
+  const [report, setReport] = useState<Report | null>(null)
+  const [reportErr, setReportErr] = useState("")
+  const { activeId } = useAudits()
 
   useEffect(() => {
     if (selected && accounts && !accounts.some((a) => a.domain === selected)) setSelected(null)
   }, [accounts, selected])
+
+  useEffect(() => {
+    let alive = true
+    setReport(null); setReportErr("")
+    api.report().then((r) => alive && setReport(r)).catch((e) => alive && setReportErr(e instanceof ApiError ? e.message : "report unavailable"))
+    return () => { alive = false }
+  }, [activeId])
 
   if (error && !accounts) return <div className="center-state">{error}</div>
   if (!accounts) {
@@ -39,7 +50,7 @@ export function Domains() {
 
   if (selected) {
     const domainAccts = accounts.filter((a) => a.domain === selected)
-    if (domainAccts.length) return <DomainDetail domain={selected} accounts={domainAccts} onBack={() => setSelected(null)} />
+    if (domainAccts.length) return <DomainDetail domain={selected} accounts={domainAccts} report={report} reportErr={reportErr} onBack={() => setSelected(null)} />
     // else: fall through to the grid (the effect above will clear `selected`)
   }
 
@@ -86,15 +97,7 @@ export function Domains() {
   )
 }
 
-function DomainDetail({ domain, accounts, onBack }: { domain: string; accounts: Account[]; onBack: () => void }) {
-  const [report, setReport] = useState<Report | null>(null)
-  const [reportErr, setReportErr] = useState("")
-  useEffect(() => {
-    let alive = true
-    api.report().then((r) => alive && setReport(r)).catch((e) => alive && setReportErr(e instanceof ApiError ? e.message : "report unavailable"))
-    return () => { alive = false }
-  }, [domain])
-
+function DomainDetail({ domain, accounts, report, reportErr, onBack }: { domain: string; accounts: Account[]; report: Report | null; reportErr: string; onBack: () => void }) {
   const p = posture(accounts)
   const pol = domainPolicy(accounts)
   const wl = domainWordlist(accounts)
