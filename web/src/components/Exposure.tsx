@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { api, ApiError, type Account, type Report, type ReportAccount } from "../api"
 import { useAccountsData } from "../accountsData"
 import { useAudits } from "../auditsData"
@@ -20,7 +20,8 @@ export function Exposure() {
   const [revealError, setRevealError] = useState("")
 
   const [pairFilter, setPairFilter] = useState<[string, string] | null>(null)
-  const [openCluster, setOpenCluster] = useState<number | null>(null)
+  const [openCluster, setOpenCluster] = useState<string | null>(null)
+  const timers = useRef<number[]>([])
 
   const isLead = me?.role === "lead"
 
@@ -35,13 +36,15 @@ export function Exposure() {
     return () => { alive = false }
   }, [activeId, dataVersion])
 
+  useEffect(() => () => { timers.current.forEach(clearTimeout) }, [])
+
   async function reveal(u: string) {
     setRevealing(u)
     setRevealError("")
     try {
       const r = await api.revealSecret(u)
       setRevealed((p) => ({ ...p, [u]: r.password }))
-      window.setTimeout(() => hide(u), 45000)
+      timers.current.push(window.setTimeout(() => hide(u), 45000))
     } catch (e) {
       setRevealError(e instanceof ApiError ? `reveal failed: ${e.message}` : "reveal failed")
     } finally {
@@ -137,35 +140,38 @@ export function Exposure() {
                 </button>
               </div>
             )}
-            {shown.map((c, idx) => (
-              <div key={idx} className="bridge-cluster-row">
-                <span className="muted">{c.domains.join(" ↔ ")}</span>
-                {" · "}
-                {c.size} accounts{" · "}
-                {c.cracked ? "cracked" : "uncracked"}
-                {c.hasDA && <span className="badge crit" style={{ marginLeft: 6 }}>DA</span>}
-                {c.hibpMax > 0 && (
-                  <span className="badge" style={{ marginLeft: 6 }}>
-                    HIBP {c.hibpMax.toLocaleString()}
-                  </span>
-                )}
-                {" "}
-                <button
-                  className="link-btn"
-                  onClick={() => setOpenCluster(openCluster === idx ? null : idx)}
-                >
-                  members ({c.members.length})
-                </button>
-                {openCluster === idx &&
-                  c.members.map((m, mi) => (
-                    <div key={`${m.domain}/${m.username}/${mi}`} className="member-row">
-                      <span className="muted">
-                        {m.username} · {m.domain} · {m.risk_level}
-                      </span>
-                    </div>
-                  ))}
-              </div>
-            ))}
+            {shown.map((c, idx) => {
+              const cid = c.domains.join("/") + "#" + idx
+              return (
+                <div key={cid} className="bridge-cluster-row">
+                  <span className="muted">{c.domains.join(" ↔ ")}</span>
+                  {" · "}
+                  {c.size} accounts{" · "}
+                  {c.cracked ? "cracked" : "uncracked"}
+                  {c.hasDA && <span className="badge crit" style={{ marginLeft: 6 }}>DA</span>}
+                  {c.hibpMax > 0 && (
+                    <span className="badge" style={{ marginLeft: 6 }}>
+                      HIBP {c.hibpMax.toLocaleString()}
+                    </span>
+                  )}
+                  {" "}
+                  <button
+                    className="link-btn"
+                    onClick={() => setOpenCluster(openCluster === cid ? null : cid)}
+                  >
+                    members ({c.members.length})
+                  </button>
+                  {openCluster === cid &&
+                    c.members.map((m, mi) => (
+                      <div key={`${m.domain}/${m.username}/${mi}`} className="member-row">
+                        <span className="muted">
+                          {m.username} · {m.domain} · {m.risk_level}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
