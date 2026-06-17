@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -47,6 +46,7 @@ type Config struct {
 	ControllablesLimit int    `json:"controllables_limit"`
 	ConnectTimeout     int    `json:"connect_timeout"`
 	ReadTimeout        int    `json:"read_timeout"`
+	EnrichConcurrency  int    `json:"enrich_concurrency"` // max concurrent BHE requests (default 8)
 }
 
 // LoadConfig reads a bloodhound.json config file.
@@ -80,9 +80,12 @@ type Client struct {
 	searchLimit        int
 	controllablesLimit int
 
-	mu          sync.Mutex
-	lastRequest time.Time
-	minInterval time.Duration
+	sem chan struct{} // counting semaphore: send to acquire a slot, receive to release; cap = max concurrent BHE requests
+
+	domMu       sync.Mutex
+	domCache    []Domain
+	domCachedAt time.Time
+	domTTL      time.Duration
 }
 
 // New builds a Client from a Config.
@@ -103,6 +106,13 @@ func New(cfg Config) *Client {
 	if controllablesLimit == 0 {
 		controllablesLimit = 10
 	}
+	concurrency := cfg.EnrichConcurrency
+	if concurrency <= 0 {
+		concurrency = 8
+	}
+	if concurrency > 32 {
+		concurrency = 32
+	}
 	return &Client{
 		scheme:             scheme,
 		host:               cfg.Host,
@@ -111,7 +121,8 @@ func New(cfg Config) *Client {
 		http:               &http.Client{Timeout: time.Duration(readTimeout) * time.Second},
 		searchLimit:        searchLimit,
 		controllablesLimit: controllablesLimit,
-		minInterval:        100 * time.Millisecond,
+		sem:                make(chan struct{}, concurrency),
+		domTTL:             60 * time.Second,
 	}
 }
 
@@ -132,20 +143,14 @@ func (c *Client) formatURL(uri string) string {
 	return fmt.Sprintf("%s://%s:%d/%s", c.scheme, c.host, c.port, strings.TrimPrefix(uri, "/"))
 }
 
-// throttle enforces a minimum interval between requests (with jitter).
-func (c *Client) throttle() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.minInterval > 0 {
-		if elapsed := time.Since(c.lastRequest); elapsed < c.minInterval {
-			time.Sleep(c.minInterval - elapsed + time.Duration(rand.Int63n(int64(50*time.Millisecond))))
-		}
-	}
-	c.lastRequest = time.Now()
-}
+// acquire/release bracket a single HTTP round-trip; the slot is held only until
+// doRequest returns (callers drain the response body after the semaphore is freed).
+func (c *Client) acquire() { c.sem <- struct{}{} }
+func (c *Client) release() { <-c.sem }
 
 func (c *Client) doRequest(method, uri string, body []byte) (*http.Response, error) {
-	c.throttle()
+	c.acquire()
+	defer c.release()
 	requestDate := time.Now().Format("2006-01-02T15:04:05.000000-07:00")
 	var rdr io.Reader
 	if body != nil {
@@ -230,8 +235,19 @@ type Domain struct {
 	Type      string `json:"type"`
 }
 
-// GetDomains returns all available domains.
+// GetDomains returns all available domains. Results are cached for domTTL to
+// avoid redundant BHE round-trips when called per-account in GetUserData.
 func (c *Client) GetDomains() ([]Domain, error) {
+	c.domMu.Lock()
+	// Lock is released across the network call below; concurrent cold callers may
+	// both fetch once — benign, second write wins.
+	if !c.domCachedAt.IsZero() && time.Since(c.domCachedAt) < c.domTTL {
+		ds := c.domCache
+		c.domMu.Unlock()
+		return ds, nil
+	}
+	c.domMu.Unlock()
+
 	env, status, err := c.get("/api/v2/available-domains")
 	if err != nil {
 		return nil, err
@@ -243,6 +259,10 @@ func (c *Client) GetDomains() ([]Domain, error) {
 	if err := json.Unmarshal(env.Data, &ds); err != nil {
 		return nil, err
 	}
+	c.domMu.Lock()
+	c.domCache = ds
+	c.domCachedAt = time.Now()
+	c.domMu.Unlock()
 	return ds, nil
 }
 

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react"
 import { api, ApiError, type BHEStatus, type BHETestResult, type BHEConfigInput } from "../api"
 import { useAuth } from "../auth"
+import { useJobs } from "../jobs"
 
 export function BloodHound() {
   const { me } = useAuth()
   const csrf = me?.csrf_token ?? ""
+  const { enrich: enrichJob, refresh } = useJobs()
   const [status, setStatus] = useState<BHEStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [scheme, setScheme] = useState("http")
@@ -74,6 +76,19 @@ export function BloodHound() {
       setError(e instanceof ApiError ? e.message : "save failed")
     } finally {
       setSaving(false)
+    }
+  }
+
+  const [enrichErr, setEnrichErr] = useState("")
+
+  async function runEnrich() {
+    if (!me) return
+    setEnrichErr("")
+    try {
+      await api.enrich(csrf)
+      refresh()
+    } catch (e) {
+      setEnrichErr(e instanceof ApiError ? e.message : "could not start enrichment")
     }
   }
 
@@ -164,6 +179,25 @@ export function BloodHound() {
           ) : (
             <div className="error">Connection failed: {test.error}</div>
           ))}
+
+        <div className="field">
+          <button type="button" className="btn" onClick={runEnrich}
+                  disabled={enrichJob?.phase === "running" || !status?.active}>
+            {enrichJob?.phase === "running" ? "Enriching…" : "Run BloodHound enrichment on this audit"}
+          </button>
+          {enrichErr && <div className="error">{enrichErr}</div>}
+          {enrichJob && enrichJob.phase !== "idle" && (
+            <div className="hint">
+              {enrichJob.phase === "running"
+                ? `Enriching… ${enrichJob.processed}/${enrichJob.total}`
+                : enrichJob.phase === "done"
+                  ? `Done — enriched ${enrichJob.enriched}/${enrichJob.total}.`
+                  : enrichJob.phase === "failed"
+                    ? `Failed: ${enrichJob.error ?? "unknown"}`
+                    : enrichJob.phase}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

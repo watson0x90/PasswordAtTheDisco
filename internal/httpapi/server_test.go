@@ -17,6 +17,7 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/auth"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/bloodhound"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/engine"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/enrich"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/store"
@@ -891,5 +892,394 @@ func TestBHEConfig(t *testing.T) {
 	acook, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
 	if rec := authedReq("GET", "/api/bhe/status", "", acook, acsrf); rec.Code != http.StatusForbidden {
 		t.Fatalf("analyst status = %d, want 403", rec.Code)
+	}
+}
+
+func TestIngestsEndpoint(t *testing.T) {
+	srv := newServer("secret")
+
+	// Create an audit via the lead session, then seed an ingest event directly into
+	// the store (mirrors how TestReportTermsLeadGatedAndAudited seeds data).
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	id := createAudit(t, srv, lc, lcsrf, "Ingest History Test")
+	if err := srv.Store.RecordIngest(id, model.IngestEvent{
+		Filename:       "x.pwdump",
+		Kind:           "dump",
+		Domain:         "CORP",
+		AccountsLoaded: 3,
+		By:             "watson",
+	}); err != nil {
+		t.Fatalf("seed RecordIngest: %v", err)
+	}
+
+	// 1. Lead GET /api/ingests with the audit open -> 200 containing the filename.
+	rec := do(srv, "GET", "/api/ingests", lc)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("lead /api/ingests: want 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "x.pwdump") {
+		t.Fatalf("/api/ingests body should contain x.pwdump, got: %s", body)
+	}
+
+	// 2. Non-lead (analyst) GET /api/ingests -> 403.
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	openAudit(t, srv, ac, acsrf, id)
+	if rec := do(srv, "GET", "/api/ingests", ac); rec.Code != http.StatusForbidden {
+		t.Fatalf("analyst /api/ingests: want 403, got %d", rec.Code)
+	}
+
+	// 3. Lead response body must not contain password or nt_hash fields.
+	if strings.Contains(body, "password") || strings.Contains(body, "nt_hash") {
+		t.Fatalf("/api/ingests LEAKED secret fields: %s", body)
+	}
+}
+
+// uploadReq builds a multipart POST to /api/upload. domainFirst controls whether
+// the domain field is written before or after the file part (the streaming handler
+// requires domain-first).
+func uploadReq(t *testing.T, cookie *http.Cookie, csrf string, domainFirst bool) *http.Request {
+	t.Helper()
+	const line = "WALTER@CORP:1119:aad3b435b51404eeaad3b435b51404ee:0011CA32824670FF94EF25961895BE37:::\n"
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	if domainFirst {
+		_ = mw.WriteField("domain", "CORP")
+	}
+	fw, _ := mw.CreateFormFile("uncracked", "ntds.pwdump")
+	_, _ = io.WriteString(fw, line)
+	if !domainFirst {
+		_ = mw.WriteField("domain", "CORP")
+	}
+	_ = mw.Close()
+	req := httptest.NewRequest("POST", "/api/upload", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
+	if csrf != "" {
+		req.Header.Set("X-CSRF-Token", csrf)
+	}
+	return req
+}
+
+// cracksReq builds a multipart POST to /api/upload/cracks with a single
+// "crackfile" part named filename containing body.
+func cracksReq(t *testing.T, cookie *http.Cookie, csrf, filename, body string) *http.Request {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, _ := mw.CreateFormFile("crackfile", filename)
+	_, _ = io.WriteString(fw, body)
+	_ = mw.Close()
+	req := httptest.NewRequest("POST", "/api/upload/cracks", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
+	if csrf != "" {
+		req.Header.Set("X-CSRF-Token", csrf)
+	}
+	return req
+}
+
+func TestApplyCracksRecordsIngest(t *testing.T) {
+	const ntHash = "0011CA32824670FF94EF25961895BE37"
+	const crackLine = "WALTER@CORP:1119:aad3b435b51404eeaad3b435b51404ee:" + ntHash + ":::Hannah2021!\n"
+
+	srv := newServer("secret")
+	srv.Engine = &engine.Engine{Policies: policy.DefaultSet()}
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	id := createAudit(t, srv, lc, lcsrf, "Crack Test") // auto-opens for the lead
+
+	// Seed the audit with an uncracked account that carries the NT hash we'll crack.
+	if err := srv.Store.Replace(id, model.Dataset{
+		Name: "Crack Test",
+		Accounts: []model.Account{
+			{Username: "WALTER", Domain: "CORP", NTHash: ntHash},
+		},
+	}); err != nil {
+		t.Fatalf("seed Replace: %v", err)
+	}
+
+	// POST the crackfile.
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, cracksReq(t, lc, lcsrf, "crack.potfile", crackLine))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("apply cracks: want 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	var result struct {
+		NewlyCracked int `json:"newly_cracked"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil || result.NewlyCracked < 1 {
+		t.Fatalf("apply cracks body: %v / %s", err, rec.Body.String())
+	}
+
+	// Verify a "cracks" ingest event was recorded with the correct filename.
+	ingestsRec := do(srv, "GET", "/api/ingests", lc)
+	if ingestsRec.Code != http.StatusOK {
+		t.Fatalf("GET /api/ingests: want 200, got %d (%s)", ingestsRec.Code, ingestsRec.Body.String())
+	}
+	ingestsBody := ingestsRec.Body.String()
+	if !strings.Contains(ingestsBody, `"kind":"cracks"`) {
+		t.Fatalf("/api/ingests should contain kind=cracks, got: %s", ingestsBody)
+	}
+	if !strings.Contains(ingestsBody, "crack.potfile") {
+		t.Fatalf("/api/ingests should contain filename crack.potfile, got: %s", ingestsBody)
+	}
+}
+
+func TestUploadStreamsAndRecordsIngest(t *testing.T) {
+	// Case 1: domain field BEFORE the file part -> 200 + ingest event recorded.
+	srv := newServer("secret")
+	srv.Engine = &engine.Engine{Policies: policy.DefaultSet()}
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	createAudit(t, srv, lc, lcsrf, "Stream Test") // auto-opens for the lead
+
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, uploadReq(t, lc, lcsrf, true))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("domain-first upload: want 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	var result struct {
+		Accounts int `json:"accounts"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil || result.Accounts < 1 {
+		t.Fatalf("domain-first upload body: %v / %s", err, rec.Body.String())
+	}
+
+	// Verify an ingest event was recorded with kind=="dump" and the correct filename.
+	ingestsRec := do(srv, "GET", "/api/ingests", lc)
+	if ingestsRec.Code != http.StatusOK {
+		t.Fatalf("GET /api/ingests: want 200, got %d (%s)", ingestsRec.Code, ingestsRec.Body.String())
+	}
+	ingestsBody := ingestsRec.Body.String()
+	if !strings.Contains(ingestsBody, `"kind":"dump"`) {
+		t.Fatalf("/api/ingests should contain kind=dump, got: %s", ingestsBody)
+	}
+	if !strings.Contains(ingestsBody, "ntds.pwdump") {
+		t.Fatalf("/api/ingests should contain filename ntds.pwdump, got: %s", ingestsBody)
+	}
+
+	// Case 2: file part BEFORE the domain field -> 400 (streaming contract violation).
+	srv2 := newServer("secret")
+	srv2.Engine = &engine.Engine{Policies: policy.DefaultSet()}
+	lc2, lcsrf2 := loginCSRF(t, srv2, "lead", "leadpw")
+	createAudit(t, srv2, lc2, lcsrf2, "Stream Test 2")
+
+	rec2 := httptest.NewRecorder()
+	srv2.Routes().ServeHTTP(rec2, uploadReq(t, lc2, lcsrf2, false))
+	if rec2.Code != http.StatusBadRequest {
+		t.Fatalf("file-before-domain upload: want 400, got %d (%s)", rec2.Code, rec2.Body.String())
+	}
+	if !strings.Contains(rec2.Body.String(), "domain field must be sent before") {
+		t.Fatalf("expected domain-ordering error, got: %s", rec2.Body.String())
+	}
+}
+
+// fakeTestEnricher is a trivial engine.Enricher for httpapi tests.
+type fakeTestEnricher struct{}
+
+func (fakeTestEnricher) Enrich(username string) engine.Enrichment {
+	return engine.Enrichment{DADomains: []string{"CORP"}}
+}
+
+func TestEnrichEndpoints(t *testing.T) {
+	// Build a server with an engine that has an enricher and an enrich.Manager.
+	eng := &engine.Engine{Policies: policy.DefaultSet()}
+	eng.SwapEnricher(fakeTestEnricher{})
+	st := store.New()
+	srv := &Server{
+		Store:        st,
+		IngestToken:  "secret",
+		Engine:       eng,
+		Enrich:       enrich.NewManager(eng, st),
+		Users:        newServer("secret").Users,
+		Sessions:     auth.NewSessionStore(time.Hour, time.Hour),
+		Audit:        audit.New(io.Discard),
+		LoginLimiter: auth.NewLimiter(50, time.Minute),
+	}
+
+	// Seed an audit with at least one account so the job has work.
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	id := createAudit(t, srv, lc, lcsrf, "Enrich Test")
+	if err := srv.Store.Replace(id, model.Dataset{
+		Name: "Enrich Test",
+		Accounts: []model.Account{
+			{Username: "alice", Domain: "CORP", NTHash: "AAAA", Cracked: true, Password: "Welcome1"},
+		},
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	openAudit(t, srv, ac, acsrf, id)
+
+	// (a) POST /api/enrich as analyst -> 403.
+	if r := postJSON(srv, "/api/enrich", ac, acsrf, ""); r.Code != http.StatusForbidden {
+		t.Fatalf("analyst POST /api/enrich: want 403, got %d (%s)", r.Code, r.Body.String())
+	}
+
+	// (b) POST /api/enrich as lead -> 200, response contains "phase".
+	r := postJSON(srv, "/api/enrich", lc, lcsrf, "")
+	if r.Code != http.StatusOK {
+		t.Fatalf("lead POST /api/enrich: want 200, got %d (%s)", r.Code, r.Body.String())
+	}
+	if !strings.Contains(r.Body.String(), `"phase"`) {
+		t.Fatalf("POST /api/enrich response should contain phase, got: %s", r.Body.String())
+	}
+
+	// Wait for the async job to finish before checking GET.
+	srv.Enrich.Wait()
+
+	// (c) GET /api/enrich/job -> 200 with "phase".
+	gr := do(srv, "GET", "/api/enrich/job", lc)
+	if gr.Code != http.StatusOK {
+		t.Fatalf("GET /api/enrich/job: want 200, got %d (%s)", gr.Code, gr.Body.String())
+	}
+	if !strings.Contains(gr.Body.String(), `"phase"`) {
+		t.Fatalf("GET /api/enrich/job response should contain phase, got: %s", gr.Body.String())
+	}
+}
+
+func TestEnrichJobAnalystForbidden(t *testing.T) {
+	srv := newServer("secret")
+	srv.Engine = &engine.Engine{Policies: policy.DefaultSet()}
+	srv.Engine.SwapEnricher(fakeTestEnricher{})
+	srv.Enrich = enrich.NewManager(srv.Engine, srv.Store)
+
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	id := createAudit(t, srv, lc, lcsrf, "Enrich Test 2")
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	openAudit(t, srv, ac, acsrf, id)
+
+	if r := do(srv, "GET", "/api/enrich/job", ac); r.Code != http.StatusForbidden {
+		t.Fatalf("analyst GET /api/enrich/job: want 403, got %d", r.Code)
+	}
+	if r := postJSON(srv, "/api/enrich/cancel", ac, acsrf, ""); r.Code != http.StatusForbidden {
+		t.Fatalf("analyst POST /api/enrich/cancel: want 403, got %d", r.Code)
+	}
+}
+
+// gatedEnricher blocks each Enrich call until the gate channel is closed,
+// allowing tests to hold a job in-flight before cancelling it.
+type gatedEnricher struct {
+	gate  chan struct{}
+	inner engine.Enricher
+}
+
+func (g gatedEnricher) Enrich(username string) engine.Enrichment {
+	<-g.gate
+	return g.inner.Enrich(username)
+}
+
+func newEnrichServer(t *testing.T) (*Server, *http.Cookie, string, string) {
+	t.Helper()
+	eng := &engine.Engine{Policies: policy.DefaultSet()}
+	eng.SwapEnricher(fakeTestEnricher{})
+	st := store.New()
+	srv := &Server{
+		Store:        st,
+		IngestToken:  "secret",
+		Engine:       eng,
+		Enrich:       enrich.NewManager(eng, st),
+		Users:        newServer("secret").Users,
+		Sessions:     auth.NewSessionStore(time.Hour, time.Hour),
+		Audit:        audit.New(io.Discard),
+		LoginLimiter: auth.NewLimiter(50, time.Minute),
+	}
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	id := createAudit(t, srv, lc, lcsrf, "Cancel Test")
+	if err := srv.Store.Replace(id, model.Dataset{
+		Name: "Cancel Test",
+		Accounts: []model.Account{
+			{Username: "alice", Domain: "CORP", NTHash: "AAAA", Cracked: true, Password: "Welcome1"},
+		},
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	return srv, lc, lcsrf, id
+}
+
+func TestEnrichCancelNoJob(t *testing.T) {
+	// Cancel when no job is running -> 409.
+	srv, lc, lcsrf, _ := newEnrichServer(t)
+	r := postJSON(srv, "/api/enrich/cancel", lc, lcsrf, "")
+	if r.Code != http.StatusConflict {
+		t.Fatalf("cancel with no job: want 409, got %d (%s)", r.Code, r.Body.String())
+	}
+	if !strings.Contains(r.Body.String(), `"phase"`) && !strings.Contains(r.Body.String(), "error") {
+		t.Fatalf("cancel 409 response should contain error, got: %s", r.Body.String())
+	}
+}
+
+func TestEnrichCancelRunningJob(t *testing.T) {
+	// Start a gated enricher so the job is definitely still running when we cancel.
+	gate := make(chan struct{})
+	eng := &engine.Engine{Policies: policy.DefaultSet()}
+	eng.SwapEnricher(gatedEnricher{gate: gate, inner: fakeTestEnricher{}})
+	st := store.New()
+	srv := &Server{
+		Store:        st,
+		IngestToken:  "secret",
+		Engine:       eng,
+		Enrich:       enrich.NewManager(eng, st),
+		Users:        newServer("secret").Users,
+		Sessions:     auth.NewSessionStore(time.Hour, time.Hour),
+		Audit:        audit.New(io.Discard),
+		LoginLimiter: auth.NewLimiter(50, time.Minute),
+	}
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	id := createAudit(t, srv, lc, lcsrf, "Cancel Running Test")
+	if err := srv.Store.Replace(id, model.Dataset{
+		Name: "Cancel Running Test",
+		Accounts: []model.Account{
+			{Username: "alice", Domain: "CORP", NTHash: "AAAA", Cracked: true, Password: "Welcome1"},
+		},
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	// Start the job (gate blocks the enricher so it stays in PhaseRunning).
+	startR := postJSON(srv, "/api/enrich", lc, lcsrf, "")
+	if startR.Code != http.StatusOK {
+		t.Fatalf("POST /api/enrich: want 200, got %d (%s)", startR.Code, startR.Body.String())
+	}
+
+	// Cancel while the job is still gated — must get 200 (deterministic).
+	cancelR := postJSON(srv, "/api/enrich/cancel", lc, lcsrf, "")
+	if cancelR.Code != http.StatusOK {
+		t.Fatalf("cancel running job: want 200, got %d (%s)", cancelR.Code, cancelR.Body.String())
+	}
+	if !strings.Contains(cancelR.Body.String(), `"phase"`) {
+		t.Fatalf("cancel 200 response should contain phase, got: %s", cancelR.Body.String())
+	}
+
+	// Release the gate and drain the goroutine to avoid a leak into other tests.
+	close(gate)
+	srv.Enrich.Wait()
+}
+
+func TestHoldReleaseActivity(t *testing.T) {
+	srv := newServer("secret")
+	now := time.Now()
+	idle := 30 * time.Minute
+	stale := now.Add(-31 * time.Minute)
+
+	// Before HoldActivity: stale + unlocked + no in-flight -> should auto-lock.
+	if !shouldAutoLock(true, srv.inFlight.Load(), stale, idle, now) {
+		t.Fatal("before hold: should auto-lock with stale activity")
+	}
+
+	// After HoldActivity: inFlight > 0 -> must NOT auto-lock.
+	srv.HoldActivity()
+	if shouldAutoLock(true, srv.inFlight.Load(), stale, idle, now) {
+		t.Fatal("after HoldActivity: must not auto-lock while held")
+	}
+
+	// After ReleaseActivity: inFlight back to 0 -> should auto-lock again.
+	srv.ReleaseActivity()
+	if !shouldAutoLock(true, srv.inFlight.Load(), stale, idle, now) {
+		t.Fatal("after ReleaseActivity: should auto-lock again")
 	}
 }

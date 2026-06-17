@@ -26,6 +26,7 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/auth"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/bloodhound"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/engine"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/enrich"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/pwned"
@@ -47,17 +48,18 @@ type Server struct {
 	Logins        *auth.LoginTracker // per-account lockout + login history (may be nil)
 	Sessions      *auth.SessionStore
 	Audit         *audit.Logger
-	AuditPath     string         // on-disk audit log path, for the lead Activity view (empty = none)
-	LoginLimiter  *auth.Limiter  // per-IP failed-login throttle
-	UnlockLimiter *auth.Limiter  // per-IP failed-unlock throttle (brute-force guard)
-	RekeyLimiter  *auth.Limiter  // per-IP failed-rekey throttle (separate so it can't lock out unlock)
-	Engine        *engine.Engine // optional: enables lead web uploads (POST /api/upload)
-	Policies      *policy.Set    // shared with Engine; exposed/edited via /api/policies
-	PolicyPath    string         // where to persist policy edits (empty = in-memory only)
-	PwnedDir      string         // PwnedPasswordsDownloader source dir (HIBP NTLM tool)
-	HIBPPath      string         // configured HIBP NTLM index path (for the Pwned page status)
-	BHEPath       string         // BloodHound config path (config/bloodhound.json) for the BHE settings page
-	Downloads     *pwned.Manager // background HIBP download/index job runner (may be nil)
+	AuditPath     string          // on-disk audit log path, for the lead Activity view (empty = none)
+	LoginLimiter  *auth.Limiter   // per-IP failed-login throttle
+	UnlockLimiter *auth.Limiter   // per-IP failed-unlock throttle (brute-force guard)
+	RekeyLimiter  *auth.Limiter   // per-IP failed-rekey throttle (separate so it can't lock out unlock)
+	Engine        *engine.Engine  // optional: enables lead web uploads (POST /api/upload)
+	Policies      *policy.Set     // shared with Engine; exposed/edited via /api/policies
+	PolicyPath    string          // where to persist policy edits (empty = in-memory only)
+	PwnedDir      string          // PwnedPasswordsDownloader source dir (HIBP NTLM tool)
+	HIBPPath      string          // configured HIBP NTLM index path (for the Pwned page status)
+	BHEPath       string          // BloodHound config path (config/bloodhound.json) for the BHE settings page
+	Downloads     *pwned.Manager  // background HIBP download/index job runner (may be nil)
+	Enrich        *enrich.Manager // background BloodHound enrichment job (may be nil)
 
 	lastActivity atomic.Int64 // unix-nano of the last unlocked data access (auto-lock)
 	inFlight     atomic.Int64 // in-flight data requests; auto-lock waits for zero
@@ -113,6 +115,10 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/pwned/index", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handlePwnedIndex))))
 	mux.Handle("GET /api/pwned/job", s.requireAuth(http.HandlerFunc(s.handlePwnedJob)))
 	mux.Handle("POST /api/pwned/cancel", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handlePwnedCancel))))
+	// BloodHound enrichment job (lead): start / poll / cancel
+	mux.Handle("POST /api/enrich", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleEnrichStart)))))
+	mux.Handle("GET /api/enrich/job", s.requireAuth(http.HandlerFunc(s.handleEnrichJob)))
+	mux.Handle("POST /api/enrich/cancel", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleEnrichCancel))))
 	// Operator management (lead): live add/update/remove, no restart
 	mux.Handle("GET /api/users", s.requireAuth(http.HandlerFunc(s.handleListUsers)))
 	mux.Handle("POST /api/users", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleCreateUser))))
@@ -137,6 +143,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /api/accounts", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleAccounts))))
 	mux.Handle("GET /api/report", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleReport))))
 	mux.Handle("GET /api/report/terms", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleReportTerms))))
+	mux.Handle("GET /api/ingests", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleIngests))))
 	// Cleartext reveal -- requires lead role, always audit-logged
 	mux.Handle("GET /api/accounts/{username}/secret", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleReveal))))
 	// Web upload of dump files into the active audit (lead)
@@ -635,6 +642,73 @@ func (s *Server) handlePwnedCancel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.Downloads.Status())
 }
 
+// kickEnrich auto-starts BloodHound enrichment for an audit if BHE is configured.
+// Best-effort and non-blocking: an already-running job just returns an error we
+// ignore (manual re-run covers it).
+func (s *Server) kickEnrich(auditID string) {
+	if s.Enrich == nil || s.Engine == nil || !s.Engine.HasEnricher() {
+		return
+	}
+	_ = s.Enrich.Start(auditID)
+}
+
+// handleEnrichStart kicks off a background BloodHound enrichment job (lead).
+func (s *Server) handleEnrichStart(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	if s.Enrich == nil || s.Engine == nil || !s.Engine.HasEnricher() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "BloodHound enrichment is not configured"})
+		return
+	}
+	auditID, ok := s.activeAudit(w, sess)
+	if !ok {
+		return
+	}
+	if err := s.Enrich.Start(auditID); err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "enrich_start", Target: auditID, Source: r.RemoteAddr, Result: "ok"})
+	writeJSON(w, http.StatusOK, s.Enrich.Status())
+}
+
+// handleEnrichJob reports the current enrichment job status (lead); polled by the UI.
+func (s *Server) handleEnrichJob(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	if s.Enrich == nil {
+		writeJSON(w, http.StatusOK, enrich.JobStatus{Phase: enrich.PhaseIdle})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.Enrich.Status())
+}
+
+// handleEnrichCancel stops an in-progress enrichment job (lead).
+func (s *Server) handleEnrichCancel(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	if s.Enrich == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "enrichment not configured"})
+		return
+	}
+	err := s.Enrich.Cancel()
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "enrich_cancel", Source: r.RemoteAddr, Result: okOr(err)})
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.Enrich.Status())
+}
+
 // okOr returns "ok" for a nil error else "failed", for audit results.
 func okOr(err error) string {
 	if err != nil {
@@ -1020,6 +1094,11 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 // touch records activity for the idle auto-lock timer.
 func (s *Server) touch() { s.lastActivity.Store(time.Now().UnixNano()) }
 
+// HoldActivity marks a long background op in-flight so the idle auto-lock can't
+// fire while it runs; release via ReleaseActivity.
+func (s *Server) HoldActivity()    { s.inFlight.Add(1); s.touch() }
+func (s *Server) ReleaseActivity() { s.inFlight.Add(-1); s.touch() }
+
 // StartAutoLock locks the store after d of inactivity (no-op if d <= 0). Returns
 // a stop function. Activity is any unlocked, authenticated data access.
 func (s *Server) StartAutoLock(d time.Duration) func() {
@@ -1262,27 +1341,61 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 		_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Minute))
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, 128<<20) // 128 MiB cap
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, 512<<20) // 512 MiB cap, streamed (no temp spill)
+	mr, err := r.MultipartReader()
+	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid upload: " + err.Error()})
 		return
 	}
-	domain := strings.TrimSpace(r.FormValue("domain"))
+	var domain, dumpName string
+	var cracked, uncracked []secretsdump.ParsedAccount
+	for {
+		part, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid upload: " + err.Error()})
+			return
+		}
+		fn := part.FormName() // capture before any Close() call
+		switch fn {
+		case "domain":
+			b, rerr := io.ReadAll(part)
+			if rerr != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "reading domain: " + rerr.Error()})
+				return
+			}
+			domain = strings.TrimSpace(string(b))
+		case "cracked", "uncracked":
+			if domain == "" {
+				part.Close()
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the domain field must be sent before the file"})
+				return
+			}
+			parse := secretsdump.ParseUncracked
+			if fn == "cracked" {
+				parse = secretsdump.ParseCracked
+			}
+			accts, perr := parse(part, domain)
+			name := part.FileName()
+			part.Close()
+			if perr != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": fn + " file: " + perr.Error()})
+				return
+			}
+			dumpName = name
+			if fn == "cracked" {
+				cracked = accts
+			} else {
+				uncracked = accts
+			}
+		default:
+			part.Close()
+		}
+	}
 	if domain == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "domain is required"})
-		return
-	}
-
-	// Both files are optional, but at least one is required. This lets you upload
-	// just the full pwdump (everything uncracked) first, then apply hashcat results.
-	cracked, err := optionalUpload(r, "cracked", domain, secretsdump.ParseCracked)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-	uncracked, err := optionalUpload(r, "uncracked", domain, secretsdump.ParseUncracked)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	if len(cracked) == 0 && len(uncracked) == 0 {
@@ -1290,12 +1403,21 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accts := s.Engine.ProcessDomain(domain, cracked, uncracked)
+	accts := s.Engine.ProcessDomainNoEnrich(domain, cracked, uncracked)
 	if err := s.Store.ReplaceDomain(auditID, domain, accts); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "selected audit no longer exists"})
 		return
 	}
+	if err := s.Store.RecordIngest(auditID, model.IngestEvent{
+		Filename: dumpName, Kind: "dump", Domain: domain,
+		AccountsLoaded: len(accts), At: time.Now().UTC(), By: sess.Username,
+	}); err != nil {
+		// Best-effort: the upload already succeeded and was audit-logged; a
+		// history-write failure must not fail the request, but leave a trace.
+		log.Printf("record ingest event (dump %s/%s): %v", domain, dumpName, err)
+	}
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "audit_upload", Target: domain, Source: r.RemoteAddr, Result: "ok"})
+	s.kickEnrich(auditID)
 	writeJSON(w, http.StatusOK, map[string]int{"accounts": len(accts), "cracked": len(cracked), "uncracked": len(uncracked)})
 }
 
@@ -1316,25 +1438,42 @@ func (s *Server) handleApplyCracks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// Re-scoring re-runs password analysis + BHE enrichment; extend the deadlines.
+	// Re-scoring re-runs full password analysis on all accounts; extend the deadlines for large datasets.
 	if rc := http.NewResponseController(w); rc != nil {
 		_ = rc.SetReadDeadline(time.Now().Add(10 * time.Minute))
 		_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Minute))
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 128<<20)
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, 512<<20)
+	mr, err := r.MultipartReader()
+	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "could not parse upload"})
 		return
 	}
-	cf, _, err := r.FormFile("crackfile")
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a 'crackfile' (user:hash:password lines) is required"})
-		return
+	var cracks map[string]string
+	var crackName string
+	for {
+		part, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "could not parse upload"})
+			return
+		}
+		if part.FormName() == "crackfile" {
+			crackName = part.FileName()
+			cracks, err = secretsdump.CrackMap(part)
+			part.Close()
+			if err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "could not parse crack file"})
+				return
+			}
+		} else {
+			part.Close()
+		}
 	}
-	defer cf.Close()
-	cracks, err := secretsdump.CrackMap(cf)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "could not parse crack file"})
+	if cracks == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a 'crackfile' (user:hash:password lines) is required"})
 		return
 	}
 	accounts, err := s.Store.Accounts(auditID, true) // need NT hashes + any existing cleartext
@@ -1355,32 +1494,50 @@ func (s *Server) handleApplyCracks(w http.ResponseWriter, r *http.Request) {
 			newly++
 		}
 	}
-	rescored := s.Engine.Rescore(accounts)
+	rescored := s.Engine.RescoreWith(accounts, nil)
 	meta, _ := s.Store.Meta(auditID)
 	if err := s.Store.Replace(auditID, model.Dataset{Name: meta.Name, Accounts: rescored}); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "selected audit no longer exists"})
 		return
 	}
+	if err := s.Store.RecordIngest(auditID, model.IngestEvent{
+		Filename: crackName, Kind: "cracks",
+		HashesMatched: len(matched), NewlyCracked: newly, At: time.Now().UTC(), By: sess.Username,
+	}); err != nil {
+		// Best-effort: the apply already succeeded and was audit-logged.
+		log.Printf("record ingest event (cracks %s): %v", crackName, err)
+	}
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "apply_cracks", Source: r.RemoteAddr, Result: "ok"})
+	s.kickEnrich(auditID)
 	writeJSON(w, http.StatusOK, map[string]int{"crack_entries": len(cracks), "hashes_matched": len(matched), "newly_cracked": newly})
-}
-
-// optionalUpload parses an optional multipart file part; returns nil if absent.
-func optionalUpload(r *http.Request, field, domain string, fn func(io.Reader, string) ([]secretsdump.ParsedAccount, error)) ([]secretsdump.ParsedAccount, error) {
-	f, _, err := r.FormFile(field)
-	if err == http.ErrMissingFile {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("%s file: %v", field, err)
-	}
-	defer f.Close()
-	return fn(f, domain)
 }
 
 // handleListAudits returns all audits' metadata + headline counts.
 func (s *Server) handleListAudits(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.Store.List())
+}
+
+// handleIngests returns the active audit's ingest history (lead only -- it mirrors
+// the lead-only Upload surface). Metadata only; no password or hash.
+func (s *Server) handleIngests(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	id, ok := s.activeAudit(w, sess)
+	if !ok {
+		return
+	}
+	evs, err := s.Store.Ingests(id)
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		return
+	}
+	if evs == nil {
+		evs = []model.IngestEvent{} // emit [] not null
+	}
+	writeJSON(w, http.StatusOK, evs)
 }
 
 // handleDiff compares two audits (a = earlier, b = later), redacted.

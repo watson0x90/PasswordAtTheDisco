@@ -41,6 +41,36 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
+## What's new in 2.6
+
+A trio of upgrades — a faster, clearer **upload** experience, **decoupled
+BloodHound enrichment** (no more multi-minute upload hangs), and a **domain
+drill-down + background-job visibility** layer:
+
+- **Progress feedback** — uploads show a real two-phase indicator: a determinate
+  **Uploading… %** bar (via `XMLHttpRequest`), then **Processing on server…** while the dump
+  is parsed and scored.
+- **Per-audit ingest history** — a "This audit" panel lists every upload (filename, kind,
+  domain, accounts loaded / hashes matched + cracked, time, operator), served from a new
+  `GET /api/ingests`. The history is stored inside the audit's encrypted dataset, so it's
+  securely deleted with the audit. Metadata only — never a password or hash.
+- **Streamed large uploads** — the upload handlers now stream the multipart body
+  (`r.MultipartReader`) instead of `ParseMultipartForm`, so **nothing spills to a cleartext
+  temp file** and memory stays constant; the size cap is raised to **512 MiB**.
+- **Fast uploads + background BloodHound enrichment** — uploads now return in seconds:
+  they parse, HIBP-score, and store immediately, with **no inline BloodHound calls**.
+  DA-pathway enrichment runs as a separate **background job** (concurrent prefetch →
+  atomic re-score; bounded by `enrich_concurrency`, default 8) that **auto-starts** after
+  an upload and can be **re-run** from **Setup → Integrations → BloodHound**. Live progress
+  is polled from `GET /api/enrich/job`. Previously a large dump could block the upload
+  request for tens of minutes while BloodHound was queried per account.
+- **Domain drill-down + job visibility.** Each domain now opens an investigative page —
+  a per-domain accounts table, password-**reuse clusters** (cracked vs. shared-uncracked
+  lateral-movement), **BloodHound DA-pathway accounts**, a **quick-win** remediation list,
+  and policy + wordlist breakdowns (all redacted — no hash, no cleartext). A header **jobs
+  pill** shows live HIBP / BloodHound-enrichment progress from anywhere in the app (with a
+  cancel popover), plus an Overview **Background jobs** card.
+
 ## What's new in 2.4.1
 
 - **Manage Audits** page (lead-only, under **Admin ▾**) — a table of every saved audit with

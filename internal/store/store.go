@@ -467,7 +467,7 @@ func (s *Store) ReplaceDomain(id, domain string, accounts []model.Account) error
 	now := s.now()
 	meta := cur.meta
 	meta.UpdatedAt = now
-	return s.swap(id, &audit{meta: meta, ds: model.Dataset{Name: cur.ds.Name, GeneratedAt: now, Accounts: merged}})
+	return s.swap(id, &audit{meta: meta, ds: model.Dataset{Name: cur.ds.Name, GeneratedAt: now, Accounts: merged, Ingests: cur.ds.Ingests}})
 }
 
 // Replace swaps an audit's entire dataset (CLI ingest).
@@ -483,9 +483,43 @@ func (s *Store) Replace(id string, ds model.Dataset) error {
 	}
 	model.RecomputeSharing(ds.Accounts)
 	model.EscalateSharedWithDA(ds.Accounts)
+	ds.Ingests = cur.ds.Ingests // preserve existing history; callers never set it
+	ds.Name = cur.ds.Name       // preserve the dataset label; re-score callers needn't repeat it
 	meta := cur.meta
 	meta.UpdatedAt = ds.GeneratedAt
 	return s.swap(id, &audit{meta: meta, ds: ds})
+}
+
+// RecordIngest appends an ingest event to the audit's history (copy-on-write) and
+// persists. The accounts are untouched.
+func (s *Store) RecordIngest(id string, ev model.IngestEvent) error {
+	unlock := s.mutate.lock(id)
+	defer unlock()
+	cur, err := s.ensureLoaded(id)
+	if err != nil {
+		return err
+	}
+	if ev.At.IsZero() {
+		ev.At = s.now()
+	}
+	ingests := append(append([]model.IngestEvent(nil), cur.ds.Ingests...), ev)
+	ds := cur.ds
+	ds.Ingests = ingests
+	meta := cur.meta
+	meta.UpdatedAt = s.now()
+	return s.swap(id, &audit{meta: meta, ds: ds})
+}
+
+// Ingests returns the audit's ingest history (oldest first). The result aliases
+// the cached dataset's slice and MUST be treated as read-only -- callers must
+// not append to or mutate it. RecordIngest is copy-on-write and never mutates
+// this backing array, so concurrent reads stay consistent.
+func (s *Store) Ingests(id string) ([]model.IngestEvent, error) {
+	a, err := s.ensureLoaded(id)
+	if err != nil {
+		return nil, err
+	}
+	return a.ds.Ingests, nil
 }
 
 // swap replaces the cached audit + index entry and persists (copy-on-write).

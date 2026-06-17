@@ -208,6 +208,41 @@ function safeParse(text: string): unknown {
   }
 }
 
+// uploadForm POSTs multipart FormData via XMLHttpRequest so upload progress is observable
+// (fetch can't report it). Mirrors request()'s error handling.
+export function uploadForm<T>(
+  path: string,
+  form: FormData,
+  csrf: string,
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open("POST", `/api${path}`)
+    xhr.withCredentials = true
+    xhr.setRequestHeader("X-CSRF-Token", csrf)
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress?.(e.loaded, e.total)
+    }
+    xhr.onload = () => {
+      const body = xhr.responseText ? safeParse(xhr.responseText) : null
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(body as T)
+        return
+      }
+      if (xhr.status === 423) window.dispatchEvent(new CustomEvent("patd:locked"))
+      let msg = `request failed (${xhr.status})`
+      if (body && typeof body === "object" && "error" in body) {
+        const e = (body as { error?: unknown }).error
+        if (typeof e === "string" && e) msg = e
+      }
+      reject(new ApiError(xhr.status, msg, body))
+    }
+    xhr.onerror = () => reject(new ApiError(0, "network error — is the server reachable?"))
+    xhr.send(form)
+  })
+}
+
 export const api = {
   login: (username: string, password: string) =>
     request<Me>("/login", {
@@ -234,20 +269,21 @@ export const api = {
   revealSecret: (username: string) =>
     request<{ username: string; password: string }>(`/accounts/${encodeURIComponent(username)}/secret`),
 
-  audit: (domain: string, cracked: File | null, uncracked: File | null, csrf: string) => {
+  audit: (domain: string, cracked: File | null, uncracked: File | null, csrf: string, onProgress?: (l: number, t: number) => void) => {
     const fd = new FormData()
-    fd.append("domain", domain)
+    fd.append("domain", domain) // must precede files (server streams parts in order)
     if (cracked) fd.append("cracked", cracked)
     if (uncracked) fd.append("uncracked", uncracked)
-    // No Content-Type header: the browser sets the multipart boundary.
-    return request<AuditResult>("/upload", { method: "POST", headers: { "X-CSRF-Token": csrf }, body: fd })
+    return uploadForm<AuditResult>("/upload", fd, csrf, onProgress)
   },
 
-  applyCracks: (crackfile: File, csrf: string) => {
+  applyCracks: (crackfile: File, csrf: string, onProgress?: (l: number, t: number) => void) => {
     const fd = new FormData()
     fd.append("crackfile", crackfile)
-    return request<ApplyCracksResult>("/upload/cracks", { method: "POST", headers: { "X-CSRF-Token": csrf }, body: fd })
+    return uploadForm<ApplyCracksResult>("/upload/cracks", fd, csrf, onProgress)
   },
+
+  ingests: () => request<IngestEvent[]>("/ingests"),
 
   unlock: (passphrase: string, csrf: string) =>
     request<{ unlocked: boolean; initialized: boolean }>("/unlock", {
@@ -374,6 +410,14 @@ export const api = {
       headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
       body: JSON.stringify(cfg),
     }),
+
+  enrich: (csrf: string) =>
+    request<EnrichJob>("/enrich", { method: "POST", headers: { "X-CSRF-Token": csrf } }),
+
+  enrichJob: () => request<EnrichJob>("/enrich/job"),
+
+  enrichCancel: (csrf: string) =>
+    request<EnrichJob>("/enrich/cancel", { method: "POST", headers: { "X-CSRF-Token": csrf } }),
 
   auditLog: (params: AuditQuery) => request<AuditEvent[]>(`/audit-log${auditQuery(params)}`),
 
@@ -510,4 +554,26 @@ export interface ApplyCracksResult {
   crack_entries: number
   hashes_matched: number
   newly_cracked: number
+}
+
+export interface IngestEvent {
+  filename: string
+  kind: "dump" | "cracks"
+  domain?: string
+  accounts_loaded?: number
+  hashes_matched?: number
+  newly_cracked?: number
+  at: string
+  by: string
+}
+
+export interface EnrichJob {
+  phase: "idle" | "running" | "done" | "failed" | "cancelled"
+  audit_id?: string
+  processed: number
+  total: number
+  enriched: number
+  started_at?: string
+  elapsed_sec: number
+  error?: string
 }
