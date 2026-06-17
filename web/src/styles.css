@@ -962,3 +962,4 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
 @keyframes jobspin { to { transform: rotate(360deg); } }
 .jobpop { position: absolute; right: 0; top: 30px; z-index: 40; background: #0c1320; border: 1px solid #242e46; border-radius: 10px; padding: 10px; min-width: 280px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
 .jobpop-row { display: flex; justify-content: space-between; gap: 12px; color: #c7d2fe; font-size: 12px; margin: 4px 0; }
+.jobs-card-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }

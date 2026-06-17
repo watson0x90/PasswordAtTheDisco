@@ -8,6 +8,7 @@ import { hasDA } from "../util"
 import { riskDistribution, hibpSplit, lengthBuckets } from "../insights"
 import { Bars, ChartCard, Donut, PostureGauge } from "./Charts"
 import { Insights } from "./Insights"
+import { useJobs } from "../jobs"
 
 const RATING_COLOR: Record<string, string> = { Strong: "#34d399", Fair: "#fbbf24", Weak: "#fb7185", "No Data": "#8a96b2" }
 const LIKELIHOOD_COLOR: Record<string, string> = {
@@ -107,7 +108,25 @@ export function Dashboard() {
       </div>
 
       <Insights />
+      <BackgroundJobsCard />
     </>
+  )
+}
+
+function BackgroundJobsCard() {
+  const { enrich, hibp } = useJobs()
+  const enrichLabel =
+    !enrich || enrich.phase === "idle" ? "idle"
+    : enrich.phase === "running" ? `running ${enrich.processed}/${enrich.total}`
+    : enrich.phase === "done" ? `done — enriched ${enrich.enriched}/${enrich.total}`
+    : enrich.phase
+  const hibpLabel = !hibp || hibp.phase === "idle" ? "idle" : hibp.phase
+  return (
+    <div className="panel jobs-card">
+      <div className="section-label">Background jobs</div>
+      <div className="jobs-card-row"><span>BloodHound enrichment</span><span className="muted">{enrichLabel}</span></div>
+      <div className="jobs-card-row"><span>HIBP corpus</span><span className="muted">{hibpLabel}</span></div>
+    </div>
   )
 }
 
