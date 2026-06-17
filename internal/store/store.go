@@ -484,6 +484,7 @@ func (s *Store) Replace(id string, ds model.Dataset) error {
 	model.RecomputeSharing(ds.Accounts)
 	model.EscalateSharedWithDA(ds.Accounts)
 	ds.Ingests = cur.ds.Ingests // preserve existing history; callers never set it
+	ds.Name = cur.ds.Name       // preserve the dataset label; re-score callers needn't repeat it
 	meta := cur.meta
 	meta.UpdatedAt = ds.GeneratedAt
 	return s.swap(id, &audit{meta: meta, ds: ds})
