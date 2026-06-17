@@ -24,6 +24,7 @@ import { Unlock } from "./components/Unlock"
 const Dashboard = lazy(() => import("./components/Dashboard").then((m) => ({ default: m.Dashboard })))
 const Domains = lazy(() => import("./components/Domains").then((m) => ({ default: m.Domains })))
 const AuditData = lazy(() => import("./components/AuditData").then((m) => ({ default: m.AuditData })))
+const Exposure = lazy(() => import("./components/Exposure").then((m) => ({ default: m.Exposure })))
 
 function viewFor(view: View) {
   switch (view) {
@@ -51,6 +52,8 @@ function viewFor(view: View) {
       return <ManageAudits />
     case "audit-data":
       return <AuditData />
+    case "exposure":
+      return <Exposure />
     default:
       return <Dashboard />
   }

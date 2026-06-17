@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { api, ApiError, type Summary } from "../api"
+import { api, ApiError, type Report, type Summary } from "../api"
 import { useAuth } from "../auth"
 import { useAudits } from "../auditsData"
 import { useAccountsData } from "../accountsData"
@@ -7,6 +7,7 @@ import { useNav } from "../nav"
 import { hasDA } from "../util"
 import { riskDistribution, hibpSplit, lengthBuckets } from "../insights"
 import { Bars, ChartCard, Donut, PostureGauge } from "./Charts"
+import { ExposureHeadline } from "./ExposureHeadline"
 import { Insights } from "./Insights"
 import { useJobs } from "../jobs"
 
@@ -37,6 +38,13 @@ export function Dashboard() {
     return () => {
       live = false
     }
+  }, [activeId, dataVersion])
+
+  const [report, setReport] = useState<Report | null>(null)
+  useEffect(() => {
+    let alive = true
+    api.report().then((r) => alive && setReport(r)).catch(() => {})
+    return () => { alive = false }
   }, [activeId, dataVersion])
 
   if (auditsLoading) return <div className="center-state"><div className="spinner">loading</div></div>
@@ -70,6 +78,8 @@ export function Dashboard() {
         <Stat label="HIBP Breached" value={breached} accent delay={0.12} />
         <Stat label="DA Pathways" value={da} crit delay={0.18} />
       </div>
+
+      <ExposureHeadline accounts={accounts} report={report} />
 
       <div className="section-label">Security Posture</div>
       <div className="panel posture-panel">

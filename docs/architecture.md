@@ -187,6 +187,10 @@ audit log (no cleartext). Remaining items are optional polish.
       simplified uncracked scoring). HIBP/BHE injected behind interfaces; a
       `BloodhoundEnricher` adapter wraps the real client. (Deferred refinements:
       post-hoc shared-password risk boost, domain-risk factor, cross-domain reuse.)
+      **Scoring parity:** the Go scorer is a faithful port of the Python v1 —
+      every formula/constant matches — with one intentional change: a cracked
+      account's base risk is floored at >=2.0 (`risk.floorBase`); v1 had no floor,
+      letting a strong-but-cracked password score ~0.
 - [x] **Wiring / CLI** (`patd audit`): loads lists + HIBP + (optional) BHE, runs
       the engine over domain dumps, and POSTs the dataset to `/api/ingest`.
       Verified end-to-end: dumps → real HIBP correlation → scored, redacted serving.

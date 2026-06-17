@@ -8,13 +8,14 @@ import { JobPill } from "./JobPill"
 export type View =
   | "overview" | "actionable" | "accounts" | "domains" | "compare" | "reports"
   | "ingest" | "policies" | "integrations" | "operators" | "activity" | "audits"
-  | "audit-data"
+  | "audit-data" | "exposure"
 
 const TABS: { id: View; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "actionable", label: "Actionable" },
   { id: "accounts", label: "Accounts" },
   { id: "domains", label: "Domains" },
+  { id: "exposure", label: "Exposure" },
   { id: "compare", label: "Compare" },
   { id: "reports", label: "Reports" },
 ]

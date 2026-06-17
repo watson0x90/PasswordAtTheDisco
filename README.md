@@ -41,10 +41,20 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
-## What's new in 2.7
+## What's new in 2.8
 
 An **audit-data UX overhaul** so uploaded data is visible immediately and the
-upload page stops doing four jobs at once:
+upload page stops doing four jobs at once — plus a new **Exposure** view for
+CISO / blue-team threat triage:
+
+- **Exposure tab + Overview headline strip.** New threat-scenario views built on
+  the *intersections* analysts reason about (all from existing data, redacted):
+  **cross-domain credential bridges** (a domain×domain heatmap of shared
+  passwords + ranked lateral-movement clusters), **HIBP urgency triage** (Tier 1
+  cracked **&** breached → reset now, vs Tier 2 breached-only), and a
+  **blast-radius worklist** ("fix these first", ranked by DA-path · HIBP · cracked
+  · shared, with the lead-gated reveal). The Overview gains a headline strip:
+  cracked∩DA · cracked∩HIBP · cross-domain-shared.
 
 - **Data goes live instantly.** A shared "audit data changed" signal refreshes
   every view (Overview, Accounts, Domains, Actionable) the moment an upload,
