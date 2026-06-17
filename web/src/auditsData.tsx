@@ -8,6 +8,8 @@ interface AuditsState {
   active: AuditListItem | null
   loading: boolean
   error: string
+  dataVersion: number
+  bumpData: () => void
   refresh: () => Promise<void>
   open: (id: string) => Promise<void>
   create: (name: string, notes?: string) => Promise<AuditMeta>
@@ -26,6 +28,8 @@ export function AuditsProvider({ children }: { children: ReactNode }) {
   const [activeId, setActiveId] = useState<string | null>(me?.active_audit || null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
+  const [dataVersion, setDataVersion] = useState(0)
+  const bumpData = useCallback(() => setDataVersion((v) => v + 1), [])
 
   const refresh = useCallback(async () => {
     try {
@@ -76,7 +80,7 @@ export function AuditsProvider({ children }: { children: ReactNode }) {
   const active = audits.find((a) => a.id === activeId) ?? null
 
   return (
-    <Ctx.Provider value={{ audits, activeId, active, loading, error, refresh, open, create, remove }}>
+    <Ctx.Provider value={{ audits, activeId, active, loading, error, dataVersion, bumpData, refresh, open, create, remove }}>
       {children}
     </Ctx.Provider>
   )

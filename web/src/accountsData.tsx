@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react"
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
 import { api, ApiError, type Account } from "./api"
 import { useAudits } from "./auditsData"
 
@@ -14,11 +14,10 @@ const Ctx = createContext<AccountsState | null>(null)
 // shares it across the Accounts / Actionable / Domains views. It re-fetches when
 // the active audit changes.
 export function AccountsProvider({ children }: { children: ReactNode }) {
-  const { activeId } = useAudits()
+  const { activeId, dataVersion, bumpData } = useAudits()
   const [accounts, setAccounts] = useState<Account[] | null>(null)
   const [error, setError] = useState("")
-  const [nonce, setNonce] = useState(0)
-  const refresh = useCallback(() => setNonce((n) => n + 1), [])
+  const refresh = bumpData
 
   useEffect(() => {
     if (!activeId) {
@@ -39,7 +38,7 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false
     }
-  }, [activeId, nonce])
+  }, [activeId, dataVersion])
 
   return <Ctx.Provider value={{ accounts, error, refresh }}>{children}</Ctx.Provider>
 }

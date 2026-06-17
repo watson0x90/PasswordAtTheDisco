@@ -21,7 +21,7 @@ const LIKELIHOOD_COLOR: Record<string, string> = {
 
 export function Dashboard() {
   const nav = useNav()
-  const { activeId, audits, loading: auditsLoading } = useAudits()
+  const { activeId, audits, loading: auditsLoading, dataVersion } = useAudits()
   const { accounts, error } = useAccountsData()
   // Posture comes from the server (single source of truth shared with the HTML
   // export + Compare), so the gauge can never drift from the exported report.
@@ -37,7 +37,7 @@ export function Dashboard() {
     return () => {
       live = false
     }
-  }, [activeId])
+  }, [activeId, dataVersion])
 
   if (auditsLoading) return <div className="center-state"><div className="spinner">loading</div></div>
   if (!activeId) {
