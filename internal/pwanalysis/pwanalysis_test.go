@@ -2,8 +2,36 @@ package pwanalysis
 
 import (
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
 )
+
+func TestSaveSetRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "words.txt")
+	in := NewSet("Acme", "summer", "summer", " Winter ", "")
+	if err := SaveSet(path, in); err != nil {
+		t.Fatalf("SaveSet: %v", err)
+	}
+	got, err := LoadSet(path)
+	if err != nil {
+		t.Fatalf("LoadSet: %v", err)
+	}
+	want := NewSet("acme", "summer", "winter")
+	if len(got) != len(want) {
+		t.Fatalf("len got=%d want=%d (%v)", len(got), len(want), got)
+	}
+	for w := range want {
+		if _, ok := got[w]; !ok {
+			t.Errorf("missing %q", w)
+		}
+	}
+	b, _ := os.ReadFile(path)
+	if string(b) != "acme\nsummer\nwinter\n" {
+		t.Errorf("file body = %q", string(b))
+	}
+}
 
 func TestCharacterPredicates(t *testing.T) {
 	cases := []struct {

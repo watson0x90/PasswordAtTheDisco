@@ -119,7 +119,7 @@ export function BloodHound() {
           </div>
           <div className="stat">
             <div className="stat-label">Endpoint</div>
-            <div className="stat-value" style={{ fontSize: 20 }}>{status?.host || "—"}</div>
+            <div className="stat-value fs-20">{status?.host || "—"}</div>
             {status?.host && <div className="stat-sub">{status.scheme}://{status.host}:{status.port}</div>}
           </div>
           <div className="stat">

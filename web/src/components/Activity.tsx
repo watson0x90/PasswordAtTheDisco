@@ -91,8 +91,9 @@ export function Activity() {
         {loading ? (
           <div className="center-state"><div className="spinner">loading</div></div>
         ) : events.length === 0 ? (
-          <p className="ingest-note" style={{ marginBottom: 0 }}>No matching events.</p>
+          <p className="ingest-note mb-0">No matching events.</p>
         ) : (
+          <div className="table-wrap">
           <table className="ops-table act-table">
             <thead>
               <tr>
@@ -122,6 +123,7 @@ export function Activity() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

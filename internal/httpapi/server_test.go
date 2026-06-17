@@ -21,6 +21,7 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/enrich"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/pwanalysis"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/store"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/vault"
 )
@@ -159,6 +160,49 @@ func TestIngestRejectsMissingToken(t *testing.T) {
 	newServer("secret").Routes().ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 without token, got %d", rec.Code)
+	}
+}
+
+func TestForbiddenWordsPutGet(t *testing.T) {
+	var buf bytes.Buffer
+	srv := newServerAudit("secret", &buf)
+	srv.Engine = &engine.Engine{Lists: pwanalysis.Lists{ForbiddenWords: pwanalysis.NewSet()}}
+	srv.ForbiddenWordsPath = filepath.Join(t.TempDir(), "forbidden_words.txt")
+
+	body := `{"words":["Acme"," summer ","summer",""]}`
+
+	// analyst cannot edit
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	if r := sendJSON(srv, "PUT", "/api/forbidden-words", ac, acsrf, body); r.Code != http.StatusForbidden {
+		t.Fatalf("analyst PUT should be 403, got %d", r.Code)
+	}
+
+	// lead can edit; engine + disk reflect the normalized set
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	if r := sendJSON(srv, "PUT", "/api/forbidden-words", lc, lcsrf, body); r.Code != http.StatusOK {
+		t.Fatalf("lead PUT = %d %s", r.Code, r.Body.String())
+	}
+	if got := srv.Engine.ForbiddenWords(); len(got) != 2 { // acme, summer
+		t.Fatalf("engine set size = %d (%v)", len(got), got)
+	}
+
+	// GET returns sorted, normalized words (lead-only)
+	g := do(srv, "GET", "/api/forbidden-words", lc)
+	if g.Code != http.StatusOK || !strings.Contains(g.Body.String(), `"acme"`) || !strings.Contains(g.Body.String(), `"summer"`) {
+		t.Fatalf("GET = %d body=%s", g.Code, g.Body.String())
+	}
+	// analyst cannot read
+	if g := do(srv, "GET", "/api/forbidden-words", ac); g.Code != http.StatusForbidden {
+		t.Fatalf("analyst GET should be 403, got %d", g.Code)
+	}
+
+	// Audit log records the update (count only) and never the cleartext words.
+	logs := buf.String()
+	if !strings.Contains(logs, "forbidden_words_update") || !strings.Contains(logs, "2 word(s)") {
+		t.Fatalf("forbidden-words update not audited: %s", logs)
+	}
+	if strings.Contains(logs, "acme") || strings.Contains(logs, "summer") {
+		t.Fatalf("AUDIT LOG LEAKED FORBIDDEN WORDS: %s", logs)
 	}
 }
 
@@ -641,10 +685,10 @@ func TestDiffEndpoint(t *testing.T) {
 func TestAuditsLifecycle(t *testing.T) {
 	srv := newServer("secret")
 
-	// no audit selected -> summary/accounts 409
+	// no audit selected -> summary is an empty 200 (a normal not-yet-started state)
 	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
-	if rec := do(srv, "GET", "/api/summary", ac); rec.Code != http.StatusConflict {
-		t.Fatalf("summary with no audit should be 409, got %d", rec.Code)
+	if rec := do(srv, "GET", "/api/summary", ac); rec.Code != http.StatusOK {
+		t.Fatalf("summary with no audit should be 200, got %d", rec.Code)
 	}
 
 	// analyst cannot create
@@ -666,12 +710,26 @@ func TestAuditsLifecycle(t *testing.T) {
 		t.Fatalf("/me should show active audit %s: %s", a, rec.Body.String())
 	}
 
-	// delete A; the session's active audit is now gone -> summary 409
+	// delete A; the session's active audit is now gone -> summary is an empty 200
 	if rec := sendJSON(srv, "DELETE", "/api/audits/"+a, lc, lcsrf, ""); rec.Code != http.StatusOK {
 		t.Fatalf("delete = %d %s", rec.Code, rec.Body.String())
 	}
-	if rec := do(srv, "GET", "/api/summary", lc); rec.Code != http.StatusConflict {
-		t.Fatalf("summary after deleting active audit should be 409, got %d", rec.Code)
+	if rec := do(srv, "GET", "/api/summary", lc); rec.Code != http.StatusOK {
+		t.Fatalf("summary after deleting active audit should be 200, got %d", rec.Code)
+	}
+}
+
+func TestReadEndpointsEmptyWhenNoAudit(t *testing.T) {
+	srv := newServer("secret")
+	cookie, _ := loginCSRF(t, srv, "lead", "leadpw") // logged in, but no audit opened
+	for _, path := range []string{"/api/accounts", "/api/report", "/api/summary"} {
+		rr := do(srv, "GET", path, cookie)
+		if rr.Code != http.StatusOK {
+			t.Errorf("%s status = %d, want 200 (body=%s)", path, rr.Code, rr.Body.String())
+		}
+		if strings.Contains(rr.Body.String(), "no audit selected") {
+			t.Errorf("%s leaked 409 error body: %s", path, rr.Body.String())
+		}
 	}
 }
 

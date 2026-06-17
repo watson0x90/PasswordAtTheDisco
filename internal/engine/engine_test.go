@@ -219,3 +219,17 @@ func TestScoreCrackedStoresMatchedWords(t *testing.T) {
 		t.Fatalf("counts wrong: %d / %d", a.BannedWordCount, a.KeyboardPatternCount)
 	}
 }
+
+func TestSwapForbiddenWords(t *testing.T) {
+	eng := &Engine{Lists: pwanalysis.Lists{ForbiddenWords: pwanalysis.NewSet("acme")}}
+	if got := eng.ForbiddenWords(); len(got) != 1 {
+		t.Fatalf("initial size = %d", len(got))
+	}
+	eng.SwapForbiddenWords(pwanalysis.NewSet("acme", "summer"))
+	if got := eng.ForbiddenWords(); len(got) != 2 {
+		t.Fatalf("after swap size = %d", len(got))
+	}
+	if _, ok := eng.ForbiddenWords()["summer"]; !ok {
+		t.Error("swapped set missing 'summer'")
+	}
+}

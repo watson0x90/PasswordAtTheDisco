@@ -49,6 +49,27 @@ func LoadSet(path string) (Set, error) {
 	return s, sc.Err()
 }
 
+// SaveSet writes the set to path, one lowercased entry per line, sorted, with a
+// trailing newline. Atomic (temp file + rename) and 0600 so a partial write can
+// never corrupt the live list.
+func SaveSet(path string, s Set) error {
+	words := make([]string, 0, len(s))
+	for w := range s {
+		words = append(words, w)
+	}
+	sort.Strings(words)
+	var b strings.Builder
+	for _, w := range words {
+		b.WriteString(w)
+		b.WriteByte('\n')
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(b.String()), 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
 // Lists bundles the wordlists used during analysis.
 type Lists struct {
 	ForbiddenWords   Set

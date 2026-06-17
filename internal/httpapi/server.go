@@ -29,6 +29,7 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/enrich"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/pwanalysis"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/pwned"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/report"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/secretsdump"
@@ -40,27 +41,28 @@ const sessionCookie = "patd_session"
 
 // Server holds the API's dependencies.
 type Server struct {
-	Store         *store.Store
-	StaticFS      fs.FS              // embedded SPA; if nil, served from StaticDir on disk
-	StaticDir     string             // disk fallback for the SPA (e.g. web/dist)
-	IngestToken   string             // bearer token the analysis engine uses to push data
-	Users         *auth.UserStore    // live operator store (add/disable/remove without restart)
-	Logins        *auth.LoginTracker // per-account lockout + login history (may be nil)
-	Sessions      *auth.SessionStore
-	Audit         *audit.Logger
-	AuditPath     string          // on-disk audit log path, for the lead Activity view (empty = none)
-	LoginLimiter  *auth.Limiter   // per-IP failed-login throttle
-	UnlockLimiter *auth.Limiter   // per-IP failed-unlock throttle (brute-force guard)
-	RekeyLimiter  *auth.Limiter   // per-IP failed-rekey throttle (separate so it can't lock out unlock)
-	Engine        *engine.Engine  // optional: enables lead web uploads (POST /api/upload)
-	Policies      *policy.Set     // shared with Engine; exposed/edited via /api/policies
-	PolicyPath    string          // where to persist policy edits (empty = in-memory only)
-	PwnedDir      string          // PwnedPasswordsDownloader source dir (HIBP NTLM tool)
-	HIBPPath      string          // configured HIBP NTLM index path (for the Pwned page status)
-	BHEPath       string          // BloodHound config path (config/bloodhound.json) for the BHE settings page
-	Downloads     *pwned.Manager  // background HIBP download/index job runner (may be nil)
-	Enrich        *enrich.Manager // background BloodHound enrichment job (may be nil)
-	Build         BuildInfo       // compile-time build identity, surfaced at GET /api/version
+	Store              *store.Store
+	StaticFS           fs.FS              // embedded SPA; if nil, served from StaticDir on disk
+	StaticDir          string             // disk fallback for the SPA (e.g. web/dist)
+	IngestToken        string             // bearer token the analysis engine uses to push data
+	Users              *auth.UserStore    // live operator store (add/disable/remove without restart)
+	Logins             *auth.LoginTracker // per-account lockout + login history (may be nil)
+	Sessions           *auth.SessionStore
+	Audit              *audit.Logger
+	AuditPath          string          // on-disk audit log path, for the lead Activity view (empty = none)
+	LoginLimiter       *auth.Limiter   // per-IP failed-login throttle
+	UnlockLimiter      *auth.Limiter   // per-IP failed-unlock throttle (brute-force guard)
+	RekeyLimiter       *auth.Limiter   // per-IP failed-rekey throttle (separate so it can't lock out unlock)
+	Engine             *engine.Engine  // optional: enables lead web uploads (POST /api/upload)
+	Policies           *policy.Set     // shared with Engine; exposed/edited via /api/policies
+	PolicyPath         string          // where to persist policy edits (empty = in-memory only)
+	ForbiddenWordsPath string          // where to persist forbidden-words edits (empty = in-memory only)
+	PwnedDir           string          // PwnedPasswordsDownloader source dir (HIBP NTLM tool)
+	HIBPPath           string          // configured HIBP NTLM index path (for the Pwned page status)
+	BHEPath            string          // BloodHound config path (config/bloodhound.json) for the BHE settings page
+	Downloads          *pwned.Manager  // background HIBP download/index job runner (may be nil)
+	Enrich             *enrich.Manager // background BloodHound enrichment job (may be nil)
+	Build              BuildInfo       // compile-time build identity, surfaced at GET /api/version
 
 	lastActivity atomic.Int64 // unix-nano of the last unlocked data access (auto-lock)
 	inFlight     atomic.Int64 // in-flight data requests; auto-lock waits for zero
@@ -165,6 +167,9 @@ func (s *Server) Routes() http.Handler {
 	// Per-domain password policies: any operator may read; lead may edit
 	mux.Handle("GET /api/policies", s.requireAuth(http.HandlerFunc(s.handleGetPolicies)))
 	mux.Handle("PUT /api/policies", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleSetPolicies))))
+	// Password-analysis forbidden words: lead-only (cleartext fragments)
+	mux.Handle("GET /api/forbidden-words", s.requireAuth(http.HandlerFunc(s.handleGetForbiddenWords)))
+	mux.Handle("PUT /api/forbidden-words", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleSetForbiddenWords))))
 	// SPA
 	mux.Handle("/", spaHandler(s.staticFS()))
 	return securityHeaders(logRequests(recoverPanic(mux)))
@@ -1186,6 +1191,16 @@ func (s *Server) activeAudit(w http.ResponseWriter, sess auth.Session) (string, 
 	return sess.ActiveAudit, true
 }
 
+// activeAuditRead resolves the session's selected audit WITHOUT writing a
+// response. Read endpoints use this so "no audit selected" yields an empty 200
+// (a normal not-yet-started state) instead of a 409 the browser logs as an error.
+func (s *Server) activeAuditRead(sess auth.Session) (string, bool) {
+	if sess.ActiveAudit == "" || !s.Store.Has(sess.ActiveAudit) {
+		return "", false
+	}
+	return sess.ActiveAudit, true
+}
+
 func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256<<20)) // 256 MiB cap
@@ -1216,13 +1231,14 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAccounts(w http.ResponseWriter, r *http.Request) {
 	sess, _ := sessionFrom(r.Context())
-	id, ok := s.activeAudit(w, sess)
+	id, ok := s.activeAuditRead(sess)
 	if !ok {
+		writeJSON(w, http.StatusOK, []model.Account{})
 		return
 	}
 	accts, err := s.Store.Accounts(id, false)
 	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		writeJSON(w, http.StatusOK, []model.Account{})
 		return
 	}
 	writeJSON(w, http.StatusOK, accts)
@@ -1230,13 +1246,14 @@ func (s *Server) handleAccounts(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 	sess, _ := sessionFrom(r.Context())
-	id, ok := s.activeAudit(w, sess)
+	id, ok := s.activeAuditRead(sess)
 	if !ok {
+		writeJSON(w, http.StatusOK, model.Summary{})
 		return
 	}
 	sum, err := s.Store.Summary(id)
 	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		writeJSON(w, http.StatusOK, model.Summary{})
 		return
 	}
 	writeJSON(w, http.StatusOK, sum)
@@ -1248,13 +1265,14 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 // returns only redacted rows -- no cleartext password, no NT hash ever leaves here.
 func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	sess, _ := sessionFrom(r.Context())
-	id, ok := s.activeAudit(w, sess)
+	id, ok := s.activeAuditRead(sess)
 	if !ok {
+		writeJSON(w, http.StatusOK, model.BuildReport(nil))
 		return
 	}
 	accts, err := s.Store.Accounts(id, true) // need NT hashes to group; report is redacted
 	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		writeJSON(w, http.StatusOK, model.BuildReport(nil))
 		return
 	}
 	writeJSON(w, http.StatusOK, model.BuildReport(accts))
@@ -1273,16 +1291,17 @@ func (s *Server) handleReportTerms(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
 		return
 	}
-	id, ok := s.activeAudit(w, sess)
+	id, ok := s.activeAuditRead(sess)
 	if !ok {
+		writeJSON(w, http.StatusOK, model.AggregateTerms(nil, 25))
 		return
 	}
 	accts, err := s.Store.Accounts(id, true) // need unredacted matches
 	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		writeJSON(w, http.StatusOK, model.AggregateTerms(nil, 25))
 		return
 	}
-	meta, _ := s.Store.Meta(id) // id is guaranteed present by activeAudit above
+	meta, _ := s.Store.Meta(id) // id is guaranteed present by activeAuditRead above
 	if !s.auditOrFail(w, audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "reveal_violation_terms", Target: meta.Name, Source: r.RemoteAddr, Result: "ok"}) {
 		return
 	}
@@ -1599,13 +1618,14 @@ func (s *Server) handleIngests(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
 		return
 	}
-	id, ok := s.activeAudit(w, sess)
+	id, ok := s.activeAuditRead(sess)
 	if !ok {
+		writeJSON(w, http.StatusOK, []model.IngestEvent{})
 		return
 	}
 	evs, err := s.Store.Ingests(id)
 	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		writeJSON(w, http.StatusOK, []model.IngestEvent{})
 		return
 	}
 	if evs == nil {
@@ -1639,6 +1659,40 @@ func (s *Server) exportResolve(w http.ResponseWriter, r *http.Request, label str
 	meta, _ := s.Store.Meta(id)
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "export", Target: meta.Name + " — " + label, Source: r.RemoteAddr, Result: "ok"})
 	return meta, id, true
+}
+
+// exportResolveRead is the read-only variant of exportResolve for the
+// always-available export surfaces (full CSV + reuse groups): when no audit is
+// selected it writes an empty 200 document (so the browser doesn't log a 409) and
+// returns ok=false. When an audit IS selected it audit-logs the export exactly
+// like exportResolve. The bool reports whether the caller should write content.
+func (s *Server) exportResolveRead(w http.ResponseWriter, r *http.Request, label, emptyName, suffix, ext string, writeEmpty func(http.ResponseWriter)) (store.AuditMeta, string, bool) {
+	sess, _ := sessionFrom(r.Context())
+	id, ok := s.activeAuditRead(sess)
+	if !ok {
+		download(w, emptyName, suffix, ext)
+		writeEmpty(w)
+		return store.AuditMeta{}, "", false
+	}
+	meta, _ := s.Store.Meta(id)
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "export", Target: meta.Name + " — " + label, Source: r.RemoteAddr, Result: "ok"})
+	return meta, id, true
+}
+
+// exportAccountsRead is the read-only variant of exportAccounts: no audit (or a
+// Store miss) yields an empty 200 CSV instead of a 409.
+func (s *Server) exportAccountsRead(w http.ResponseWriter, r *http.Request, label string) (store.AuditMeta, []model.Account, bool) {
+	meta, id, ok := s.exportResolveRead(w, r, label, "audit", "", "csv", func(w http.ResponseWriter) { _ = report.CSV(w, nil) })
+	if !ok {
+		return store.AuditMeta{}, nil, false
+	}
+	accts, err := s.Store.Accounts(id, false) // redacted -- never cleartext
+	if err != nil {
+		download(w, "audit", "", "csv")
+		_ = report.CSV(w, nil)
+		return store.AuditMeta{}, nil, false
+	}
+	return meta, accts, true
 }
 
 // download sets attachment headers for a report file (ext "csv" or "html").
@@ -1686,9 +1740,9 @@ func byBreachDesc(a []model.Account) []model.Account {
 }
 
 func (s *Server) handleExportCSV(w http.ResponseWriter, r *http.Request) {
-	meta, accts, ok := s.exportAccounts(w, r, "accounts CSV")
+	meta, accts, ok := s.exportAccountsRead(w, r, "accounts CSV")
 	if !ok {
-		return
+		return // empty 200 already written
 	}
 	download(w, meta.Name, "", "csv")
 	_ = report.CSV(w, accts)
@@ -1732,13 +1786,15 @@ func (s *Server) handleExportWeakHTML(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleExportReuse(w http.ResponseWriter, r *http.Request) {
-	meta, id, ok := s.exportResolve(w, r, "reuse-groups CSV")
+	meta, id, ok := s.exportResolveRead(w, r, "reuse-groups CSV", "audit", "reuse-groups", "csv",
+		func(w http.ResponseWriter) { _ = report.ReuseGroupsCSV(w, model.BuildReport(nil)) })
 	if !ok {
-		return
+		return // empty 200 already written
 	}
 	accts, err := s.Store.Accounts(id, true) // need NT hashes to group; output is redacted
 	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		download(w, "audit", "reuse-groups", "csv")
+		_ = report.ReuseGroupsCSV(w, model.BuildReport(nil))
 		return
 	}
 	download(w, meta.Name, "reuse-groups", "csv")
@@ -1775,13 +1831,17 @@ func (s *Server) handleExportHIBPHTML(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleExportReuseHTML(w http.ResponseWriter, r *http.Request) {
-	meta, id, ok := s.exportResolve(w, r, "reuse-groups HTML")
+	meta, id, ok := s.exportResolveRead(w, r, "reuse-groups HTML", "audit", "reuse-groups", "html",
+		func(w http.ResponseWriter) {
+			_ = report.ReuseGroupsHTML(w, "Password-reuse groups", time.Now().UTC(), model.BuildReport(nil))
+		})
 	if !ok {
-		return
+		return // empty 200 already written
 	}
 	accts, err := s.Store.Accounts(id, true) // need NT hashes to group; output is redacted
 	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		download(w, "audit", "reuse-groups", "html")
+		_ = report.ReuseGroupsHTML(w, "Password-reuse groups", time.Now().UTC(), model.BuildReport(nil))
 		return
 	}
 	download(w, meta.Name, "reuse-groups", "html")
@@ -1938,6 +1998,89 @@ func (s *Server) handleSetPolicies(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "policy_update", Target: strconv.Itoa(len(p.Domains)) + " domain(s)", Source: r.RemoteAddr, Result: "ok"})
 	writeJSON(w, http.StatusOK, map[string]any{"domains": len(p.Domains), "persisted": saved})
+}
+
+// forbiddenWordsPayload is the wire shape for GET/PUT /api/forbidden-words.
+type forbiddenWordsPayload struct {
+	Words []string `json:"words"`
+}
+
+// handleGetForbiddenWords returns the current forbidden-words list (sorted).
+// Lead-only: the words are cleartext fragments (same sensitivity as
+// /api/report/terms).
+func (s *Server) handleGetForbiddenWords(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "forbidden_words_read", Source: r.RemoteAddr, Result: "denied"})
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	if s.Engine == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "engine not configured"})
+		return
+	}
+	set := s.Engine.ForbiddenWords()
+	words := make([]string, 0, len(set))
+	for word := range set {
+		words = append(words, word)
+	}
+	sort.Strings(words)
+	writeJSON(w, http.StatusOK, forbiddenWordsPayload{Words: words})
+}
+
+// handleSetForbiddenWords replaces the forbidden-words list (lead only), persists
+// it to disk if a path is configured, and hot-swaps it into the engine so it
+// applies to the next analysis. Audit-logged (count only, never the words).
+func (s *Server) handleSetForbiddenWords(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "forbidden_words_update", Source: r.RemoteAddr, Result: "denied"})
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	if s.Engine == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "engine not configured"})
+		return
+	}
+	defer r.Body.Close()
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	dec.DisallowUnknownFields()
+	var p forbiddenWordsPayload
+	if err := dec.Decode(&p); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request: " + err.Error()})
+		return
+	}
+	if len(p.Words) > 5000 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "too many words (max 5000)"})
+		return
+	}
+	set := pwanalysis.Set{}
+	for _, raw := range p.Words {
+		word := strings.ToLower(strings.TrimSpace(raw))
+		if word == "" {
+			continue
+		}
+		if len([]rune(word)) > 64 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "word too long (max 64 chars)"})
+			return
+		}
+		if strings.ContainsAny(word, "\n\r\x00") {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "word contains a control character"})
+			return
+		}
+		set[word] = struct{}{}
+	}
+	s.Engine.SwapForbiddenWords(set)
+	saved := "memory"
+	if s.ForbiddenWordsPath != "" {
+		if err := pwanalysis.SaveSet(s.ForbiddenWordsPath, set); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "saved in memory but failed to persist: " + err.Error()})
+			return
+		}
+		saved = s.ForbiddenWordsPath
+	}
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "forbidden_words_update", Target: strconv.Itoa(len(set)) + " word(s)", Source: r.RemoteAddr, Result: "ok"})
+	writeJSON(w, http.StatusOK, map[string]any{"count": len(set), "persisted": saved})
 }
 
 func validatePolicy(name string, p policy.Policy) error {

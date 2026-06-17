@@ -103,10 +103,10 @@ export function AuditData() {
   return (
     <>
       <div className="section-label">Domain data</div>
-      <div className="panel" style={{ marginBottom: 24 }}>
+      <div className="panel mb-xl">
         {delErr && <div className="error">{delErr}</div>}
         {rows.length === 0 ? (
-          <div className="muted" style={{ padding: "8px 0" }}>
+          <div className="muted py-sm">
             No data yet — load a dump on the Upload page.
           </div>
         ) : (
@@ -125,7 +125,7 @@ export function AuditData() {
               <tbody>
                 {rows.map((row) => (
                   <tr key={row.domain}>
-                    <td style={{ fontFamily: "var(--mono)", fontWeight: 600 }}>{row.domain}</td>
+                    <td className="font-mono fw-600">{row.domain}</td>
                     <td className="num">{row.accounts.toLocaleString()}</td>
                     <td className="num">{row.cracked.toLocaleString()}</td>
                     <td>
@@ -155,7 +155,7 @@ export function AuditData() {
       </div>
 
       <div className="section-label">BloodHound enrichment</div>
-      <div className="panel" style={{ marginBottom: 24 }}>
+      <div className="panel mb-xl">
         <div className="pwned-actions">
           <div style={{ flex: 1 }}>{enrichStatus()}</div>
           <button
@@ -166,8 +166,8 @@ export function AuditData() {
             Run enrichment
           </button>
         </div>
-        {enrichErr && <div className="error" style={{ marginTop: 12 }}>{enrichErr}</div>}
-        <div className="hint" style={{ marginTop: 10 }}>
+        {enrichErr && <div className="error mt-md">{enrichErr}</div>}
+        <div className="hint mt-sm">
           Enriches all accounts with BloodHound DA-pathway data. Configure the BloodHound connection on the BloodHound settings page.
         </div>
       </div>
@@ -175,7 +175,7 @@ export function AuditData() {
       <div className="section-label">Ingest history</div>
       <div className="panel">
         {ingests.length === 0 ? (
-          <div className="muted" style={{ padding: "8px 0" }}>No ingest events yet.</div>
+          <div className="muted py-sm">No ingest events yet.</div>
         ) : (
           <div className="table-wrap">
             <table className="accounts compact">
@@ -193,7 +193,7 @@ export function AuditData() {
                 {[...ingests].reverse().map((ev, i) => (
                   <tr key={i}>
                     <td className="muted">{fmtWhen(ev.at)}</td>
-                    <td style={{ fontFamily: "var(--mono)", fontSize: 12 }}>{ev.filename || "—"}</td>
+                    <td className="font-mono fs-12">{ev.filename || "—"}</td>
                     <td>{ev.kind}</td>
                     <td className="muted">
                       {ev.kind === "cracks" ? "all domains" : (ev.domain || "—")}
