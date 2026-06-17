@@ -1,16 +1,18 @@
 import { useEffect, useState, useCallback, type FormEvent } from "react"
-import { api, ApiError, type AuditResult, type ApplyCracksResult, type IngestEvent, type EnrichJob } from "../api"
+import { api, ApiError, type AuditResult, type ApplyCracksResult, type IngestEvent } from "../api"
 import { useAuth } from "../auth"
 import { useAudits } from "../auditsData"
 import { useAccountsData } from "../accountsData"
 import { useNav } from "../nav"
 import { fmtWhen, fmtBytes } from "../format"
+import { useJobs } from "../jobs"
 
 export function Ingest() {
   const { me } = useAuth()
   const { activeId, active } = useAudits()
   const { refresh } = useAccountsData()
   const nav = useNav()
+  const { enrich: enrichJob } = useJobs()
 
   // Step 1 — load the dump (secretsdump/pwdump): every account, by NT hash.
   const [domain, setDomain] = useState("")
@@ -28,7 +30,6 @@ export function Ingest() {
   const [applyResult, setApplyResult] = useState<ApplyCracksResult | null>(null)
 
   const [history, setHistory] = useState<IngestEvent[]>([])
-  const [enrichJob, setEnrichJob] = useState<EnrichJob | null>(null)
 
   const loadHistory = useCallback(async () => {
     try { setHistory(await api.ingests()) } catch { /* panel just stays empty */ }
@@ -43,19 +44,10 @@ export function Ingest() {
     setCrackfile(null)
     setApplyResult(null)
     setApplyError("")
-    setEnrichJob(null)
     setPhase("idle"); setPct(0); setApplyPhase("idle"); setApplyPct(0)
   }, [activeId])
 
   useEffect(() => { void loadHistory() }, [activeId, loadHistory])
-
-  useEffect(() => {
-    if (!enrichJob || enrichJob.phase !== "running") return
-    const t = setInterval(async () => {
-      try { setEnrichJob(await api.enrichJob()) } catch { /* keep last */ }
-    }, 1500)
-    return () => clearInterval(t)
-  }, [enrichJob?.phase])
 
   if (me?.role !== "lead") {
     return <div className="center-state">Ingesting data requires the lead role.</div>
@@ -82,7 +74,6 @@ export function Ingest() {
       const r = await api.audit(domain.trim(), null, dump, me.csrf_token, onUp(setPct, setPhase))
       setResult(r)
       void loadHistory()
-      try { setEnrichJob(await api.enrichJob()) } catch { /* none */ }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "upload failed")
     } finally {
@@ -98,7 +89,6 @@ export function Ingest() {
       const r = await api.applyCracks(crackfile, me.csrf_token, onUp(setApplyPct, setApplyPhase))
       setApplyResult(r)
       void loadHistory()
-      try { setEnrichJob(await api.enrichJob()) } catch { /* none */ }
     } catch (err) {
       setApplyError(err instanceof ApiError ? err.message : "apply failed")
     } finally {

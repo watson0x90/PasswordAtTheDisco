@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react"
-import { api, ApiError, type BHEStatus, type BHETestResult, type BHEConfigInput, type EnrichJob } from "../api"
+import { api, ApiError, type BHEStatus, type BHETestResult, type BHEConfigInput } from "../api"
 import { useAuth } from "../auth"
+import { useJobs } from "../jobs"
 
 export function BloodHound() {
   const { me } = useAuth()
   const csrf = me?.csrf_token ?? ""
+  const { enrich: enrichJob, refresh } = useJobs()
   const [status, setStatus] = useState<BHEStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [scheme, setScheme] = useState("http")
@@ -77,25 +79,14 @@ export function BloodHound() {
     }
   }
 
-  const [enrichJob, setEnrichJob] = useState<EnrichJob | null>(null)
   const [enrichErr, setEnrichErr] = useState("")
-
-  useEffect(() => {
-    // pick up an in-progress job on mount
-    api.enrichJob().then(setEnrichJob).catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    if (!enrichJob || enrichJob.phase !== "running") return
-    const t = setInterval(() => { api.enrichJob().then(setEnrichJob).catch(() => {}) }, 1500)
-    return () => clearInterval(t)
-  }, [enrichJob?.phase])
 
   async function runEnrich() {
     if (!me) return
     setEnrichErr("")
     try {
-      setEnrichJob(await api.enrich(csrf))
+      await api.enrich(csrf)
+      refresh()
     } catch (e) {
       setEnrichErr(e instanceof ApiError ? e.message : "could not start enrichment")
     }
