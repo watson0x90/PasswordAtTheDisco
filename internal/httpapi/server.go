@@ -1191,6 +1191,16 @@ func (s *Server) activeAudit(w http.ResponseWriter, sess auth.Session) (string, 
 	return sess.ActiveAudit, true
 }
 
+// activeAuditRead resolves the session's selected audit WITHOUT writing a
+// response. Read endpoints use this so "no audit selected" yields an empty 200
+// (a normal not-yet-started state) instead of a 409 the browser logs as an error.
+func (s *Server) activeAuditRead(sess auth.Session) (string, bool) {
+	if sess.ActiveAudit == "" || !s.Store.Has(sess.ActiveAudit) {
+		return "", false
+	}
+	return sess.ActiveAudit, true
+}
+
 func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256<<20)) // 256 MiB cap
@@ -1221,13 +1231,14 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAccounts(w http.ResponseWriter, r *http.Request) {
 	sess, _ := sessionFrom(r.Context())
-	id, ok := s.activeAudit(w, sess)
+	id, ok := s.activeAuditRead(sess)
 	if !ok {
+		writeJSON(w, http.StatusOK, []model.Account{})
 		return
 	}
 	accts, err := s.Store.Accounts(id, false)
 	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		writeJSON(w, http.StatusOK, []model.Account{})
 		return
 	}
 	writeJSON(w, http.StatusOK, accts)
@@ -1235,13 +1246,14 @@ func (s *Server) handleAccounts(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 	sess, _ := sessionFrom(r.Context())
-	id, ok := s.activeAudit(w, sess)
+	id, ok := s.activeAuditRead(sess)
 	if !ok {
+		writeJSON(w, http.StatusOK, model.Summary{})
 		return
 	}
 	sum, err := s.Store.Summary(id)
 	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		writeJSON(w, http.StatusOK, model.Summary{})
 		return
 	}
 	writeJSON(w, http.StatusOK, sum)
@@ -1253,13 +1265,14 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 // returns only redacted rows -- no cleartext password, no NT hash ever leaves here.
 func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	sess, _ := sessionFrom(r.Context())
-	id, ok := s.activeAudit(w, sess)
+	id, ok := s.activeAuditRead(sess)
 	if !ok {
+		writeJSON(w, http.StatusOK, model.BuildReport(nil))
 		return
 	}
 	accts, err := s.Store.Accounts(id, true) // need NT hashes to group; report is redacted
 	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		writeJSON(w, http.StatusOK, model.BuildReport(nil))
 		return
 	}
 	writeJSON(w, http.StatusOK, model.BuildReport(accts))
@@ -1278,16 +1291,17 @@ func (s *Server) handleReportTerms(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
 		return
 	}
-	id, ok := s.activeAudit(w, sess)
+	id, ok := s.activeAuditRead(sess)
 	if !ok {
+		writeJSON(w, http.StatusOK, model.AggregateTerms(nil, 25))
 		return
 	}
 	accts, err := s.Store.Accounts(id, true) // need unredacted matches
 	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		writeJSON(w, http.StatusOK, model.AggregateTerms(nil, 25))
 		return
 	}
-	meta, _ := s.Store.Meta(id) // id is guaranteed present by activeAudit above
+	meta, _ := s.Store.Meta(id) // id is guaranteed present by activeAuditRead above
 	if !s.auditOrFail(w, audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "reveal_violation_terms", Target: meta.Name, Source: r.RemoteAddr, Result: "ok"}) {
 		return
 	}
@@ -1604,13 +1618,14 @@ func (s *Server) handleIngests(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
 		return
 	}
-	id, ok := s.activeAudit(w, sess)
+	id, ok := s.activeAuditRead(sess)
 	if !ok {
+		writeJSON(w, http.StatusOK, []model.IngestEvent{})
 		return
 	}
 	evs, err := s.Store.Ingests(id)
 	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		writeJSON(w, http.StatusOK, []model.IngestEvent{})
 		return
 	}
 	if evs == nil {
@@ -1644,6 +1659,40 @@ func (s *Server) exportResolve(w http.ResponseWriter, r *http.Request, label str
 	meta, _ := s.Store.Meta(id)
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "export", Target: meta.Name + " — " + label, Source: r.RemoteAddr, Result: "ok"})
 	return meta, id, true
+}
+
+// exportResolveRead is the read-only variant of exportResolve for the
+// always-available export surfaces (full CSV + reuse groups): when no audit is
+// selected it writes an empty 200 document (so the browser doesn't log a 409) and
+// returns ok=false. When an audit IS selected it audit-logs the export exactly
+// like exportResolve. The bool reports whether the caller should write content.
+func (s *Server) exportResolveRead(w http.ResponseWriter, r *http.Request, label, emptyName, suffix, ext string, writeEmpty func(http.ResponseWriter)) (store.AuditMeta, string, bool) {
+	sess, _ := sessionFrom(r.Context())
+	id, ok := s.activeAuditRead(sess)
+	if !ok {
+		download(w, emptyName, suffix, ext)
+		writeEmpty(w)
+		return store.AuditMeta{}, "", false
+	}
+	meta, _ := s.Store.Meta(id)
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "export", Target: meta.Name + " — " + label, Source: r.RemoteAddr, Result: "ok"})
+	return meta, id, true
+}
+
+// exportAccountsRead is the read-only variant of exportAccounts: no audit (or a
+// Store miss) yields an empty 200 CSV instead of a 409.
+func (s *Server) exportAccountsRead(w http.ResponseWriter, r *http.Request, label string) (store.AuditMeta, []model.Account, bool) {
+	meta, id, ok := s.exportResolveRead(w, r, label, "audit", "", "csv", func(w http.ResponseWriter) { _ = report.CSV(w, nil) })
+	if !ok {
+		return store.AuditMeta{}, nil, false
+	}
+	accts, err := s.Store.Accounts(id, false) // redacted -- never cleartext
+	if err != nil {
+		download(w, "audit", "", "csv")
+		_ = report.CSV(w, nil)
+		return store.AuditMeta{}, nil, false
+	}
+	return meta, accts, true
 }
 
 // download sets attachment headers for a report file (ext "csv" or "html").
@@ -1691,9 +1740,9 @@ func byBreachDesc(a []model.Account) []model.Account {
 }
 
 func (s *Server) handleExportCSV(w http.ResponseWriter, r *http.Request) {
-	meta, accts, ok := s.exportAccounts(w, r, "accounts CSV")
+	meta, accts, ok := s.exportAccountsRead(w, r, "accounts CSV")
 	if !ok {
-		return
+		return // empty 200 already written
 	}
 	download(w, meta.Name, "", "csv")
 	_ = report.CSV(w, accts)
@@ -1737,13 +1786,15 @@ func (s *Server) handleExportWeakHTML(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleExportReuse(w http.ResponseWriter, r *http.Request) {
-	meta, id, ok := s.exportResolve(w, r, "reuse-groups CSV")
+	meta, id, ok := s.exportResolveRead(w, r, "reuse-groups CSV", "audit", "reuse-groups", "csv",
+		func(w http.ResponseWriter) { _ = report.ReuseGroupsCSV(w, model.BuildReport(nil)) })
 	if !ok {
-		return
+		return // empty 200 already written
 	}
 	accts, err := s.Store.Accounts(id, true) // need NT hashes to group; output is redacted
 	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		download(w, "audit", "reuse-groups", "csv")
+		_ = report.ReuseGroupsCSV(w, model.BuildReport(nil))
 		return
 	}
 	download(w, meta.Name, "reuse-groups", "csv")
@@ -1780,13 +1831,17 @@ func (s *Server) handleExportHIBPHTML(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleExportReuseHTML(w http.ResponseWriter, r *http.Request) {
-	meta, id, ok := s.exportResolve(w, r, "reuse-groups HTML")
+	meta, id, ok := s.exportResolveRead(w, r, "reuse-groups HTML", "audit", "reuse-groups", "html",
+		func(w http.ResponseWriter) {
+			_ = report.ReuseGroupsHTML(w, "Password-reuse groups", time.Now().UTC(), model.BuildReport(nil))
+		})
 	if !ok {
-		return
+		return // empty 200 already written
 	}
 	accts, err := s.Store.Accounts(id, true) // need NT hashes to group; output is redacted
 	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		download(w, "audit", "reuse-groups", "html")
+		_ = report.ReuseGroupsHTML(w, "Password-reuse groups", time.Now().UTC(), model.BuildReport(nil))
 		return
 	}
 	download(w, meta.Name, "reuse-groups", "html")

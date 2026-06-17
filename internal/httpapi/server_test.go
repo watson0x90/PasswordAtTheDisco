@@ -685,10 +685,10 @@ func TestDiffEndpoint(t *testing.T) {
 func TestAuditsLifecycle(t *testing.T) {
 	srv := newServer("secret")
 
-	// no audit selected -> summary/accounts 409
+	// no audit selected -> summary is an empty 200 (a normal not-yet-started state)
 	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
-	if rec := do(srv, "GET", "/api/summary", ac); rec.Code != http.StatusConflict {
-		t.Fatalf("summary with no audit should be 409, got %d", rec.Code)
+	if rec := do(srv, "GET", "/api/summary", ac); rec.Code != http.StatusOK {
+		t.Fatalf("summary with no audit should be 200, got %d", rec.Code)
 	}
 
 	// analyst cannot create
@@ -710,12 +710,26 @@ func TestAuditsLifecycle(t *testing.T) {
 		t.Fatalf("/me should show active audit %s: %s", a, rec.Body.String())
 	}
 
-	// delete A; the session's active audit is now gone -> summary 409
+	// delete A; the session's active audit is now gone -> summary is an empty 200
 	if rec := sendJSON(srv, "DELETE", "/api/audits/"+a, lc, lcsrf, ""); rec.Code != http.StatusOK {
 		t.Fatalf("delete = %d %s", rec.Code, rec.Body.String())
 	}
-	if rec := do(srv, "GET", "/api/summary", lc); rec.Code != http.StatusConflict {
-		t.Fatalf("summary after deleting active audit should be 409, got %d", rec.Code)
+	if rec := do(srv, "GET", "/api/summary", lc); rec.Code != http.StatusOK {
+		t.Fatalf("summary after deleting active audit should be 200, got %d", rec.Code)
+	}
+}
+
+func TestReadEndpointsEmptyWhenNoAudit(t *testing.T) {
+	srv := newServer("secret")
+	cookie, _ := loginCSRF(t, srv, "lead", "leadpw") // logged in, but no audit opened
+	for _, path := range []string{"/api/accounts", "/api/report", "/api/summary"} {
+		rr := do(srv, "GET", path, cookie)
+		if rr.Code != http.StatusOK {
+			t.Errorf("%s status = %d, want 200 (body=%s)", path, rr.Code, rr.Body.String())
+		}
+		if strings.Contains(rr.Body.String(), "no audit selected") {
+			t.Errorf("%s leaked 409 error body: %s", path, rr.Body.String())
+		}
 	}
 }
 
