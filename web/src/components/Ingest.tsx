@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, type FormEvent } from "react"
-import { api, ApiError, type AuditResult, type ApplyCracksResult, type IngestEvent } from "../api"
+import { api, ApiError, type AuditResult, type ApplyCracksResult, type IngestEvent, type EnrichJob } from "../api"
 import { useAuth } from "../auth"
 import { useAudits } from "../auditsData"
 import { useAccountsData } from "../accountsData"
@@ -28,6 +28,7 @@ export function Ingest() {
   const [applyResult, setApplyResult] = useState<ApplyCracksResult | null>(null)
 
   const [history, setHistory] = useState<IngestEvent[]>([])
+  const [enrichJob, setEnrichJob] = useState<EnrichJob | null>(null)
 
   const loadHistory = useCallback(async () => {
     try { setHistory(await api.ingests()) } catch { /* panel just stays empty */ }
@@ -47,8 +48,19 @@ export function Ingest() {
 
   useEffect(() => { void loadHistory() }, [activeId, loadHistory])
 
+  useEffect(() => {
+    if (!enrichJob || enrichJob.phase !== "running") return
+    const t = setInterval(async () => {
+      try { setEnrichJob(await api.enrichJob()) } catch { /* keep last */ }
+    }, 1500)
+    return () => clearInterval(t)
+  }, [enrichJob?.phase])
+
   if (me?.role !== "lead") {
     return <div className="center-state">Ingesting data requires the lead role.</div>
+  }
+  if (me && me.store_unlocked === false) {
+    return <div className="center-state">The store is locked. Unlock it (top right) before uploading.</div>
   }
   if (!activeId) {
     return <div className="center-state">Select or create an audit (top right) before uploading.</div>
@@ -69,6 +81,7 @@ export function Ingest() {
       const r = await api.audit(domain.trim(), null, dump, me.csrf_token, onUp(setPct, setPhase))
       setResult(r)
       void loadHistory()
+      try { setEnrichJob(await api.enrichJob()) } catch { /* none */ }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "upload failed")
     } finally {
@@ -84,6 +97,7 @@ export function Ingest() {
       const r = await api.applyCracks(crackfile, me.csrf_token, onUp(setApplyPct, setApplyPhase))
       setApplyResult(r)
       void loadHistory()
+      try { setEnrichJob(await api.enrichJob()) } catch { /* none */ }
     } catch (err) {
       setApplyError(err instanceof ApiError ? err.message : "apply failed")
     } finally {
@@ -187,6 +201,18 @@ export function Ingest() {
           {applyPhase === "idle" ? "Apply cracked hashes" : applyPhase === "uploading" ? "Uploading…" : "Processing…"}
         </button>
       </form>
+
+      {enrichJob && enrichJob.phase !== "idle" && (
+        <div className="hint">
+          {enrichJob.phase === "running"
+            ? `Enriching with BloodHound… ${enrichJob.processed}/${enrichJob.total}`
+            : enrichJob.phase === "done"
+              ? `BloodHound enrichment complete — enriched ${enrichJob.enriched}/${enrichJob.total}.`
+              : enrichJob.phase === "failed"
+                ? `BloodHound enrichment failed: ${enrichJob.error ?? "unknown"}`
+                : `BloodHound enrichment ${enrichJob.phase}.`}
+        </div>
+      )}
 
       <div className="section-label">This audit — ingest history</div>
       <div className="panel">

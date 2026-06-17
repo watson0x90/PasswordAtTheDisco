@@ -411,6 +411,14 @@ export const api = {
       body: JSON.stringify(cfg),
     }),
 
+  enrich: (csrf: string) =>
+    request<EnrichJob>("/enrich", { method: "POST", headers: { "X-CSRF-Token": csrf } }),
+
+  enrichJob: () => request<EnrichJob>("/enrich/job"),
+
+  enrichCancel: (csrf: string) =>
+    request<EnrichJob>("/enrich/cancel", { method: "POST", headers: { "X-CSRF-Token": csrf } }),
+
   auditLog: (params: AuditQuery) => request<AuditEvent[]>(`/audit-log${auditQuery(params)}`),
 
   // full /api URL for an <a download> (the browser sends the session cookie)
@@ -557,4 +565,15 @@ export interface IngestEvent {
   newly_cracked?: number
   at: string
   by: string
+}
+
+export interface EnrichJob {
+  phase: "idle" | "running" | "done" | "failed" | "cancelled"
+  audit_id?: string
+  processed: number
+  total: number
+  enriched: number
+  started_at?: string
+  elapsed_sec: number
+  error?: string
 }
