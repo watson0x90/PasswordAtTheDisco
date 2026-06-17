@@ -102,6 +102,7 @@ export function Exposure() {
         </div>
       ) : (
         <div className="panel">
+          <div className="table-wrap">
           <table className="bridge-matrix">
             <thead>
               <tr>
@@ -132,6 +133,7 @@ export function Exposure() {
               ))}
             </tbody>
           </table>
+          </div>
 
           <div className="bridge-clusters">
             {pairFilter && (
@@ -152,9 +154,9 @@ export function Exposure() {
                   {" · "}
                   {c.size} accounts{" · "}
                   {c.cracked ? "cracked" : "uncracked"}
-                  {c.hasDA && <span className="badge crit" style={{ marginLeft: 6 }}>DA</span>}
+                  {c.hasDA && <span className="badge crit ml-xs">DA</span>}
                   {c.hibpMax > 0 && (
-                    <span className="badge" style={{ marginLeft: 6 }}>
+                    <span className="badge ml-xs">
                       HIBP {c.hibpMax.toLocaleString()}
                     </span>
                   )}
@@ -188,7 +190,7 @@ export function Exposure() {
           <div className="muted">exact credential is public → reset now</div>
         </div>
         {triage.tier1.length === 0 ? (
-          <div className="muted" style={{ marginBottom: 12 }}>None — no accounts are both cracked and in HIBP.</div>
+          <div className="muted mb-md">None — no accounts are both cracked and in HIBP.</div>
         ) : (
           <TriageTable rows={triage.tier1} />
         )}
@@ -230,14 +232,16 @@ export function Exposure() {
                         disabled
                       </span>
                     )}
-                    <span className="muted" style={{ marginLeft: 6 }}>{row.account.domain}</span>
+                    <span className="muted ml-xs">{row.account.domain}</span>
                   </td>
                   <td>
-                    {row.reasons.map((r) => (
-                      <span key={r} className="badge" style={{ marginRight: 4 }}>
-                        {r}
-                      </span>
-                    ))}
+                    <span className="row-gap-xs">
+                      {row.reasons.map((r) => (
+                        <span key={r} className="badge">
+                          {r}
+                        </span>
+                      ))}
+                    </span>
                   </td>
                   <td>
                     <span className={`badge ${RISK_CLASS[row.account.risk_level] || ""}`}>
@@ -284,7 +288,7 @@ export function Exposure() {
 
 function TriageTable({ rows }: { rows: ReportAccount[] }) {
   return (
-    <div className="table-wrap" style={{ marginBottom: 16 }}>
+    <div className="table-wrap mb-lg">
       <table className="accounts compact">
         <thead>
           <tr>

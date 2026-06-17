@@ -142,6 +142,7 @@ export function Operators() {
           must always remain.
         </p>
 
+        <div className="table-wrap">
         <table className="ops-table">
           <thead>
             <tr>
@@ -228,6 +229,7 @@ export function Operators() {
             ))}
           </tbody>
         </table>
+        </div>
 
         {error && <div className="error">{error}</div>}
         {ok && <div className="ingest-ok">✓ {ok}</div>}
@@ -263,7 +265,7 @@ export function Operators() {
       <div className="section-label">Recent login activity</div>
       <div className="panel">
         {activity.length === 0 ? (
-          <p className="ingest-note" style={{ margin: 0 }}>No recent login attempts recorded.</p>
+          <p className="ingest-note m-0">No recent login attempts recorded.</p>
         ) : (
           <table className="ops-table ops-activity">
             <tbody>

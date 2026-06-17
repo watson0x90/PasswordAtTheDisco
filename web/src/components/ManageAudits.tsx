@@ -50,7 +50,7 @@ export function ManageAudits() {
                 <tr key={a.id}>
                   <td>
                     {a.name}
-                    {a.id === activeId && <span className="badge low" style={{ marginLeft: 8 }}>active</span>}
+                    {a.id === activeId && <span className="badge low ml-sm">active</span>}
                   </td>
                   <td className="num">{a.total_accounts.toLocaleString()}</td>
                   <td className="num">{a.cracked.toLocaleString()}</td>
