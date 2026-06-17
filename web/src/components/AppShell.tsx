@@ -8,6 +8,7 @@ import { JobPill } from "./JobPill"
 export type View =
   | "overview" | "actionable" | "accounts" | "domains" | "compare" | "reports"
   | "ingest" | "policies" | "integrations" | "operators" | "activity" | "audits"
+  | "audit-data"
 
 const TABS: { id: View; label: string }[] = [
   { id: "overview", label: "Overview" },
