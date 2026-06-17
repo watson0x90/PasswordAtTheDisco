@@ -3,6 +3,7 @@ import { api } from "../api"
 import { useAuth } from "../auth"
 import { useAudits } from "../auditsData"
 import { Logo } from "./Logo"
+import { JobPill } from "./JobPill"
 
 export type View =
   | "overview" | "actionable" | "accounts" | "domains" | "compare" | "reports"
@@ -63,6 +64,7 @@ export function AppShell({ view, onNav, children }: { view: View; onNav: (v: Vie
         </div>
         {me && (
           <div className="topbar-right">
+            <JobPill />
             <AuditSwitcher />
             <div className="who">
               <span className="u">{me.username}</span>
