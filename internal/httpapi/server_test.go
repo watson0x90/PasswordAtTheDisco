@@ -1161,6 +1161,105 @@ func TestEnrichJobAnalystForbidden(t *testing.T) {
 	}
 }
 
+// gatedEnricher blocks each Enrich call until the gate channel is closed,
+// allowing tests to hold a job in-flight before cancelling it.
+type gatedEnricher struct {
+	gate  chan struct{}
+	inner engine.Enricher
+}
+
+func (g gatedEnricher) Enrich(username string) engine.Enrichment {
+	<-g.gate
+	return g.inner.Enrich(username)
+}
+
+func newEnrichServer(t *testing.T) (*Server, *http.Cookie, string, string) {
+	t.Helper()
+	eng := &engine.Engine{Policies: policy.DefaultSet()}
+	eng.SwapEnricher(fakeTestEnricher{})
+	st := store.New()
+	srv := &Server{
+		Store:        st,
+		IngestToken:  "secret",
+		Engine:       eng,
+		Enrich:       enrich.NewManager(eng, st),
+		Users:        newServer("secret").Users,
+		Sessions:     auth.NewSessionStore(time.Hour, time.Hour),
+		Audit:        audit.New(io.Discard),
+		LoginLimiter: auth.NewLimiter(50, time.Minute),
+	}
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	id := createAudit(t, srv, lc, lcsrf, "Cancel Test")
+	if err := srv.Store.Replace(id, model.Dataset{
+		Name: "Cancel Test",
+		Accounts: []model.Account{
+			{Username: "alice", Domain: "CORP", NTHash: "AAAA", Cracked: true, Password: "Welcome1"},
+		},
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	return srv, lc, lcsrf, id
+}
+
+func TestEnrichCancelNoJob(t *testing.T) {
+	// Cancel when no job is running -> 409.
+	srv, lc, lcsrf, _ := newEnrichServer(t)
+	r := postJSON(srv, "/api/enrich/cancel", lc, lcsrf, "")
+	if r.Code != http.StatusConflict {
+		t.Fatalf("cancel with no job: want 409, got %d (%s)", r.Code, r.Body.String())
+	}
+	if !strings.Contains(r.Body.String(), `"phase"`) && !strings.Contains(r.Body.String(), "error") {
+		t.Fatalf("cancel 409 response should contain error, got: %s", r.Body.String())
+	}
+}
+
+func TestEnrichCancelRunningJob(t *testing.T) {
+	// Start a gated enricher so the job is definitely still running when we cancel.
+	gate := make(chan struct{})
+	eng := &engine.Engine{Policies: policy.DefaultSet()}
+	eng.SwapEnricher(gatedEnricher{gate: gate, inner: fakeTestEnricher{}})
+	st := store.New()
+	srv := &Server{
+		Store:        st,
+		IngestToken:  "secret",
+		Engine:       eng,
+		Enrich:       enrich.NewManager(eng, st),
+		Users:        newServer("secret").Users,
+		Sessions:     auth.NewSessionStore(time.Hour, time.Hour),
+		Audit:        audit.New(io.Discard),
+		LoginLimiter: auth.NewLimiter(50, time.Minute),
+	}
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	id := createAudit(t, srv, lc, lcsrf, "Cancel Running Test")
+	if err := srv.Store.Replace(id, model.Dataset{
+		Name: "Cancel Running Test",
+		Accounts: []model.Account{
+			{Username: "alice", Domain: "CORP", NTHash: "AAAA", Cracked: true, Password: "Welcome1"},
+		},
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	// Start the job (gate blocks the enricher so it stays in PhaseRunning).
+	startR := postJSON(srv, "/api/enrich", lc, lcsrf, "")
+	if startR.Code != http.StatusOK {
+		t.Fatalf("POST /api/enrich: want 200, got %d (%s)", startR.Code, startR.Body.String())
+	}
+
+	// Cancel while the job is still gated — must get 200 (deterministic).
+	cancelR := postJSON(srv, "/api/enrich/cancel", lc, lcsrf, "")
+	if cancelR.Code != http.StatusOK {
+		t.Fatalf("cancel running job: want 200, got %d (%s)", cancelR.Code, cancelR.Body.String())
+	}
+	if !strings.Contains(cancelR.Body.String(), `"phase"`) {
+		t.Fatalf("cancel 200 response should contain phase, got: %s", cancelR.Body.String())
+	}
+
+	// Release the gate and drain the goroutine to avoid a leak into other tests.
+	close(gate)
+	srv.Enrich.Wait()
+}
+
 func TestHoldReleaseActivity(t *testing.T) {
 	srv := newServer("secret")
 	now := time.Now()

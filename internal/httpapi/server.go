@@ -1438,7 +1438,7 @@ func (s *Server) handleApplyCracks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// Re-scoring re-runs password analysis + BHE enrichment; extend the deadlines.
+	// Re-scoring re-runs full password analysis on all accounts; extend the deadlines for large datasets.
 	if rc := http.NewResponseController(w); rc != nil {
 		_ = rc.SetReadDeadline(time.Now().Add(10 * time.Minute))
 		_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Minute))
