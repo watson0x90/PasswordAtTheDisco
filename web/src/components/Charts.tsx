@@ -67,6 +67,9 @@ export function ChartCard({ title, summary, children }: { title: string; summary
 }
 
 // HBars: horizontal bars, good for many/long category labels (complexity, domains).
+// Note: recharts measures category-label widths by briefly rendering a hidden
+// <span> at top:-20000px (a direct child of <body>). It's off-screen and
+// invisible — a known recharts measurement artifact, not a leak; don't chase it.
 export function HBars({ data, color = "#38bdf8" }: { data: BarDatum[]; color?: string }) {
   const height = Math.max(120, data.length * 30 + 30)
   return (
