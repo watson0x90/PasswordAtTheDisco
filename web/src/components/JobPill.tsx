@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import { api, ApiError, type EnrichJob, type PwnedJob } from "../api"
 import { useAuth } from "../auth"
 import { useJobs } from "../jobs"
@@ -18,6 +18,15 @@ export function JobPill() {
   const { enrich, hibp, anyRunning } = useJobs()
   const [open, setOpen] = useState(false)
   const [err, setErr] = useState("")
+  const wrapRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => { if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false) }
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false) }
+    document.addEventListener("mousedown", onDown)
+    document.addEventListener("keydown", onKey)
+    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey) }
+  }, [open])
   if (!anyRunning) return null
 
   const enrichRunning = enrich?.phase === "running"
@@ -36,12 +45,12 @@ export function JobPill() {
   }
 
   return (
-    <div className="jobpill-wrap">
+    <div className="jobpill-wrap" ref={wrapRef}>
       <button className="jobpill" onClick={() => setOpen((o) => !o)} title="Background jobs">
         <span className="spin">⟳</span> {label}
       </button>
       {open && (
-        <div className="jobpop" role="dialog" aria-label="Background jobs">
+        <div className="jobpop" role="menu" aria-label="Background jobs">
           {enrichRunning && (
             <div className="jobpop-row">
               <span>BloodHound enrichment — {enrich!.processed}/{enrich!.total} ({enrich!.enriched} enriched)</span>
