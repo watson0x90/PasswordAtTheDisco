@@ -15,6 +15,7 @@ const TABS: { id: View; label: string }[] = [
   { id: "actionable", label: "Actionable" },
   { id: "accounts", label: "Accounts" },
   { id: "domains", label: "Domains" },
+  { id: "exposure", label: "Exposure" },
   { id: "compare", label: "Compare" },
   { id: "reports", label: "Reports" },
 ]
