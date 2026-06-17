@@ -965,3 +965,12 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
 .jobs-card-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
 .appfoot { display: flex; align-items: center; gap: 8px; justify-content: center; padding: 8px 12px; border-top: 1px solid #1b2236; font-size: 11px; color: #566076; }
 .appfoot-v { color: #a5b4fc; font-weight: 600; font-family: var(--mono, monospace); }
+
+/* ---- Exposure headline strip ---- */
+.exposure-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 12px 0; }
+.exp-tile { background: #0c1320; border: 1px solid #2c3566; border-radius: 10px; padding: 14px; text-align: center; cursor: pointer; color: inherit; }
+.exp-tile:hover { border-color: #3b4a7a; }
+.exp-n { font-size: 30px; font-weight: 700; }
+.exp-tile.crit .exp-n { color: #fb7185; } .exp-tile.high .exp-n { color: #fbbf24; } .exp-tile.mid .exp-n { color: #7dd3fc; }
+.exp-l { font-size: 12px; color: #8a96b2; margin-top: 4px; }
+@media (max-width: 720px) { .exposure-strip { grid-template-columns: 1fr; } }
