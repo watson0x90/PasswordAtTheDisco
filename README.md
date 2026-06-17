@@ -43,6 +43,8 @@ One binary serves both the JSON API and the embedded single-page app.
 
 ## What's new in 2.6
 
+> Note: there is no 2.5.0 tag — that work shipped as part of 2.6.0.
+
 A trio of upgrades — a faster, clearer **upload** experience, **decoupled
 BloodHound enrichment** (no more multi-minute upload hangs), and a **domain
 drill-down + background-job visibility** layer:
