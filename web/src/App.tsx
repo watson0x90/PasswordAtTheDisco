@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from "./auth"
 import { AccountsProvider } from "./accountsData"
 import { AuditsProvider } from "./auditsData"
 import { NavProvider } from "./nav"
+import { JobsProvider } from "./jobs"
 import { Login } from "./components/Login"
 import { AppShell, type View } from "./components/AppShell"
 import { Actionable } from "./components/Actionable"
@@ -71,11 +72,13 @@ function Routed() {
     <NavProvider value={setView}>
       <AuditsProvider>
         <AccountsProvider>
-          <AppShell view={view} onNav={setView}>
-            <Suspense fallback={<div className="center-state"><div className="spinner">loading</div></div>}>
-              {viewFor(view)}
-            </Suspense>
-          </AppShell>
+          <JobsProvider>
+            <AppShell view={view} onNav={setView}>
+              <Suspense fallback={<div className="center-state"><div className="spinner">loading</div></div>}>
+                {viewFor(view)}
+              </Suspense>
+            </AppShell>
+          </JobsProvider>
         </AccountsProvider>
       </AuditsProvider>
     </NavProvider>
