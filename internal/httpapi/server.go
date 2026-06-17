@@ -29,6 +29,7 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/enrich"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/pwanalysis"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/pwned"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/report"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/secretsdump"
@@ -40,27 +41,28 @@ const sessionCookie = "patd_session"
 
 // Server holds the API's dependencies.
 type Server struct {
-	Store         *store.Store
-	StaticFS      fs.FS              // embedded SPA; if nil, served from StaticDir on disk
-	StaticDir     string             // disk fallback for the SPA (e.g. web/dist)
-	IngestToken   string             // bearer token the analysis engine uses to push data
-	Users         *auth.UserStore    // live operator store (add/disable/remove without restart)
-	Logins        *auth.LoginTracker // per-account lockout + login history (may be nil)
-	Sessions      *auth.SessionStore
-	Audit         *audit.Logger
-	AuditPath     string          // on-disk audit log path, for the lead Activity view (empty = none)
-	LoginLimiter  *auth.Limiter   // per-IP failed-login throttle
-	UnlockLimiter *auth.Limiter   // per-IP failed-unlock throttle (brute-force guard)
-	RekeyLimiter  *auth.Limiter   // per-IP failed-rekey throttle (separate so it can't lock out unlock)
-	Engine        *engine.Engine  // optional: enables lead web uploads (POST /api/upload)
-	Policies      *policy.Set     // shared with Engine; exposed/edited via /api/policies
-	PolicyPath    string          // where to persist policy edits (empty = in-memory only)
-	PwnedDir      string          // PwnedPasswordsDownloader source dir (HIBP NTLM tool)
-	HIBPPath      string          // configured HIBP NTLM index path (for the Pwned page status)
-	BHEPath       string          // BloodHound config path (config/bloodhound.json) for the BHE settings page
-	Downloads     *pwned.Manager  // background HIBP download/index job runner (may be nil)
-	Enrich        *enrich.Manager // background BloodHound enrichment job (may be nil)
-	Build         BuildInfo       // compile-time build identity, surfaced at GET /api/version
+	Store              *store.Store
+	StaticFS           fs.FS              // embedded SPA; if nil, served from StaticDir on disk
+	StaticDir          string             // disk fallback for the SPA (e.g. web/dist)
+	IngestToken        string             // bearer token the analysis engine uses to push data
+	Users              *auth.UserStore    // live operator store (add/disable/remove without restart)
+	Logins             *auth.LoginTracker // per-account lockout + login history (may be nil)
+	Sessions           *auth.SessionStore
+	Audit              *audit.Logger
+	AuditPath          string          // on-disk audit log path, for the lead Activity view (empty = none)
+	LoginLimiter       *auth.Limiter   // per-IP failed-login throttle
+	UnlockLimiter      *auth.Limiter   // per-IP failed-unlock throttle (brute-force guard)
+	RekeyLimiter       *auth.Limiter   // per-IP failed-rekey throttle (separate so it can't lock out unlock)
+	Engine             *engine.Engine  // optional: enables lead web uploads (POST /api/upload)
+	Policies           *policy.Set     // shared with Engine; exposed/edited via /api/policies
+	PolicyPath         string          // where to persist policy edits (empty = in-memory only)
+	ForbiddenWordsPath string          // where to persist forbidden-words edits (empty = in-memory only)
+	PwnedDir           string          // PwnedPasswordsDownloader source dir (HIBP NTLM tool)
+	HIBPPath           string          // configured HIBP NTLM index path (for the Pwned page status)
+	BHEPath            string          // BloodHound config path (config/bloodhound.json) for the BHE settings page
+	Downloads          *pwned.Manager  // background HIBP download/index job runner (may be nil)
+	Enrich             *enrich.Manager // background BloodHound enrichment job (may be nil)
+	Build              BuildInfo       // compile-time build identity, surfaced at GET /api/version
 
 	lastActivity atomic.Int64 // unix-nano of the last unlocked data access (auto-lock)
 	inFlight     atomic.Int64 // in-flight data requests; auto-lock waits for zero
@@ -165,6 +167,9 @@ func (s *Server) Routes() http.Handler {
 	// Per-domain password policies: any operator may read; lead may edit
 	mux.Handle("GET /api/policies", s.requireAuth(http.HandlerFunc(s.handleGetPolicies)))
 	mux.Handle("PUT /api/policies", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleSetPolicies))))
+	// Password-analysis forbidden words: lead-only (cleartext fragments)
+	mux.Handle("GET /api/forbidden-words", s.requireAuth(http.HandlerFunc(s.handleGetForbiddenWords)))
+	mux.Handle("PUT /api/forbidden-words", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleSetForbiddenWords))))
 	// SPA
 	mux.Handle("/", spaHandler(s.staticFS()))
 	return securityHeaders(logRequests(recoverPanic(mux)))
@@ -1938,6 +1943,88 @@ func (s *Server) handleSetPolicies(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "policy_update", Target: strconv.Itoa(len(p.Domains)) + " domain(s)", Source: r.RemoteAddr, Result: "ok"})
 	writeJSON(w, http.StatusOK, map[string]any{"domains": len(p.Domains), "persisted": saved})
+}
+
+// forbiddenWordsPayload is the wire shape for GET/PUT /api/forbidden-words.
+type forbiddenWordsPayload struct {
+	Words []string `json:"words"`
+}
+
+// handleGetForbiddenWords returns the current forbidden-words list (sorted).
+// Lead-only: the words are cleartext fragments (same sensitivity as
+// /api/report/terms).
+func (s *Server) handleGetForbiddenWords(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	if s.Engine == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "engine not configured"})
+		return
+	}
+	set := s.Engine.ForbiddenWords()
+	words := make([]string, 0, len(set))
+	for word := range set {
+		words = append(words, word)
+	}
+	sort.Strings(words)
+	writeJSON(w, http.StatusOK, forbiddenWordsPayload{Words: words})
+}
+
+// handleSetForbiddenWords replaces the forbidden-words list (lead only), persists
+// it to disk if a path is configured, and hot-swaps it into the engine so it
+// applies to the next analysis. Audit-logged (count only, never the words).
+func (s *Server) handleSetForbiddenWords(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "forbidden_words_update", Source: r.RemoteAddr, Result: "denied"})
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	if s.Engine == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "engine not configured"})
+		return
+	}
+	defer r.Body.Close()
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	dec.DisallowUnknownFields()
+	var p forbiddenWordsPayload
+	if err := dec.Decode(&p); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request: " + err.Error()})
+		return
+	}
+	if len(p.Words) > 5000 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "too many words (max 5000)"})
+		return
+	}
+	set := pwanalysis.Set{}
+	for _, raw := range p.Words {
+		word := strings.ToLower(strings.TrimSpace(raw))
+		if word == "" {
+			continue
+		}
+		if len(word) > 64 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "word too long (max 64 chars)"})
+			return
+		}
+		if strings.ContainsAny(word, "\n\r\x00") {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "word contains a control character"})
+			return
+		}
+		set[word] = struct{}{}
+	}
+	s.Engine.SwapForbiddenWords(set)
+	saved := "memory"
+	if s.ForbiddenWordsPath != "" {
+		if err := pwanalysis.SaveSet(s.ForbiddenWordsPath, set); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "saved in memory but failed to persist: " + err.Error()})
+			return
+		}
+		saved = s.ForbiddenWordsPath
+	}
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "forbidden_words_update", Target: strconv.Itoa(len(set)) + " word(s)", Source: r.RemoteAddr, Result: "ok"})
+	writeJSON(w, http.StatusOK, map[string]any{"count": len(set), "persisted": saved})
 }
 
 func validatePolicy(name string, p policy.Policy) error {

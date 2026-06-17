@@ -21,6 +21,7 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/enrich"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/pwanalysis"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/store"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/vault"
 )
@@ -159,6 +160,39 @@ func TestIngestRejectsMissingToken(t *testing.T) {
 	newServer("secret").Routes().ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 without token, got %d", rec.Code)
+	}
+}
+
+func TestForbiddenWordsPutGet(t *testing.T) {
+	srv := newServer("secret")
+	srv.Engine = &engine.Engine{Lists: pwanalysis.Lists{ForbiddenWords: pwanalysis.NewSet()}}
+	srv.ForbiddenWordsPath = filepath.Join(t.TempDir(), "forbidden_words.txt")
+
+	body := `{"words":["Acme"," summer ","summer",""]}`
+
+	// analyst cannot edit
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	if r := sendJSON(srv, "PUT", "/api/forbidden-words", ac, acsrf, body); r.Code != http.StatusForbidden {
+		t.Fatalf("analyst PUT should be 403, got %d", r.Code)
+	}
+
+	// lead can edit; engine + disk reflect the normalized set
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	if r := sendJSON(srv, "PUT", "/api/forbidden-words", lc, lcsrf, body); r.Code != http.StatusOK {
+		t.Fatalf("lead PUT = %d %s", r.Code, r.Body.String())
+	}
+	if got := srv.Engine.ForbiddenWords(); len(got) != 2 { // acme, summer
+		t.Fatalf("engine set size = %d (%v)", len(got), got)
+	}
+
+	// GET returns sorted, normalized words (lead-only)
+	g := do(srv, "GET", "/api/forbidden-words", lc)
+	if g.Code != http.StatusOK || !strings.Contains(g.Body.String(), `"acme"`) || !strings.Contains(g.Body.String(), `"summer"`) {
+		t.Fatalf("GET = %d body=%s", g.Code, g.Body.String())
+	}
+	// analyst cannot read
+	if g := do(srv, "GET", "/api/forbidden-words", ac); g.Code != http.StatusForbidden {
+		t.Fatalf("analyst GET should be 403, got %d", g.Code)
 	}
 }
 

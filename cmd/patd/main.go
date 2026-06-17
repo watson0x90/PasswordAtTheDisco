@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -98,9 +99,10 @@ func main() {
 	hibpPath := env("PATD_HIBP", "PwnedPasswordsDownloader/pwnedpasswords_ntlm.txt")
 	pwnedDir := env("PATD_PWNED_DIR", "PwnedPasswordsDownloader")
 	bhePath := env("PATD_BHE", "config/bloodhound.json")
+	listsDir := env("PATD_LISTS", "lists")
 	eng, policies, cleanup := buildEngine(
 		hibpPath,
-		env("PATD_LISTS", "lists"),
+		listsDir,
 		bhePath,
 		policyPath,
 	)
@@ -158,27 +160,28 @@ func main() {
 	enrichMgr := enrich.NewManager(eng, st)
 
 	api := &httpapi.Server{
-		Store:         st,
-		StaticFS:      webui.FS, // embedded SPA when built with -tags embed; else nil
-		StaticDir:     env("PATD_STATIC_DIR", "web/dist"),
-		IngestToken:   os.Getenv("PATD_INGEST_TOKEN"),
-		Users:         users,
-		Logins:        logins,
-		AuditPath:     auditPath,
-		Sessions:      auth.NewSessionStore(30*time.Minute, 8*time.Hour),
-		Audit:         audit.New(auditW),
-		LoginLimiter:  auth.NewLimiter(10, 15*time.Minute),
-		UnlockLimiter: auth.NewLimiter(5, 15*time.Minute),
-		RekeyLimiter:  auth.NewLimiter(5, 15*time.Minute),
-		Engine:        eng,
-		Policies:      policies,
-		PolicyPath:    policyPath,
-		PwnedDir:      pwnedDir,
-		HIBPPath:      hibpPath,
-		BHEPath:       bhePath,
-		Downloads:     downloads,
-		Enrich:        enrichMgr,
-		Build:         httpapi.BuildInfo{Version: version, Commit: commit, BuildDate: buildDate},
+		Store:              st,
+		StaticFS:           webui.FS, // embedded SPA when built with -tags embed; else nil
+		StaticDir:          env("PATD_STATIC_DIR", "web/dist"),
+		IngestToken:        os.Getenv("PATD_INGEST_TOKEN"),
+		Users:              users,
+		Logins:             logins,
+		AuditPath:          auditPath,
+		Sessions:           auth.NewSessionStore(30*time.Minute, 8*time.Hour),
+		Audit:              audit.New(auditW),
+		LoginLimiter:       auth.NewLimiter(10, 15*time.Minute),
+		UnlockLimiter:      auth.NewLimiter(5, 15*time.Minute),
+		RekeyLimiter:       auth.NewLimiter(5, 15*time.Minute),
+		Engine:             eng,
+		Policies:           policies,
+		PolicyPath:         policyPath,
+		ForbiddenWordsPath: filepath.Join(listsDir, "forbidden_words.txt"),
+		PwnedDir:           pwnedDir,
+		HIBPPath:           hibpPath,
+		BHEPath:            bhePath,
+		Downloads:          downloads,
+		Enrich:             enrichMgr,
+		Build:              httpapi.BuildInfo{Version: version, Commit: commit, BuildDate: buildDate},
 	}
 
 	// Wire the enrichment manager's activity hook so a running job holds the
