@@ -86,6 +86,9 @@ export function AuditData() {
     if (enrich.phase === "failed") {
       return <span className="c-crit">Failed: {enrich.error ?? "unknown error"}</span>
     }
+    if (enrich.phase === "cancelled") {
+      return <span className="muted">Enrichment cancelled</span>
+    }
     return <span className="muted">{enrich.phase}</span>
   }
 

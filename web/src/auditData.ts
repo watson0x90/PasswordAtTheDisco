@@ -35,8 +35,8 @@ export function perDomainStatus(accounts: Account[], ingests: IngestEvent[]): Do
     if (a.cracked) row.cracked++
   }
   for (const row of byDomain.values()) {
-    if (!lastEnrich) row.enriched = "none"
-    else if (row.loadedAt && row.loadedAt > lastEnrich) row.enriched = "stale"
+    if (!lastEnrich || !row.loadedAt) row.enriched = "none"
+    else if (row.loadedAt > lastEnrich) row.enriched = "stale"
     else row.enriched = "fresh"
   }
   return [...byDomain.values()].sort((a, b) => b.accounts - a.accounts)

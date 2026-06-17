@@ -32,4 +32,8 @@ describe("perDomainStatus", () => {
     expect(rows.find((r) => r.domain === "A")!.enriched).toBe("fresh")
     expect(rows.find((r) => r.domain === "B")!.enriched).toBe("stale")
   })
+  it("a domain with accounts but no dump event is 'none' (no load time to compare)", () => {
+    const rows = perDomainStatus([acct({ domain: "Z" })], [ev({ kind: "enrich", at: "2026-06-17T03:00:00Z" })])
+    expect(rows.find((r) => r.domain === "Z")!.enriched).toBe("none")
+  })
 })
