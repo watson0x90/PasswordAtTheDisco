@@ -60,6 +60,7 @@ type Server struct {
 	BHEPath       string          // BloodHound config path (config/bloodhound.json) for the BHE settings page
 	Downloads     *pwned.Manager  // background HIBP download/index job runner (may be nil)
 	Enrich        *enrich.Manager // background BloodHound enrichment job (may be nil)
+	Build         BuildInfo       // compile-time build identity, surfaced at GET /api/version
 
 	lastActivity atomic.Int64 // unix-nano of the last unlocked data access (auto-lock)
 	inFlight     atomic.Int64 // in-flight data requests; auto-lock waits for zero
@@ -226,8 +227,29 @@ func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// BuildInfo is the compile-time build identity (injected via -ldflags -X in the
+// build command); zero values fall back to "dev" so an un-stamped local build is
+// still legible.
+type BuildInfo struct {
+	Version   string `json:"version"`
+	Commit    string `json:"commit"`
+	BuildDate string `json:"build_date"`
+}
+
 func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"name": "passwordatthedisco-api", "version": "2.4.1"})
+	b := s.Build
+	if b.Version == "" {
+		b.Version = "dev"
+	}
+	if b.Commit == "" {
+		b.Commit = "none"
+	}
+	if b.BuildDate == "" {
+		b.BuildDate = "unknown"
+	}
+	writeJSON(w, http.StatusOK, map[string]string{
+		"name": "passwordatthedisco-api", "version": b.Version, "commit": b.Commit, "build_date": b.BuildDate,
+	})
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {

@@ -1283,3 +1283,27 @@ func TestHoldReleaseActivity(t *testing.T) {
 		t.Fatal("after ReleaseActivity: should auto-lock again")
 	}
 }
+
+func TestHandleVersionReportsBuild(t *testing.T) {
+	s := &Server{Build: BuildInfo{Version: "v9.9.9", Commit: "abc1234", BuildDate: "2026-06-17T12:00:00Z"}}
+	rec := httptest.NewRecorder()
+	s.handleVersion(rec, httptest.NewRequest("GET", "/api/version", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"passwordatthedisco-api", "v9.9.9", "abc1234", "2026-06-17T12:00:00Z"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("version body %q missing %q", body, want)
+		}
+	}
+}
+
+func TestHandleVersionDefaultsWhenUnstamped(t *testing.T) {
+	s := &Server{} // no Build injected (e.g. `go run`)
+	rec := httptest.NewRecorder()
+	s.handleVersion(rec, httptest.NewRequest("GET", "/api/version", nil))
+	if !strings.Contains(rec.Body.String(), `"version":"dev"`) {
+		t.Fatalf("expected dev default, got %s", rec.Body.String())
+	}
+}

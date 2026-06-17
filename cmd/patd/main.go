@@ -37,6 +37,19 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/webui"
 )
 
+// Build identity, injected at compile time via:
+//
+//	-ldflags "-X main.version=$(git describe --tags --always) \
+//	          -X main.commit=$(git rev-parse --short HEAD) \
+//	          -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+//
+// Defaults keep an un-stamped `go run`/`go build` legible.
+var (
+	version   = "dev"
+	commit    = "none"
+	buildDate = "unknown"
+)
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.LUTC)
 	if len(os.Args) > 1 {
@@ -165,6 +178,7 @@ func main() {
 		BHEPath:       bhePath,
 		Downloads:     downloads,
 		Enrich:        enrichMgr,
+		Build:         httpapi.BuildInfo{Version: version, Commit: commit, BuildDate: buildDate},
 	}
 
 	// Wire the enrichment manager's activity hook so a running job holds the

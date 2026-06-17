@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react"
-import { api } from "../api"
+import { api, type VersionInfo } from "../api"
 import { useAuth } from "../auth"
 import { useAudits } from "../auditsData"
 import { Logo } from "./Logo"
@@ -83,7 +83,27 @@ export function AppShell({ view, onNav, children }: { view: View; onNav: (v: Vie
         )}
       </header>
       <main className="main">{children}</main>
+      <BuildFooter />
     </div>
+  )
+}
+
+// BuildFooter shows the running server's compile-time build identity so the
+// operator can confirm exactly which binary they're talking to.
+function BuildFooter() {
+  const [v, setV] = useState<VersionInfo | null>(null)
+  useEffect(() => {
+    let alive = true
+    api.version().then((x) => alive && setV(x)).catch(() => {})
+    return () => { alive = false }
+  }, [])
+  if (!v) return null
+  return (
+    <footer className="appfoot">
+      <span>Password!AtTheDisco</span>
+      <span className="appfoot-v">{v.version}</span>
+      <span className="muted">· {v.commit} · built {v.build_date}</span>
+    </footer>
   )
 }
 

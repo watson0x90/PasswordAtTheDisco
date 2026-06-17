@@ -13,6 +13,14 @@ export interface Me {
   store_unlocked: boolean
 }
 
+// Compile-time build identity from GET /api/version (footer build confirmation).
+export interface VersionInfo {
+  name: string
+  version: string
+  commit: string
+  build_date: string
+}
+
 export interface AuditMeta {
   id: string
   name: string
@@ -252,6 +260,8 @@ export const api = {
     }),
 
   me: () => request<Me>("/me"),
+
+  version: () => request<VersionInfo>("/version"),
 
   logout: (csrf: string) =>
     request<{ status: string }>("/logout", {
