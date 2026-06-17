@@ -1,11 +1,15 @@
-import { useState } from "react"
-import type { Account } from "../api"
+import { useEffect, useState } from "react"
+import { api, ApiError, type Account, type Report, type ReportAccount, type ReuseGroup } from "../api"
 import { useAccountsData } from "../accountsData"
 import { hasDA } from "../util"
-import { complexityCounts, hibpSplit, lengthBuckets, posture, riskDistribution } from "../insights"
-import { Bars, ChartCard, Donut, HBars, PostureGauge } from "./Charts"
+import { hibpSplit, posture, riskDistribution } from "../insights"
+import { ChartCard, Donut, PostureGauge } from "./Charts"
+import { AccountsTable } from "./AccountsTable"
+import { domainDAPaths, domainPolicy, domainQuickWins, domainReuseClusters, domainWordlist } from "../domainData"
 
 const RATING_COLOR: Record<string, string> = { Strong: "#34d399", Fair: "#fbbf24", Weak: "#fb7185", "No Data": "#8a96b2" }
+
+const QUICK_WINS_N = 10
 
 interface DomainStat {
   domain: string
@@ -82,9 +86,21 @@ export function Domains() {
 }
 
 function DomainDetail({ domain, accounts, onBack }: { domain: string; accounts: Account[]; onBack: () => void }) {
+  const [report, setReport] = useState<Report | null>(null)
+  const [reportErr, setReportErr] = useState("")
+  useEffect(() => {
+    let alive = true
+    api.report().then((r) => alive && setReport(r)).catch((e) => alive && setReportErr(e instanceof ApiError ? e.message : "report unavailable"))
+    return () => { alive = false }
+  }, [domain])
+
   const p = posture(accounts)
-  const pColor = RATING_COLOR[p.rating]
-  const complexity = complexityCounts(accounts)
+  const pol = domainPolicy(accounts)
+  const wl = domainWordlist(accounts)
+  const quick = domainQuickWins(accounts, QUICK_WINS_N)
+  const clusters = report ? domainReuseClusters(report, domain) : { cracked: [], uncracked: [] }
+  const daPaths = report ? domainDAPaths(report, domain) : []
+
   const total = accounts.length
   const cracked = accounts.filter((a) => a.cracked).length
   const breached = accounts.filter((a) => a.hibp_breached).length
@@ -93,15 +109,11 @@ function DomainDetail({ domain, accounts, onBack }: { domain: string; accounts: 
 
   return (
     <>
-      <button className="link-btn domain-back" onClick={onBack}>
-        ← All domains
-      </button>
+      <button className="link-btn domain-back" onClick={onBack}>← All domains</button>
       <div className="section-label">{domain}</div>
 
       <div className="panel posture-panel">
-        <div className="posture-gauge-wrap">
-          <PostureGauge score={p.score} color={pColor} rating={p.rating} />
-        </div>
+        <div className="posture-gauge-wrap"><PostureGauge score={p.score} color={RATING_COLOR[p.rating]} rating={p.rating} /></div>
         <div className="domain-detail-stats">
           <DStat label="Accounts" value={total} />
           <DStat label="Cracked" value={cracked} />
@@ -111,27 +123,82 @@ function DomainDetail({ domain, accounts, onBack }: { domain: string; accounts: 
         </div>
       </div>
 
-      <div className="chart-grid">
-        <ChartCard title="Risk distribution">
-          <Donut data={riskDistribution(accounts)} />
-        </ChartCard>
-        <ChartCard title="HIBP exposure">
-          <Donut data={hibpSplit(accounts)} />
-        </ChartCard>
-        <ChartCard title="Password length (cracked)">
-          <Bars data={lengthBuckets(accounts)} color="#818cf8" />
-        </ChartCard>
+      <div className="domain-strips">
+        <div className="panel strip">
+          <div className="strip-title">Policy</div>
+          <div className="strip-stats"><DStat label="Meets" value={pol.meets} /><DStat label="Fails" value={pol.fails} tone="high" /><DStat label="Disabled" value={pol.disabled} /></div>
+        </div>
+        <div className="panel strip">
+          <div className="strip-title">Wordlist hits</div>
+          <div className="strip-stats"><DStat label="Common" value={wl.common} tone="high" /><DStat label="Dictionary" value={wl.dictionary} /><DStat label="Forbidden" value={wl.banned} tone="high" /><DStat label="Keyboard" value={wl.keyboard} /></div>
+        </div>
       </div>
 
       <div className="chart-grid">
-        <ChartCard title="Password complexity (cracked)">
-          {complexity.length ? (
-            <HBars data={complexity} color="#22d3ee" />
-          ) : (
-            <div className="chart-empty">No cracked passwords to classify.</div>
-          )}
-        </ChartCard>
+        <ChartCard title="Risk distribution"><Donut data={riskDistribution(accounts)} /></ChartCard>
+        <ChartCard title="HIBP exposure"><Donut data={hibpSplit(accounts)} /></ChartCard>
       </div>
+
+      {reportErr && <div className="hint">{reportErr} — cluster/DA panels need the report.</div>}
+
+      <ReuseClusters title="Reused passwords (cracked)" groups={clusters.cracked} lateral={false} />
+      <ReuseClusters title="Shared uncracked hashes (lateral movement)" groups={clusters.uncracked} lateral={true} />
+
+      <div className="section-label sub">DA-pathway accounts</div>
+      <div className="panel">
+        {daPaths.length === 0 ? (
+          <div className="muted">No BloodHound DA pathways in this domain (run enrichment from Setup → Integrations → BloodHound).</div>
+        ) : (
+          <table className="accounts compact"><thead><tr><th>Username</th><th>Risk</th><th className="num">HIBP</th><th>DA domains</th></tr></thead>
+            <tbody>{daPaths.map((a) => (<tr key={a.username}><td>{a.username}</td><td>{a.risk_level}</td><td className="num">{a.hibp_breach_count || "—"}</td><td className="muted">{a.da_domains ?? "—"}</td></tr>))}</tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="section-label sub">Quick wins — top {QUICK_WINS_N} weakest cracked</div>
+      <AccountsTable accounts={quick} />
+
+      <div className="section-label sub">All accounts</div>
+      <AccountsTable accounts={accounts} />
+    </>
+  )
+}
+
+function ReuseClusters({ title, groups, lateral }: { title: string; groups: ReuseGroup[]; lateral: boolean }) {
+  const [open, setOpen] = useState<number | null>(null)
+  return (
+    <>
+      <div className="section-label sub">{title}</div>
+      <div className="panel">
+        {groups.length === 0 ? (
+          <div className="muted">{lateral ? "No shared uncracked hashes." : "No reused cracked passwords."}</div>
+        ) : (
+          <table className="accounts compact">
+            <thead><tr><th className="num">Accounts</th><th className="num">Domains</th><th>DA?</th><th className="num">HIBP</th>{!lateral && <th className="num">Len</th>}<th></th></tr></thead>
+            <tbody>{groups.map((g) => (
+              <FragmentRow key={g.group_id} g={g} lateral={lateral} open={open === g.group_id} onToggle={() => setOpen(open === g.group_id ? null : g.group_id)} />
+            ))}</tbody>
+          </table>
+        )}
+      </div>
+    </>
+  )
+}
+
+function FragmentRow({ g, lateral, open, onToggle }: { g: ReuseGroup; lateral: boolean; open: boolean; onToggle: () => void }) {
+  return (
+    <>
+      <tr>
+        <td className="num">{g.size}</td>
+        <td className="num">{g.domains}</td>
+        <td>{g.has_da_pathway ? <span className="badge crit">DA</span> : <span className="muted">—</span>}</td>
+        <td className="num">{g.hibp_breach_count || "—"}</td>
+        {!lateral && <td className="num">{g.password_length ?? "—"}</td>}
+        <td><button className="link-btn" onClick={onToggle}>{open ? "hide" : `members (${g.members.length})`}</button></td>
+      </tr>
+      {open && g.members.map((m: ReportAccount, i) => (
+        <tr key={i} className="member-row"><td></td><td colSpan={lateral ? 4 : 5} className="muted">{m.username} · {m.domain} · {m.risk_level}</td></tr>
+      ))}
     </>
   )
 }
