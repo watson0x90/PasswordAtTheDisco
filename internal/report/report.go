@@ -513,7 +513,7 @@ func WeakPasswordsHTML(w io.Writer, name string, generated time.Time, accounts [
 const weakCSS = focusedCSS + `
 .cbar{display:grid;grid-template-columns:90px 1fr 30px;align-items:center;gap:10px;margin:7px 0;font:12px/1 ui-monospace,monospace}
 .cbar .cl{color:#8a96b2;text-align:right}
-.cbar .ct2{height:13px;background:#11182b;border-radius:4px;overflow:hidden}
+.cbar .ct2{height:13px;background:#0c1320;border-radius:4px;overflow:hidden}
 .cbar .cf{height:100%;border-radius:4px;background:linear-gradient(90deg,#0e7490,#22d3ee)}
 .cbar .cn{color:#e8edf7;text-align:right}`
 
