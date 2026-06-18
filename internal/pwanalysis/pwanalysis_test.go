@@ -7,6 +7,20 @@ import (
 	"testing"
 )
 
+func TestComplexityLabel(t *testing.T) {
+	cases := map[string]string{
+		"mixedalphaspecialnum": "a–z A–Z 0–9 !@#",
+		"loweralphanum":        "a–z 0–9",
+		"none":                 "(none)",
+		"weird":                "weird", // unknown passes through
+	}
+	for in, want := range cases {
+		if got := ComplexityLabel(in); got != want {
+			t.Errorf("ComplexityLabel(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestSaveSetRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "words.txt")

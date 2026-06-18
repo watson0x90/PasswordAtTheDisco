@@ -200,6 +200,37 @@ func Complexity(pw string) string {
 	}
 }
 
+// complexityLabels maps the Complexity() enum to readable character-class tokens
+// (the same notation the web UI and Policies page use), so reports read
+// "a–z A–Z 0–9 !@#" instead of "mixedalphaspecialnum".
+var complexityLabels = map[string]string{
+	"loweralpha":           "a–z",
+	"upperalpha":           "A–Z",
+	"numeric":              "0–9",
+	"special":              "!@#",
+	"loweralphanum":        "a–z 0–9",
+	"upperalphanum":        "A–Z 0–9",
+	"mixedalpha":           "a–z A–Z",
+	"loweralphaspecial":    "a–z !@#",
+	"upperalphaspecial":    "A–Z !@#",
+	"specialnum":           "0–9 !@#",
+	"mixedalphanum":        "a–z A–Z 0–9",
+	"loweralphaspecialnum": "a–z 0–9 !@#",
+	"mixedalphaspecial":    "a–z A–Z !@#",
+	"upperalphaspecialnum": "A–Z 0–9 !@#",
+	"mixedalphaspecialnum": "a–z A–Z 0–9 !@#",
+	"none":                 "(none)",
+}
+
+// ComplexityLabel returns a readable label for a Complexity() key (passthrough for
+// unknown keys).
+func ComplexityLabel(key string) string {
+	if v, ok := complexityLabels[key]; ok {
+		return v
+	}
+	return key
+}
+
 // CheckPolicy reports whether pw satisfies p and lists any violations.
 func CheckPolicy(pw string, p Policy) (bool, []string) {
 	meets := true

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/pwanalysis"
 )
 
 // DiffAccount references one account in an audit comparison (redacted).
@@ -111,7 +112,7 @@ func CSV(w io.Writer, accounts []model.Account) error {
 			tier0Domains = a.DADomains
 		}
 		row := []string{
-			csvSafe(a.Domain), csvSafe(a.Username), yesNo(a.Enabled), status, pwLen, csvSafe(a.Complexity),
+			csvSafe(a.Domain), csvSafe(a.Username), yesNo(a.Enabled), status, pwLen, csvSafe(pwanalysis.ComplexityLabel(a.Complexity)),
 			yesNo(a.MeetsPolicy), csvSafe(a.RiskLevel), strconv.FormatFloat(a.RiskScore, 'f', 1, 64), csvSafe(a.RiskVector),
 			yesNo(a.HIBPBreached), strconv.Itoa(a.HIBPBreachCount),
 			yesNo(a.SharedWith > 0), strconv.Itoa(a.SharedWith),
@@ -280,8 +281,9 @@ func HTML(w io.Writer, name string, generated time.Time, accounts []model.Accoun
 }
 
 var htmlTemplate = template.Must(template.New("report").Funcs(template.FuncMap{
-	"f1":    func(f float64) string { return strconv.FormatFloat(f, 'f', 1, 64) },
-	"color": func(level string) string { return riskColor[level] },
+	"f1":     func(f float64) string { return strconv.FormatFloat(f, 'f', 1, 64) },
+	"color":  func(level string) string { return riskColor[level] },
+	"clabel": pwanalysis.ComplexityLabel,
 }).Parse(reportHTML))
 
 const reportHTML = `<!doctype html>
@@ -368,7 +370,7 @@ td{padding:7px 10px;border-bottom:1px solid #1b2236;white-space:nowrap}
 <td><span class="badge" style="color:{{color .RiskLevel}};border-color:{{color .RiskLevel}}">{{.RiskLevel}}</span></td>
 <td>{{f1 .RiskScore}}</td>
 <td>{{if .HIBPBreached}}<span style="color:#fb7185">{{.HIBPBreachCount}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
-<td class="muted">{{if .Cracked}}{{.Complexity}}{{else}}—{{end}}</td>
+<td class="muted">{{if .Cracked}}{{clabel .Complexity}}{{else}}—{{end}}</td>
 <td>{{if .Cracked}}{{if .MeetsPolicy}}<span style="color:#a3e635">meets</span>{{else}}<span style="color:#fbbf24">fails</span>{{end}}{{else}}<span class="muted">—</span>{{end}}</td>
 <td>{{if gt .SharedWith 0}}{{.SharedWith}}{{else}}<span class="muted">0</span>{{end}}</td>
 <td>{{if .HasDAPathway}}<span style="color:#fb7185">{{.DADomains}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
@@ -383,9 +385,10 @@ td{padding:7px 10px;border-bottom:1px solid #1b2236;white-space:nowrap}
 // ---- focused HTML reports (complement the focused CSVs) ----
 
 var tmplFuncs = template.FuncMap{
-	"f1":    func(f float64) string { return strconv.FormatFloat(f, 'f', 1, 64) },
-	"color": func(level string) string { return riskColor[level] },
-	"tier0": func(s string) bool { return s != "" && s != "None" && s != "Unknown" },
+	"f1":     func(f float64) string { return strconv.FormatFloat(f, 'f', 1, 64) },
+	"color":  func(level string) string { return riskColor[level] },
+	"tier0":  func(s string) bool { return s != "" && s != "None" && s != "Unknown" },
+	"clabel": pwanalysis.ComplexityLabel,
 }
 
 // focusedCSS is the inline styling shared by the focused HTML reports (self-
@@ -443,7 +446,7 @@ var focusedAccountsTemplate = template.Must(template.New("focused-accounts").Fun
 <td><span class="badge" style="color:{{color .RiskLevel}};border-color:{{color .RiskLevel}}">{{.RiskLevel}}</span></td>
 <td>{{f1 .RiskScore}}</td>
 <td>{{if .Cracked}}{{.PasswordLength}}{{else}}<span class="muted">—</span>{{end}}</td>
-<td class="muted">{{if .Cracked}}{{.Complexity}}{{else}}—{{end}}</td>
+<td class="muted">{{if .Cracked}}{{clabel .Complexity}}{{else}}—{{end}}</td>
 <td>{{if .Cracked}}{{if .MeetsPolicy}}<span style="color:#a3e635">meets</span>{{else}}<span style="color:#fbbf24">fails</span>{{end}}{{else}}<span class="muted">—</span>{{end}}</td>
 <td>{{if .HIBPBreached}}<span style="color:#fb7185">{{.HIBPBreachCount}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
 <td>{{if gt .SharedWith 0}}{{.SharedWith}}{{else}}<span class="muted">0</span>{{end}}</td>
@@ -532,7 +535,7 @@ var weakTemplate = template.Must(template.New("weak").Funcs(tmplFuncs).Parse(
 <td>{{.Username}}{{if not .Enabled}}<span class="muted"> · disabled</span>{{end}}</td><td class="muted">{{.Domain}}</td>
 <td><span class="badge" style="color:{{color .RiskLevel}};border-color:{{color .RiskLevel}}">{{.RiskLevel}}</span></td>
 <td>{{f1 .RiskScore}}</td>
-<td class="muted">{{if .Cracked}}{{.Complexity}}{{else}}—{{end}}</td>
+<td class="muted">{{if .Cracked}}{{clabel .Complexity}}{{else}}—{{end}}</td>
 <td>{{if .Cracked}}{{if .MeetsPolicy}}<span style="color:#a3e635">meets</span>{{else}}<span style="color:#fbbf24">fails</span>{{end}}{{else}}<span class="muted">—</span>{{end}}</td>
 <td>{{if gt .Controlled 0}}{{.Controlled}}{{else}}<span class="muted">0</span>{{end}}</td>
 <td>{{if .IsCommon}}<span class="wtag">common</span> {{end}}{{if .IsDictionaryWord}}<span class="wtag">dictionary</span> {{end}}{{if gt .BannedWordCount 0}}<span class="wtag">forbidden</span> {{end}}{{if gt .KeyboardPatternCount 0}}<span class="wtag">keyboard</span> {{end}}{{if not .IsWeak}}<span class="muted">—</span>{{end}}</td>
