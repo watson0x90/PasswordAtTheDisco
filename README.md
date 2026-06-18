@@ -54,6 +54,14 @@ CISO / blue-team threat triage:
   character-class tokens (`a–z A–Z 0–9 !@#`). New `tools/dev_seed.sh` stands up a
   disposable, synthetic-data-loaded instance in one command for local testing.
 
+- **Exportable-report polish (post-2.9 review).** Downloadable CSV + HTML reports
+  now show the same readable complexity tokens as the UI (not `mixedalphaspecialnum`);
+  the weak-passwords report's category bars are legible; and the synthetic dataset
+  carries a formula-injection probe so the CSV anti-injection guard (CWE-1236) is
+  exercised on every export. The no-cleartext invariant was re-verified end-to-end:
+  **zero** cracked passwords, NT hashes, or matched words appear in any of the 11
+  exports.
+
 - **Exposure tab + Overview headline strip.** New threat-scenario views built on
   the *intersections* analysts reason about (all from existing data, redacted):
   **cross-domain credential bridges** (a domain×domain heatmap of shared
