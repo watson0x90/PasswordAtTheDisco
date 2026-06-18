@@ -51,6 +51,7 @@ export function AppShell({ view, onNav, children }: { view: View; onNav: (v: Vie
             <Logo size={28} />
             <span className="word">Password<b>!AtTheDisco</b></span>
           </div>
+          <NavMenu view={view} onNav={onNav} showAdmin={me?.role === "lead"} />
           <nav className="nav">
             {TABS.map((t) => (
               <button key={t.id} className={t.id === view ? "nav-tab active" : "nav-tab"} onClick={() => onNav(t.id)}>
@@ -156,6 +157,77 @@ function NavDropdown({
               >
                 {i.label}
               </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// NavMenu collapses the entire nav (primary tabs + Setup/Admin items) into a
+// single ☰ menu for narrow viewports. It reuses NavDropdown's open/close
+// mechanics (backdrop click-catcher + Escape handler + role="menu" markup) and
+// maps the same TABS / SETUP_ITEMS / ADMIN_ITEMS arrays so the destination list
+// never drifts from the inline nav.
+function NavMenu({
+  view,
+  onNav,
+  showAdmin,
+}: {
+  view: View
+  onNav: (v: View) => void
+  showAdmin: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false)
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [open])
+
+  const groups: { label: string; items: { id: View; label: string }[] }[] = [
+    { label: "", items: TABS },
+  ]
+  if (showAdmin) {
+    groups.push({ label: "Setup", items: SETUP_ITEMS })
+    groups.push({ label: "Admin", items: ADMIN_ITEMS })
+  }
+
+  return (
+    <div className="nav-dd topbar-hamburger-wrap">
+      <button
+        className="nav-dd-trigger topbar-hamburger"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Menu"
+      >
+        ☰
+      </button>
+      {open && (
+        <>
+          <div className="audit-backdrop" onClick={() => setOpen(false)} />
+          <div className="nav-dd-menu" role="menu">
+            {groups.map((g, gi) => (
+              <div key={g.label || "primary"} className="nav-dd-group">
+                {gi > 0 && <div className="nav-dd-sep" role="separator" aria-hidden="true" />}
+                {g.label && <div className="nav-dd-grouplabel">{g.label}</div>}
+                {g.items.map((i) => (
+                  <button
+                    key={i.id}
+                    role="menuitem"
+                    className={i.id === view ? "nav-dd-item active" : "nav-dd-item"}
+                    onClick={() => {
+                      onNav(i.id)
+                      setOpen(false)
+                    }}
+                  >
+                    {i.label}
+                  </button>
+                ))}
+              </div>
             ))}
           </div>
         </>

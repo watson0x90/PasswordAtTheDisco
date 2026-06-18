@@ -47,6 +47,13 @@ An **audit-data UX overhaul** so uploaded data is visible immediately and the
 upload page stops doing four jobs at once — plus a new **Exposure** view for
 CISO / blue-team threat triage:
 
+- **Console polish (post-2.9 review).** The header now collapses into a ☰ menu on
+  narrow/split-screen windows (no more clipped tabs or horizontal scroll); a fresh
+  page load no longer logs a 401 (the `/api/me` probe returns 200 with an
+  `authenticated` flag); and the "Password complexity" chart reads in plain
+  character-class tokens (`a–z A–Z 0–9 !@#`). New `tools/dev_seed.sh` stands up a
+  disposable, synthetic-data-loaded instance in one command for local testing.
+
 - **Exposure tab + Overview headline strip.** New threat-scenario views built on
   the *intersections* analysts reason about (all from existing data, redacted):
   **cross-domain credential bridges** (a domain×domain heatmap of shared

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react"
-import { api, ApiError, type Me } from "./api"
+import { api, type Me } from "./api"
 
 type Status = "loading" | "authenticated" | "anonymous"
 
@@ -36,19 +36,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     api
       .me()
       .then((m) => {
-        if (active) {
-          setMe(m)
-          setStatus("authenticated")
-        }
-      })
-      .catch((err) => {
         if (!active) return
-        if (err instanceof ApiError && err.status === 401) {
+        if (m.authenticated === false) {
           setStatus("anonymous")
-        } else {
-          // network/other: treat as anonymous so the login screen shows.
-          setStatus("anonymous")
+          return
         }
+        setMe(m)
+        setStatus("authenticated")
+      })
+      .catch(() => {
+        // network/other: treat as anonymous so the login screen shows.
+        if (active) setStatus("anonymous")
       })
     return () => {
       active = false
@@ -72,8 +70,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [me])
 
   // refresh re-reads /me (e.g. after unlocking the store, to pick up the new state).
+  // Guard on the authenticated flag like the bootstrap effect: if the session
+  // lapsed between actions, /me now returns 200 {authenticated:false} (not a 401),
+  // so fall back to anonymous rather than storing a payload-less Me.
   const refresh = useCallback(async () => {
-    setMe(await api.me())
+    const m = await api.me()
+    if (m.authenticated === false) {
+      setMe(null)
+      setStatus("anonymous")
+      return
+    }
+    setMe(m)
     setAutoLocked(false)
   }, [])
 

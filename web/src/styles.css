@@ -90,7 +90,7 @@ a { color: var(--accent); text-decoration: none; }
   top: 0;
   z-index: 50;
 }
-.topbar-left { display: flex; align-items: center; }
+.topbar-left { display: flex; align-items: center; min-width: 0; }
 
 .brand { display: flex; align-items: center; gap: 11px; }
 .brand .word { font-family: var(--display); font-size: 18px; font-weight: 700; letter-spacing: -0.4px; }
@@ -148,10 +148,44 @@ a { color: var(--accent); text-decoration: none; }
 .nav-dd-item:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
 .nav-dd-item.active { color: #fff; background: rgba(99, 102, 241, 0.18); border-color: rgba(129, 140, 248, 0.32); }
 
-.topbar-right { display: flex; align-items: center; gap: 16px; }
+/* Hamburger menu: shares .nav-dd-trigger styling; collapsed nav for narrow widths. */
+.topbar-hamburger-wrap { margin-left: 30px; }
+.topbar-hamburger {
+  display: none; /* hidden on wide screens; revealed under the breakpoint */
+  font-size: 18px;
+  line-height: 1;
+  padding: 6px 12px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--glass-border);
+  border-radius: 9px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.topbar-hamburger:hover { background: rgba(255, 255, 255, 0.04); border-color: rgba(129, 140, 248, 0.32); }
+.nav-dd-sep { height: 1px; background: var(--glass-border); margin: 5px 4px; }
+.nav-dd-grouplabel {
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 4px 12px 2px;
+}
+
+.topbar-right { display: flex; align-items: center; gap: 16px; min-width: 0; }
 .who { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.25; }
 .who .u { color: var(--text); font-size: 13px; }
 .who .r { font-size: 11px; color: var(--faint); }
+
+/* Below 900px the inline nav + Setup/Admin dropdowns overflow the header and
+   push the right cluster off-screen, so collapse everything into the ☰ menu. */
+@media (max-width: 900px) {
+  .nav { display: none; }                        /* hide inline tabs */
+  .topbar .nav-dd { display: none; }             /* hide inline Setup/Admin dropdowns */
+  .topbar-hamburger { display: inline-flex; align-items: center; }  /* show the menu button */
+  .topbar .nav-dd.topbar-hamburger-wrap { display: inline-flex; }  /* re-show the wrapper (it's a .nav-dd) */
+  .who .r { display: none; }                      /* drop the verbose "operator" sub-label */
+}
 
 .role-badge {
   font-size: 11px;

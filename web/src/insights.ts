@@ -164,11 +164,36 @@ export function daExposureByDomain(accts: Account[]): Bar[] {
     .sort((a, b) => b.value - a.value)
 }
 
+// Maps the backend Complexity() enum (internal/pwanalysis) to the app's
+// character-class notation (same tokens as the Policies page) so the chart axis
+// reads "a–z A–Z 0–9 !@#" instead of "mixedalphaspecialnum".
+const COMPLEXITY_LABELS: Record<string, string> = {
+  loweralpha: "a–z",
+  upperalpha: "A–Z",
+  numeric: "0–9",
+  special: "!@#",
+  loweralphanum: "a–z 0–9",
+  upperalphanum: "A–Z 0–9",
+  mixedalpha: "a–z A–Z",
+  loweralphaspecial: "a–z !@#",
+  upperalphaspecial: "A–Z !@#",
+  specialnum: "0–9 !@#",
+  mixedalphanum: "a–z A–Z 0–9",
+  loweralphaspecialnum: "a–z 0–9 !@#",
+  mixedalphaspecial: "a–z A–Z !@#",
+  upperalphaspecialnum: "A–Z 0–9 !@#",
+  mixedalphaspecialnum: "a–z A–Z 0–9 !@#",
+  none: "(none)",
+}
+export function complexityLabel(key: string): string {
+  return COMPLEXITY_LABELS[key] ?? key
+}
+
 // Count of cracked accounts per complexity class (desc).
 export function complexityCounts(accts: Account[]): Bar[] {
   const m: Record<string, number> = {}
   for (const a of accts) if (a.cracked && a.complexity) m[a.complexity] = (m[a.complexity] || 0) + 1
   return Object.entries(m)
-    .map(([name, value]) => ({ name, value }))
+    .map(([name, value]) => ({ name: complexityLabel(name), value }))
     .sort((a, b) => b.value - a.value)
 }
