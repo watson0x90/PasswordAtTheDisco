@@ -219,6 +219,17 @@ func TestCSVHasRiskVector(t *testing.T) {
 	}
 }
 
+func TestCSVEscapesFormulaInjection(t *testing.T) {
+	accts := []model.Account{{Username: "=cmd|calc@CORP.LOCAL", Domain: "CORP.LOCAL"}}
+	var buf bytes.Buffer
+	if err := CSV(&buf, accts); err != nil {
+		t.Fatalf("CSV: %v", err)
+	}
+	if !strings.Contains(buf.String(), `'=cmd`) {
+		t.Errorf("formula-injection username not neutralized (want leading '): %s", buf.String())
+	}
+}
+
 func TestWeakPasswordsHTML(t *testing.T) {
 	accts := []model.Account{
 		{Username: "alice", Domain: "CORP", Cracked: true, Password: "Summer2021!",

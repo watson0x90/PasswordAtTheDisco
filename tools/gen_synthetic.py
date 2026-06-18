@@ -167,6 +167,16 @@ def main():
             else:
                 counts["uncracked"] += 1
 
+        if dom == "CORP.LOCAL":
+            # CSV/formula-injection probe (CWE-1236): a username starting with a
+            # formula character so every live CSV export proves csvSafe neutralizes
+            # it. No ':' (the secretsdump parser splits on ':'); uncracked is fine.
+            probe = "=injection.test@CORP.LOCAL"
+            lines.append(f"{probe}:{rid}:{LM}:{ntlm('Probe!Inject1')}:::")
+            rid += 1
+            counts["accounts"] += 1
+            counts["uncracked"] += 1
+
         with open(os.path.join(OUT, f"{dom}_dump.txt"), "w", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
 
