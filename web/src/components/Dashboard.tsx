@@ -122,7 +122,7 @@ export function Dashboard() {
 
       {summary?.breach_impact && (
         <>
-          <div className="section-label">Breach Impact Estimate</div>
+          <div className="section-label">Breach Impact Estimate <InfoTip text={GLOSSARY.breach_impact} /></div>
           <div className="panel breach-panel">
             <div className="breach-grid">
               <div className="breach-item">

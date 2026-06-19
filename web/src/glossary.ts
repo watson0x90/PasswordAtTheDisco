@@ -11,4 +11,5 @@ export const GLOSSARY = {
   weak_categories: "Why a password is weak: Forbidden (banned term), Common (top breached), Dictionary (a dictionary word), Keyboard (a keyboard walk).",
   risk_score: "Per-account risk, 0–10 — higher is worse (opposite of the org health score).",
   bridge_matrix: "Each cell = number of shared-password groups that bridge the two domains. Darker = more bridges.",
+  breach_impact: "Directional estimate from this audit's critical-risk + Domain-Admin-path counts; cost & recovery use IBM Cost of a Data Breach industry averages — not a quote.",
 } as const
