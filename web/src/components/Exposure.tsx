@@ -299,7 +299,7 @@ function TriageTable({ rows }: { rows: ReportAccount[] }) {
         <tbody>
           {rows.map((a, i) => (
             <tr key={`${a.domain}/${a.username}/${i}`}>
-              <td>{a.username}</td>
+              <td><AccountLink username={a.username} domain={a.domain} /></td>
               <td className="muted">{a.domain}</td>
               <td>
                 <span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span>

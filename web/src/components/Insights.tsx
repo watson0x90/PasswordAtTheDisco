@@ -1,6 +1,7 @@
 import { useAccountsData } from "../accountsData"
 import { useAudits } from "../auditsData"
 import { complexityCounts, controlledObjectsBuckets, crossDomainReuseGraph, daExposureByDomain, expirationSplit, hibpVsRisk, passwordAgeBuckets, passwordAgeScatter, riskFactorsRadar, scoreBuckets, sharingDistribution, similarityBuckets, similarityNetwork, topRiskiest } from "../insights"
+import { AccountLink } from "./AccountLink"
 import { Bars, ChartCard, Donut, HBars, RiskRadar, ScatterPlot } from "./Charts"
 import { NetworkGraph } from "./NetworkGraph"
 import { RISK_CLASS, hasDA } from "../util"
@@ -151,7 +152,7 @@ export function Insights() {
               {topN.map((a, i) => (
                 <tr key={`${a.domain}/${a.username}`}>
                   <td className="muted">{i + 1}</td>
-                  <td>{a.username}{!a.enabled && <span className="badge-disabled">disabled</span>}</td>
+                  <td><AccountLink username={a.username} domain={a.domain} />{!a.enabled && <span className="badge-disabled">disabled</span>}</td>
                   <td className="muted">{a.domain}</td>
                   <td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td>
                   <td className="num">{a.risk_score.toFixed(1)}</td>

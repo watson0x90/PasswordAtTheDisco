@@ -5,6 +5,7 @@ import { useAudits } from "../auditsData"
 import { useAuth } from "../auth"
 import { RISK_CLASS, weaknessTags } from "../util"
 import { priorityWorklist } from "../worklist"
+import { AccountLink } from "./AccountLink"
 import { BarChart } from "./BarChart"
 import { InfoTip } from "./InfoTip"
 
@@ -325,7 +326,7 @@ function PriorityWorklist({ accounts }: { accounts: Account[] }) {
               return (
                 <tr key={`${a.domain}/${a.username}/${i}`}>
                   <td>
-                    {a.username}@{a.domain}
+                    <AccountLink username={a.username} domain={a.domain} />@{a.domain}
                     {a.enabled === false && (
                       <span className="badge-disabled" title="account disabled in AD">disabled</span>
                     )}
@@ -428,7 +429,7 @@ function AccountTable({
           {shown.map((a, i) => (
             <tr key={`${a.domain}/${a.username}/${i}`}>
               <td>
-                {a.username}
+                <AccountLink username={a.username} domain={a.domain} />
                 {a.enabled === false && <span className="badge-disabled" title="account disabled in AD">disabled</span>}
               </td>
               <td className="muted">{a.domain}</td>
@@ -513,7 +514,7 @@ function ReuseGroupRow({ g, cracked }: { g: ReuseGroup; cracked?: boolean }) {
             <tbody>
               {g.members.map((m, i) => (
                 <tr key={`${m.domain}/${m.username}/${i}`}>
-                  <td>{m.username}</td>
+                  <td><AccountLink username={m.username} domain={m.domain} /></td>
                   <td className="muted">{m.domain}</td>
                   <td>
                     <span className={`badge ${RISK_CLASS[m.risk_level] || ""}`}>{m.risk_level}</span>

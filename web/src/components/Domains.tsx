@@ -6,6 +6,7 @@ import { hasDA, RISK_CLASS } from "../util"
 import { hibpSplit, posture, riskDistribution } from "../insights"
 import { ChartCard, Donut, PostureGauge } from "./Charts"
 import { AccountsTable } from "./AccountsTable"
+import { AccountLink } from "./AccountLink"
 import { domainDAPaths, domainPolicy, domainQuickWins, domainReuseClusters, domainWordlist } from "../domainData"
 
 const RATING_COLOR: Record<string, string> = { Strong: "#34d399", Fair: "#fbbf24", Weak: "#fb7185", "No Data": "#8a96b2" }
@@ -189,7 +190,7 @@ function DomainDetail({ domain, accounts, report, reportErr, onBack }: { domain:
               <div className="muted">No BloodHound DA pathways in this domain.</div>
             ) : (
               <table className="accounts compact"><thead><tr><th>Username</th><th>Risk</th><th className="num">Score</th><th className="num">HIBP</th><th>DA domains</th><th className="num">Controlled</th></tr></thead>
-                <tbody>{daPaths.map((a) => (<tr key={a.username}><td>{a.username}</td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td className="num">{a.hibp_breach_count || "—"}</td><td className="muted">{a.da_domains ?? "—"}</td><td className="num">{(a as any).controlled_object_count || "—"}</td></tr>))}</tbody>
+                <tbody>{daPaths.map((a) => (<tr key={a.username}><td><AccountLink username={a.username} domain={a.domain} /></td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td className="num">{a.hibp_breach_count || "—"}</td><td className="muted">{a.da_domains ?? "—"}</td><td className="num">{(a as any).controlled_object_count || "—"}</td></tr>))}</tbody>
               </table>
             )}
           </div>
@@ -204,7 +205,7 @@ function DomainDetail({ domain, accounts, report, reportErr, onBack }: { domain:
             ) : (
               <table className="accounts compact"><thead><tr><th>Username</th><th>Risk</th><th className="num">Score</th><th className="num">Shared</th></tr></thead>
                 <tbody>{accounts.filter((a) => a.escalated_by_shared_da).slice(0, 50).map((a) => (
-                  <tr key={a.username}><td>{a.username}</td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td className="num">{a.shared_with}</td></tr>
+                  <tr key={a.username}><td><AccountLink username={a.username} domain={a.domain} /></td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td className="num">{a.shared_with}</td></tr>
                 ))}</tbody>
               </table>
             )}
@@ -232,7 +233,7 @@ function DomainDetail({ domain, accounts, report, reportErr, onBack }: { domain:
             ) : (
               <table className="accounts compact"><thead><tr><th>Username</th><th>Risk</th><th className="num">Score</th><th className="num">Days overdue</th><th>Enabled</th></tr></thead>
                 <tbody>{accounts.filter((a) => (a.days_out_of_compliance ?? 0) > 0).sort((a, b) => (b.days_out_of_compliance ?? 0) - (a.days_out_of_compliance ?? 0)).slice(0, 100).map((a) => (
-                  <tr key={a.username}><td>{a.username}</td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td className="num">{a.days_out_of_compliance}d</td><td>{a.enabled ? "Yes" : <span className="muted">No</span>}</td></tr>
+                  <tr key={a.username}><td><AccountLink username={a.username} domain={a.domain} /></td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td className="num">{a.days_out_of_compliance}d</td><td>{a.enabled ? "Yes" : <span className="muted">No</span>}</td></tr>
                 ))}</tbody>
               </table>
             )}
@@ -245,7 +246,7 @@ function DomainDetail({ domain, accounts, report, reportErr, onBack }: { domain:
             ) : (
               <table className="accounts compact"><thead><tr><th>Username</th><th>Risk</th><th className="num">Score</th><th className="num">HIBP</th><th>Enabled</th></tr></thead>
                 <tbody>{accounts.filter((a) => a.pwd_never_expires === true).sort((a, b) => b.risk_score - a.risk_score).slice(0, 100).map((a) => (
-                  <tr key={a.username}><td>{a.username}</td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td className="num">{a.hibp_breached ? a.hibp_breach_count.toLocaleString() : "—"}</td><td>{a.enabled ? "Yes" : <span className="muted">No</span>}</td></tr>
+                  <tr key={a.username}><td><AccountLink username={a.username} domain={a.domain} /></td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td className="num">{a.hibp_breached ? a.hibp_breach_count.toLocaleString() : "—"}</td><td>{a.enabled ? "Yes" : <span className="muted">No</span>}</td></tr>
                 ))}</tbody>
               </table>
             )}
@@ -258,7 +259,7 @@ function DomainDetail({ domain, accounts, report, reportErr, onBack }: { domain:
             ) : (
               <table className="accounts compact"><thead><tr><th>Username</th><th>Risk</th><th className="num">Score</th><th>DA</th><th className="num">Controlled</th></tr></thead>
                 <tbody>{accounts.filter((a) => a.has_spn === true).sort((a, b) => b.risk_score - a.risk_score).map((a) => (
-                  <tr key={a.username}><td>{a.username}</td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td>{hasDA(a.da_domains) ? <span className="badge crit">{a.da_domains}</span> : "—"}</td><td className="num">{a.controlled_object_count || "—"}</td></tr>
+                  <tr key={a.username}><td><AccountLink username={a.username} domain={a.domain} /></td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td>{hasDA(a.da_domains) ? <span className="badge crit">{a.da_domains}</span> : "—"}</td><td className="num">{a.controlled_object_count || "—"}</td></tr>
                 ))}</tbody>
               </table>
             )}
@@ -321,7 +322,7 @@ function FragmentRow({ g, lateral, open, onToggle }: { g: ReuseGroup; lateral: b
         <td><button className="link-btn" onClick={onToggle}>{open ? "hide" : `members (${g.members.length})`}</button></td>
       </tr>
       {open && g.members.map((m: ReportAccount) => (
-        <tr key={`${m.domain}/${m.username}`} className="member-row"><td></td><td colSpan={lateral ? 4 : 5} className="muted">{m.username} · {m.domain} · {m.risk_level}</td></tr>
+        <tr key={`${m.domain}/${m.username}`} className="member-row"><td></td><td colSpan={lateral ? 4 : 5} className="muted"><AccountLink username={m.username} domain={m.domain} /> · {m.domain} · {m.risk_level}</td></tr>
       ))}
     </>
   )
