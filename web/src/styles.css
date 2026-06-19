@@ -1137,16 +1137,24 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
 @media (max-width: 720px) { .exposure-strip { grid-template-columns: 1fr; } }
 
 /* ---- Exposure page ---- */
-.bridge-matrix { border-collapse: collapse; font-size: 11px; }
-.bridge-matrix th, .bridge-matrix td { border: 1px solid #161d30; padding: 4px 9px; text-align: center; }
-.bridge-matrix th { color: #566076; } .bridge-matrix td.rowh { color: #a5b4fc; text-align: left; }
-.bridge-matrix td.m0 { color: #566076; } .bridge-matrix td.m1 { background: #3f1d2b; cursor: pointer; }
-.bridge-matrix td.m2 { background: #7f1d1d; color: #fecaca; cursor: pointer; } .bridge-matrix td.m3 { background: #b91c1c; color: #fff; font-weight: 700; cursor: pointer; }
+.bridge-cards { display: flex; flex-direction: column; gap: 12px; }
+.bridge-card { border: 1px solid var(--glass-border); border-left: 4px solid var(--faint); border-radius: 10px; padding: 14px; background: rgba(20, 29, 49, 0.5); }
+.bridge-card.crit { border-color: var(--crit); border-left-color: var(--crit); background: var(--crit-bg); }
+.bridge-card.high { border-left-color: var(--high); background: var(--high-bg); }
+.bridge-card.low { border-left-color: var(--faint); }
+.bridge-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.bridge-tier { font-size: 11px; letter-spacing: 1px; font-weight: 600; color: var(--dim); }
+.bridge-card.crit .bridge-tier { color: var(--crit); }
+.bridge-card.high .bridge-tier { color: var(--high); }
+.bridge-domains { font-weight: 600; font-size: 15px; margin-top: 5px; }
+.bridge-count { text-align: right; }
+.bridge-count-n { font-family: var(--mono); font-size: 24px; font-weight: 600; line-height: 1; }
+.bridge-count-l { font-size: 11px; color: var(--dim); }
+.bridge-badges { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.bridge-members-btn { margin-left: auto; }
+.bridge-members { margin-top: 10px; border-top: 1px solid var(--glass-border); padding-top: 8px; display: grid; gap: 3px; }
 .tier-head { border-left: 3px solid #fb7185; padding-left: 10px; margin: 10px 0 6px; }
 .tier-head.t2 { border-left-color: #fbbf24; }
-.bridge-clusters { margin-top: 12px; }
-.bridge-cluster-row { padding: 6px 0; border-bottom: 1px solid #161d30; font-size: 13px; }
-.matrix-legend { font-size: 12px; margin-top: 8px; }
 .triage-note { font-size: 12px; margin: 10px 0; }
 
 .forbidden-words-area {
