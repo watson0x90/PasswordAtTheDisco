@@ -680,7 +680,26 @@ func (s *Store) Summary(id string) (model.Summary, error) {
 		if acc.RiskLevel != "" {
 			sum.RiskCounts[acc.RiskLevel]++
 		}
+		if !acc.Enabled {
+			sum.DisabledAccounts++
+		}
+		if acc.PwdNeverExpires != nil && *acc.PwdNeverExpires {
+			sum.NeverExpires++
+		}
+		if acc.DaysOutOfCompliance > 0 {
+			sum.StalePasswords++
+		}
+		if acc.EscalatedBySharedDA {
+			sum.EscalatedBySharedDA++
+		}
+		if acc.Cracked && !acc.MeetsPolicy {
+			sum.PolicyViolations++
+		}
+		if acc.Controlled > 100 {
+			sum.HighControlled++
+		}
 	}
 	sum.Posture = model.PostureScore(a.ds.Accounts) // single source for the dashboard gauge
+	sum.BreachImpact = model.EstimateBreachImpact(sum.RiskCounts["Critical"], sum.DAPathways)
 	return sum, nil
 }

@@ -19,7 +19,9 @@ const acct = (o: Partial<Account>): Account => ({
 const report = (o: Partial<Report>): Report => ({
   total_accounts: 0, cracked_count: 0, uncracked_count: 0, da_pathways: [], cracked: [],
   cracked_reuse: [], uncracked_reuse: [], hibp_exposed: [], weak_passwords: [],
-  violation_counts: { common: 0, dictionary: 0, forbidden: 0, keyboard: 0 }, ...o,
+  violation_counts: { common: 0, dictionary: 0, forbidden: 0, keyboard: 0 },
+  escalated_by_shared_da: [], high_controlled: [], never_expires: [], stale_passwords: [],
+  kerberoastable: [], asrep_roastable: [], ...o,
 })
 
 describe("domainData", () => {

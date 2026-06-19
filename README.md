@@ -41,42 +41,57 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
-## What's new in 2.8
+## What's new in 2.11
+
+This release merges two complementary lines of work — **BloodHound graph
+integration + exposure analytics** (the attack-path view) and the standalone
+**Exposure dashboards + operator tooling** (the triage view).
+
+**BloodHound graph integration** plus a set of **exposure analytics dashboards**
+that turn raw cracked-credential data into attack-path context:
+
+- **BloodHound users import.** Upload a BloodHound users export (`POST
+  /api/upload/bheusers`) and AD properties — `pwdLastSet`, `pwdNeverExpires`,
+  `lastLogon`, controlled-object counts, and object SIDs — are applied to accounts
+  at upload time, so BHE is only queried for the DA-pathway graph checks that
+  actually need it.
+- **Bulk Cypher enrichment.** A Cypher client pre-fetches DA reachability and
+  controlled-object counts for every user in one pass instead of per-account
+  round-trips, cutting enrichment time substantially.
+- **Exposure analytics.** New analytics surface cross-domain credential reuse,
+  HIBP-vs-risk triage, blast-radius / controlled-object buckets, DA exposure by
+  domain, password-age distribution, never-expires counts, and a risk-factors
+  radar — see the rebuilt **Insights** and **Domains** views.
+- **Network graph.** An interactive graph visualizes cross-domain credential
+  reuse and password-similarity clusters, making shared-credential bridges
+  between domains visible at a glance.
+
+Plus the operator-console + reporting line:
+
+- **Exposure tab + Overview headline strip.** Threat-scenario triage built on the
+  *intersections* analysts reason about (redacted): cross-domain credential bridges
+  (domain×domain heatmap + ranked lateral-movement clusters), HIBP urgency triage
+  (Tier 1 cracked **&** breached vs Tier 2 breached-only), and a blast-radius
+  worklist ranked by DA-path · HIBP · cracked · shared (lead-gated reveal).
+- **Editable forbidden-words list.** Manage the analysis banned-words list from
+  **Setup → Policies** (lead-only, audit-logged with a count — never the words).
+- **Console + report polish.** Header collapses to a ☰ menu on narrow windows; a
+  fresh load no longer logs a 401 (`/api/me` returns 200 with an `authenticated`
+  flag); complexity reads as `a–z A–Z 0–9 !@#` in the UI **and** CSV/HTML exports;
+  the no-cleartext invariant was re-verified end-to-end (**zero** passwords, hashes,
+  or matched words in any of the 11 exports); a CSV formula-injection guard
+  (CWE-1236) is exercised by the synthetic data. New `tools/dev_seed.sh` stands up a
+  disposable, synthetic-data-loaded instance in one command.
+
+> Lab note: this repo ships **fictional** placeholder domains
+> (`PHANTOM.CORP` / `GHOST.CORP`) in `lists/password_policy.json`. Point it at
+> your own domains locally — real domain names, usernames, and cracked data are
+> never committed.
+
+## What's new in 2.7
 
 An **audit-data UX overhaul** so uploaded data is visible immediately and the
-upload page stops doing four jobs at once — plus a new **Exposure** view for
-CISO / blue-team threat triage:
-
-- **Console polish (post-2.9 review).** The header now collapses into a ☰ menu on
-  narrow/split-screen windows (no more clipped tabs or horizontal scroll); a fresh
-  page load no longer logs a 401 (the `/api/me` probe returns 200 with an
-  `authenticated` flag); and the "Password complexity" chart reads in plain
-  character-class tokens (`a–z A–Z 0–9 !@#`). New `tools/dev_seed.sh` stands up a
-  disposable, synthetic-data-loaded instance in one command for local testing.
-
-- **Exportable-report polish (post-2.9 review).** Downloadable CSV + HTML reports
-  now show the same readable complexity tokens as the UI (not `mixedalphaspecialnum`);
-  the weak-passwords report's category bars are legible; and the synthetic dataset
-  carries a formula-injection probe so the CSV anti-injection guard (CWE-1236) is
-  exercised on every export. The no-cleartext invariant was re-verified end-to-end:
-  **zero** cracked passwords, NT hashes, or matched words appear in any of the 11
-  exports.
-
-- **Exposure tab + Overview headline strip.** New threat-scenario views built on
-  the *intersections* analysts reason about (all from existing data, redacted):
-  **cross-domain credential bridges** (a domain×domain heatmap of shared
-  passwords + ranked lateral-movement clusters), **HIBP urgency triage** (Tier 1
-  cracked **&** breached → reset now, vs Tier 2 breached-only), and a
-  **blast-radius worklist** ("fix these first", ranked by DA-path · HIBP · cracked
-  · shared, with the lead-gated reveal). The Overview gains a headline strip:
-  cracked∩DA · cracked∩HIBP · cross-domain-shared.
-
-- **Editable forbidden-words list + UI polish.** Manage the password-analysis
-  banned-words list from **Setup → Policies** (lead-only, audit-logged with a
-  count — never the words; applies to newly ingested / re-analyzed data). Plus
-  consistent table widths (overflow scrolls within the panel), a spacing-token CSS
-  system with a guard test, and calm "no data yet" empty states — a fresh session
-  no longer logs 409s to the browser console.
+upload page stops doing four jobs at once:
 
 - **Data goes live instantly.** A shared "audit data changed" signal refreshes
   every view (Overview, Accounts, Domains, Actionable) the moment an upload,

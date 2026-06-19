@@ -35,6 +35,7 @@ type JobStatus struct {
 	StartedAt  string `json:"started_at,omitempty"`
 	ElapsedSec int64  `json:"elapsed_sec"`
 	Error      string `json:"error,omitempty"`
+	Message    string `json:"message,omitempty"` // short progress note for the UI
 }
 
 // mapEnricher serves prefetched enrichment from memory (no network).
@@ -68,6 +69,7 @@ type Manager struct {
 	startedAt time.Time
 	endedAt   time.Time
 	errMsg    string
+	message   string
 	cancel    context.CancelFunc
 	done      chan struct{}
 }
@@ -147,6 +149,70 @@ func (m *Manager) run(ctx context.Context, id string) {
 		return
 	}
 
+	// Try bulk Cypher approach first (3 queries total, fast).
+	// Falls back to per-user REST if the client doesn't support Cypher or fails.
+	m.setMessage("Querying BloodHound (bulk Cypher)…")
+	bulkEnr := m.eng.BuildBulkEnricher()
+	if bulkEnr != nil {
+		m.setTotal(len(accts))
+		// Run DA path checks for credential-relevant accounts only:
+		// cracked, shared (hash reuse), or HIBP-exposed.
+		m.setMessage("Checking DA paths for credential-relevant accounts…")
+		type acctInfo struct {
+			Key     string
+			Cracked bool
+			Shared  bool
+			HIBPHit bool
+		}
+		relevant := make([]struct {
+			Key     string
+			Cracked bool
+			Shared  bool
+			HIBPHit bool
+		}, 0, len(accts))
+		for _, a := range accts {
+			key := engine.NormalizeUsername(a.Username, a.Domain)
+			relevant = append(relevant, struct {
+				Key     string
+				Cracked bool
+				Shared  bool
+				HIBPHit bool
+			}{
+				Key:     key,
+				Cracked: a.Cracked,
+				Shared:  a.SharedWith > 0,
+				HIBPHit: a.HIBPBreached,
+			})
+		}
+		if bbe, ok := bulkEnr.(engine.BulkBloodhoundEnricher); ok {
+			bbe.Bulk.CheckDAForAccounts(relevant)
+		}
+		m.setMessage("Rescoring accounts…")
+		if err := m.store.Mutate(id, func(current []model.Account) []model.Account {
+			rescored := m.eng.RescoreWith(current, bulkEnr)
+			m.mu.Lock()
+			m.processed = len(rescored)
+			enriched := 0
+			for _, a := range rescored {
+				if a.PwdNeverExpires != nil || a.PwdLastSet > 0 || a.HasDAPathway() || a.Controlled > 0 {
+					enriched++
+				}
+			}
+			m.enriched = enriched
+			m.mu.Unlock()
+			return rescored
+		}); err != nil {
+			m.finish(PhaseFailed, "save: "+err.Error())
+			return
+		}
+		_ = m.store.RecordIngest(id, model.IngestEvent{
+			Kind: "enrich", AccountsLoaded: m.enriched, At: time.Now().UTC(), By: "system",
+		})
+		m.finish(PhaseDone, "")
+		return
+	}
+
+	// Fallback: per-user REST enrichment (slow, original approach).
 	seen := map[string]struct{}{}
 	users := make([]string, 0, len(accts))
 	for _, a := range accts {
@@ -202,7 +268,6 @@ func (m *Manager) run(ctx context.Context, id string) {
 		m.finish(PhaseFailed, "save: "+err.Error())
 		return
 	}
-	// wg.Wait() has already joined all workers above, so m.enriched is stable here.
 	_ = m.store.RecordIngest(id, model.IngestEvent{
 		Kind: "enrich", AccountsLoaded: m.enriched, At: time.Now().UTC(), By: "system",
 	})
@@ -249,6 +314,7 @@ func (m *Manager) Status() JobStatus {
 		Total:     m.total,
 		Enriched:  m.enriched,
 		Error:     m.errMsg,
+		Message:   m.message,
 	}
 	if !m.startedAt.IsZero() {
 		st.StartedAt = m.startedAt.UTC().Format(time.RFC3339)
@@ -259,4 +325,10 @@ func (m *Manager) Status() JobStatus {
 		st.ElapsedSec = int64(end.Sub(m.startedAt).Seconds())
 	}
 	return st
+}
+
+func (m *Manager) setMessage(msg string) {
+	m.mu.Lock()
+	m.message = msg
+	m.mu.Unlock()
 }

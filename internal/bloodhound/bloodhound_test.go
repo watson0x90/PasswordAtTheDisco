@@ -167,8 +167,11 @@ func TestClientConcurrencySemaphore(t *testing.T) {
 		go func() { defer wg.Done(); _, _, _ = c.get("/api/v2/available-domains") }()
 	}
 	wg.Wait()
-	if got := atomic.LoadInt32(&max); got == 0 || got > 4 {
-		t.Fatalf("max concurrent = %d, want 1..4", got)
+	// Semaphore is sized at EnrichConcurrency*4 = 16 to avoid self-contention
+	// when enrichment workers make sequential calls. With 20 goroutines competing,
+	// we expect max concurrency capped at 16.
+	if got := atomic.LoadInt32(&max); got == 0 || got > 16 {
+		t.Fatalf("max concurrent = %d, want 1..16", got)
 	}
 }
 

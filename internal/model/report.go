@@ -79,6 +79,16 @@ type Report struct {
 	HIBPExposed     []ReportAccount `json:"hibp_exposed"`    // accounts whose hash is in HIBP + the count
 	WeakPasswords   []ReportAccount `json:"weak_passwords"`  // cracked pw matched a wordlist (common/dictionary/forbidden/keyboard)
 	ViolationCounts ViolationCounts `json:"violation_counts"`
+	// Lateral-movement escalation: accounts sharing a hash with a DA-pathway account.
+	EscalatedBySharedDA []ReportAccount `json:"escalated_by_shared_da"`
+	// Privilege hotspots: accounts controlling > 100 AD objects.
+	HighControlled []ReportAccount `json:"high_controlled"`
+	// Password age / never-expires accounts (from BloodHound enrichment).
+	NeverExpires   []ReportAccount `json:"never_expires"`
+	StalePasswords []ReportAccount `json:"stale_passwords"`
+	// Kerberos attack surface.
+	Kerberoastable []ReportAccount `json:"kerberoastable"`
+	ASREPRoastable []ReportAccount `json:"asrep_roastable"`
 }
 
 // Term is one recurring wordlist match and how many accounts' passwords contain it.
@@ -136,13 +146,19 @@ func AggregateTerms(accts []Account, topN int) Terms {
 // reports. Grouping is done here (server-side) because the NT hash is not exposed.
 func BuildReport(accts []Account) Report {
 	rep := Report{
-		TotalAccounts:  len(accts),
-		DAPathways:     []ReportAccount{},
-		Cracked:        []ReportAccount{},
-		CrackedReuse:   []ReuseGroup{},
-		UncrackedReuse: []ReuseGroup{},
-		HIBPExposed:    []ReportAccount{},
-		WeakPasswords:  []ReportAccount{},
+		TotalAccounts:       len(accts),
+		DAPathways:          []ReportAccount{},
+		Cracked:             []ReportAccount{},
+		CrackedReuse:        []ReuseGroup{},
+		UncrackedReuse:      []ReuseGroup{},
+		HIBPExposed:         []ReportAccount{},
+		WeakPasswords:       []ReportAccount{},
+		EscalatedBySharedDA: []ReportAccount{},
+		HighControlled:      []ReportAccount{},
+		NeverExpires:        []ReportAccount{},
+		StalePasswords:      []ReportAccount{},
+		Kerberoastable:      []ReportAccount{},
+		ASREPRoastable:      []ReportAccount{},
 	}
 
 	byHash := map[string][]Account{}
@@ -174,6 +190,24 @@ func BuildReport(accts []Account) Report {
 		}
 		if a.KeyboardPatternCount > 0 {
 			rep.ViolationCounts.Keyboard++
+		}
+		if a.EscalatedBySharedDA {
+			rep.EscalatedBySharedDA = append(rep.EscalatedBySharedDA, toReportAccount(a))
+		}
+		if a.Controlled > 100 {
+			rep.HighControlled = append(rep.HighControlled, toReportAccount(a))
+		}
+		if a.PwdNeverExpires != nil && *a.PwdNeverExpires {
+			rep.NeverExpires = append(rep.NeverExpires, toReportAccount(a))
+		}
+		if a.DaysOutOfCompliance > 0 {
+			rep.StalePasswords = append(rep.StalePasswords, toReportAccount(a))
+		}
+		if a.HasSPN != nil && *a.HasSPN {
+			rep.Kerberoastable = append(rep.Kerberoastable, toReportAccount(a))
+		}
+		if a.DontReqPreauth != nil && *a.DontReqPreauth {
+			rep.ASREPRoastable = append(rep.ASREPRoastable, toReportAccount(a))
 		}
 		if k := reuseKey(a.NTHash); k != "" {
 			if _, ok := byHash[k]; !ok {
@@ -220,6 +254,14 @@ func BuildReport(accts []Account) Report {
 	sort.SliceStable(rep.DAPathways, func(i, j int) bool { return rep.DAPathways[i].RiskScore > rep.DAPathways[j].RiskScore })
 	sort.SliceStable(rep.HIBPExposed, func(i, j int) bool { return rep.HIBPExposed[i].HIBPBreachCount > rep.HIBPExposed[j].HIBPBreachCount })
 	sort.SliceStable(rep.WeakPasswords, func(i, j int) bool { return rep.WeakPasswords[i].RiskScore > rep.WeakPasswords[j].RiskScore })
+	sort.SliceStable(rep.EscalatedBySharedDA, func(i, j int) bool {
+		return rep.EscalatedBySharedDA[i].RiskScore > rep.EscalatedBySharedDA[j].RiskScore
+	})
+	sort.SliceStable(rep.HighControlled, func(i, j int) bool { return rep.HighControlled[i].RiskScore > rep.HighControlled[j].RiskScore })
+	sort.SliceStable(rep.NeverExpires, func(i, j int) bool { return rep.NeverExpires[i].RiskScore > rep.NeverExpires[j].RiskScore })
+	sort.SliceStable(rep.StalePasswords, func(i, j int) bool { return rep.StalePasswords[i].RiskScore > rep.StalePasswords[j].RiskScore })
+	sort.SliceStable(rep.Kerberoastable, func(i, j int) bool { return rep.Kerberoastable[i].RiskScore > rep.Kerberoastable[j].RiskScore })
+	sort.SliceStable(rep.ASREPRoastable, func(i, j int) bool { return rep.ASREPRoastable[i].RiskScore > rep.ASREPRoastable[j].RiskScore })
 	sortGroups := func(g []ReuseGroup) {
 		sort.SliceStable(g, func(i, j int) bool {
 			if g[i].Size != g[j].Size {

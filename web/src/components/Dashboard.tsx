@@ -69,6 +69,7 @@ export function Dashboard() {
       <div className="view-head">
         <div className="section-label">Overview</div>
         <div className="export-actions">
+          {summary?.generated_at && <span className="muted data-ts">Data scored {new Date(summary.generated_at).toLocaleString()}</span>}
           <button className="btn" onClick={() => nav("reports")}>Reports &amp; export →</button>
         </div>
       </div>
@@ -80,6 +81,16 @@ export function Dashboard() {
       </div>
 
       <ExposureHeadline accounts={accounts} report={report} />
+      {summary && (
+        <div className="stat-grid stat-grid-secondary">
+          <Stat label="Disabled" value={summary.disabled_accounts} delay={0} />
+          <Stat label="Never Expires" value={summary.never_expires} sub="password set to never expire" delay={0.06} />
+          <Stat label="Stale Passwords" value={summary.stale_passwords} sub="past max age policy" accent delay={0.12} />
+          <Stat label="Policy Violations" value={summary.policy_violations} sub="cracked & failing policy" accent delay={0.18} />
+          <Stat label="Escalated (Shared-DA)" value={summary.escalated_by_shared_da} sub="shares hash with a DA" crit delay={0.24} />
+          <Stat label="High Privilege" value={summary.high_controlled} sub="controls > 100 objects" crit delay={0.3} />
+        </div>
+      )}
 
       <div className="section-label">Security Posture</div>
       <div className="panel posture-panel">
@@ -103,6 +114,33 @@ export function Dashboard() {
           <div className="center-state"><div className="spinner">scoring</div></div>
         )}
       </div>
+
+      {summary?.breach_impact && (
+        <>
+          <div className="section-label">Breach Impact Estimate</div>
+          <div className="panel breach-panel">
+            <div className="breach-grid">
+              <div className="breach-item">
+                <div className="breach-label">Breach Probability</div>
+                <div className={`breach-value breach-${summary.breach_impact.probability.toLowerCase().replace(" ", "-")}`}>
+                  {summary.breach_impact.probability}
+                </div>
+                <div className="breach-sub">{summary.breach_impact.probability_pct}</div>
+              </div>
+              <div className="breach-item">
+                <div className="breach-label">Estimated Cost</div>
+                <div className="breach-value">{summary.breach_impact.estimated_cost}</div>
+                <div className="breach-sub">industry avg (IBM CODB)</div>
+              </div>
+              <div className="breach-item">
+                <div className="breach-label">Recovery Time</div>
+                <div className="breach-value">{summary.breach_impact.recovery_time}</div>
+                <div className="breach-sub">to full remediation</div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       <div className="section-label">Charts</div>
       <div className="chart-grid">
