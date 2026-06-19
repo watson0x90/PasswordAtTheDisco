@@ -5,7 +5,7 @@ import { useAudits } from "../auditsData"
 import { useAuth } from "../auth"
 import { RISK_CLASS } from "../util"
 import { crossDomainBridges, hibpTriage, blastRadius, type BridgeCluster } from "../exposure"
-import { AccountDrawer } from "./AccountDrawer"
+import { AccountLink } from "./AccountLink"
 import { InfoTip } from "./InfoTip"
 import { GLOSSARY } from "../glossary"
 
@@ -23,15 +23,9 @@ export function Exposure() {
 
   const [showAllBridges, setShowAllBridges] = useState(false)
   const [openCluster, setOpenCluster] = useState<string | null>(null)
-  const [selectedAccount, setSelectedAccount] = useState<Account | null>(null)
   const timers = useRef<number[]>([])
 
   const isLead = me?.role === "lead"
-
-  function openAccount(username: string, domain: string) {
-    const full = (accounts ?? []).find((acc) => acc.username === username && acc.domain === domain)
-    if (full) setSelectedAccount(full)
-  }
 
   useEffect(() => {
     let alive = true
@@ -157,9 +151,7 @@ export function Exposure() {
                           {c.members.map((m, mi) => (
                             <tr key={`${m.domain}/${m.username}/${mi}`}>
                               <td>
-                                <button className="link-btn" onClick={() => openAccount(m.username, m.domain)}>
-                                  {m.username}
-                                </button>
+                                <AccountLink username={m.username} domain={m.domain} />
                               </td>
                               <td className="muted">{m.domain}</td>
                               <td><span className={`badge ${RISK_CLASS[m.risk_level] || ""}`}>{m.risk_level}</span></td>
@@ -287,8 +279,6 @@ export function Exposure() {
           ⚠ revealing a credential is recorded in the audit log — operator, account, and timestamp.
         </div>
       )}
-
-      {selectedAccount && <AccountDrawer account={selectedAccount} onClose={() => setSelectedAccount(null)} />}
     </>
   )
 }

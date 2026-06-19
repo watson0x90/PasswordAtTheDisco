@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react"
 import { api, ApiError, type Account } from "../api"
 import { useAuth } from "../auth"
 import { RISK_CLASS, hasDA } from "../util"
-import { AccountDrawer, WeakCell } from "./AccountDrawer"
+import { WeakCell } from "./AccountDrawer"
+import { AccountLink } from "./AccountLink"
 import { InfoTip } from "./InfoTip"
 import { GLOSSARY } from "../glossary"
 
@@ -31,7 +32,6 @@ export function AccountsTable({ accounts }: { accounts: Account[] }) {
   const [revealed, setRevealed] = useState<Record<string, string>>({})
   const [revealing, setRevealing] = useState("")
   const [revealError, setRevealError] = useState("")
-  const [selected, setSelected] = useState<Account | null>(null)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
@@ -123,9 +123,7 @@ export function AccountsTable({ accounts }: { accounts: Account[] }) {
             {visible.map((a, i) => (
               <tr key={`${a.domain}/${a.username}/${start + i}`}>
                 <td>
-                  <button className="link-btn acct-name" onClick={() => setSelected(a)} title="Account details">
-                    {a.username}
-                  </button>
+                  <AccountLink username={a.username} domain={a.domain} />
                   {!a.enabled && <span className="badge-disabled" title="account disabled in AD">disabled</span>}
                 </td>
                 <td className="muted">{a.domain}</td>
@@ -183,8 +181,6 @@ export function AccountsTable({ accounts }: { accounts: Account[] }) {
       {isLead && (
         <div className="meta-line">⚠ revealing a credential is recorded in the audit log — operator, account, and timestamp.</div>
       )}
-
-      {selected && <AccountDrawer account={selected} onClose={() => setSelected(null)} />}
     </>
   )
 }
