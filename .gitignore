@@ -191,6 +191,10 @@ test_html_output/
 # Sample/audit input data -- contains real AD usernames from the lab; never commit
 sample_data/
 
+# Disposable dev-instance scratch (dev_seed.sh + ad-hoc local instances)
+.dev*
+.no-bloodhound.json
+
 # Scripts directory (internal development only)
 scripts/
 

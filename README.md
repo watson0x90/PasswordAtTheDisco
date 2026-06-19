@@ -127,6 +127,15 @@ results** (`user:hash:password`) — matched by hash, re-scored, no re-upload.
 Then open the console, sign in, and triage: **Overview → Actionable → Domains →
 Accounts** (with the lead-gated reveal).
 
+**No data handy? Generate some.** `python tools/gen_synthetic.py` writes a
+self-contained multi-domain sample set — synthetic NTLM hashes + a crack file with
+realistic reuse / HIBP / weak-password scenarios — to `sample_data/synthetic/`:
+upload each `*_dump.txt`, then apply `cracks.txt`. Credentials are 100% synthetic
+(no real hashes or passwords). If you have a BloodHound lab connected,
+`tools/gen_bh_sample.py` builds a much larger dataset seeded from your real BHE
+users (still synthetic credentials) so the DA-pathway, kerberoastable, controlled-
+objects, and network-graph dashboards populate too.
+
 Input is impacket `secretsdump` NTDS format
 (`user:rid:lm:nt:::password`) or a simple `user:hash[:password]`; HIBP and
 BloodHound are optional. See [`docs/architecture.md`](docs/architecture.md) for
