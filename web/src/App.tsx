@@ -1,6 +1,7 @@
 import { lazy, Suspense, useState } from "react"
 import { AuthProvider, useAuth } from "./auth"
 import { AccountsProvider } from "./accountsData"
+import { AccountDrawerProvider } from "./accountDrawer"
 import { AuditsProvider } from "./auditsData"
 import { NavProvider } from "./nav"
 import { JobsProvider } from "./jobs"
@@ -78,13 +79,15 @@ function Routed() {
     <NavProvider value={setView}>
       <AuditsProvider>
         <AccountsProvider>
-          <JobsProvider>
-            <AppShell view={view} onNav={setView}>
-              <Suspense fallback={<div className="center-state"><div className="spinner">loading</div></div>}>
-                {viewFor(view)}
-              </Suspense>
-            </AppShell>
-          </JobsProvider>
+          <AccountDrawerProvider>
+            <JobsProvider>
+              <AppShell view={view} onNav={setView}>
+                <Suspense fallback={<div className="center-state"><div className="spinner">loading</div></div>}>
+                  {viewFor(view)}
+                </Suspense>
+              </AppShell>
+            </JobsProvider>
+          </AccountDrawerProvider>
         </AccountsProvider>
       </AuditsProvider>
     </NavProvider>

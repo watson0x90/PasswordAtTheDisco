@@ -383,6 +383,8 @@ export const api = {
   diff: (a: string, b: string) =>
     request<DiffResult>(`/audits/${encodeURIComponent(a)}/diff/${encodeURIComponent(b)}`),
 
+  auditAccounts: (id: string) => request<Account[]>(`/audits/${encodeURIComponent(id)}/accounts`),
+
   createAudit: (name: string, notes: string, csrf: string) =>
     request<AuditMeta>("/audits", {
       method: "POST",
