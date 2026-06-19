@@ -5,6 +5,7 @@ import { useAudits } from "../auditsData"
 import { useAuth } from "../auth"
 import { RISK_CLASS } from "../util"
 import { crossDomainBridges, hibpTriage, blastRadius, type BridgeCluster } from "../exposure"
+import { AccountDrawer } from "./AccountDrawer"
 import { InfoTip } from "./InfoTip"
 import { GLOSSARY } from "../glossary"
 
@@ -22,9 +23,15 @@ export function Exposure() {
 
   const [showAllBridges, setShowAllBridges] = useState(false)
   const [openCluster, setOpenCluster] = useState<string | null>(null)
+  const [selectedAccount, setSelectedAccount] = useState<Account | null>(null)
   const timers = useRef<number[]>([])
 
   const isLead = me?.role === "lead"
+
+  function openAccount(username: string, domain: string) {
+    const full = (accounts ?? []).find((acc) => acc.username === username && acc.domain === domain)
+    if (full) setSelectedAccount(full)
+  }
 
   useEffect(() => {
     let alive = true
@@ -142,13 +149,27 @@ export function Exposure() {
                   </div>
                   {open && (
                     <div className="bridge-members">
-                      {c.members.map((m, mi) => (
-                        <div key={`${m.domain}/${m.username}/${mi}`} className="member-row">
-                          <span className="muted">
-                            {m.username} · {m.domain} · {m.risk_level}
-                          </span>
-                        </div>
-                      ))}
+                      <table className="member-table">
+                        <thead>
+                          <tr><th>Username</th><th>Domain</th><th>Risk</th><th>Score</th><th>HIBP</th><th>Shared</th></tr>
+                        </thead>
+                        <tbody>
+                          {c.members.map((m, mi) => (
+                            <tr key={`${m.domain}/${m.username}/${mi}`}>
+                              <td>
+                                <button className="link-btn" onClick={() => openAccount(m.username, m.domain)}>
+                                  {m.username}
+                                </button>
+                              </td>
+                              <td className="muted">{m.domain}</td>
+                              <td><span className={`badge ${RISK_CLASS[m.risk_level] || ""}`}>{m.risk_level}</span></td>
+                              <td className="num">{m.risk_score.toFixed(1)}</td>
+                              <td className="num">{m.hibp_breach_count > 0 ? m.hibp_breach_count.toLocaleString() : "—"}</td>
+                              <td className="num">{m.shared_with}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   )}
                 </div>
@@ -266,6 +287,8 @@ export function Exposure() {
           ⚠ revealing a credential is recorded in the audit log — operator, account, and timestamp.
         </div>
       )}
+
+      {selectedAccount && <AccountDrawer account={selectedAccount} onClose={() => setSelectedAccount(null)} />}
     </>
   )
 }
