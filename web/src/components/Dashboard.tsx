@@ -10,6 +10,8 @@ import { Bars, ChartCard, Donut, PostureGauge } from "./Charts"
 import { ExposureHeadline } from "./ExposureHeadline"
 import { Insights } from "./Insights"
 import { useJobs } from "../jobs"
+import { InfoTip } from "./InfoTip"
+import { GLOSSARY } from "../glossary"
 
 const RATING_COLOR: Record<string, string> = { Strong: "#34d399", Fair: "#fbbf24", Weak: "#fb7185", "No Data": "#8a96b2" }
 const LIKELIHOOD_COLOR: Record<string, string> = {
@@ -76,8 +78,8 @@ export function Dashboard() {
       <div className="stat-grid">
         <Stat label="Accounts" value={total} delay={0} />
         <Stat label="Cracked" value={cracked} sub={`${crackPct}% of accounts`} delay={0.06} />
-        <Stat label="HIBP Breached" value={breached} accent delay={0.12} />
-        <Stat label="DA Pathways" value={da} crit delay={0.18} />
+        <Stat label="HIBP Breached" value={breached} tip={GLOSSARY.hibp} accent delay={0.12} />
+        <Stat label="DA Pathways" value={da} tip={GLOSSARY.da_pathway} crit delay={0.18} />
       </div>
 
       <ExposureHeadline accounts={accounts} report={report} />
@@ -87,8 +89,8 @@ export function Dashboard() {
           <Stat label="Never Expires" value={summary.never_expires} sub="password set to never expire" delay={0.06} />
           <Stat label="Stale Passwords" value={summary.stale_passwords} sub="past max age policy" accent delay={0.12} />
           <Stat label="Policy Violations" value={summary.policy_violations} sub="cracked & failing policy" accent delay={0.18} />
-          <Stat label="Escalated (Shared-DA)" value={summary.escalated_by_shared_da} sub="shares hash with a DA" crit delay={0.24} />
-          <Stat label="High Privilege" value={summary.high_controlled} sub="controls > 100 objects" crit delay={0.3} />
+          <Stat label="Escalated (Shared-DA)" value={summary.escalated_by_shared_da} sub="shares hash with a DA" tip={GLOSSARY.escalated_shared_da} crit delay={0.24} />
+          <Stat label="High Privilege" value={summary.high_controlled} sub="controls > 100 objects" tip={GLOSSARY.high_controlled} crit delay={0.3} />
         </div>
       )}
 
@@ -324,16 +326,17 @@ interface StatProps {
   label: string
   value: number
   sub?: string
+  tip?: string
   accent?: boolean
   crit?: boolean
   delay: number
 }
 
-function Stat({ label, value, sub, accent, crit, delay }: StatProps) {
+function Stat({ label, value, sub, tip, accent, crit, delay }: StatProps) {
   const cls = crit ? "stat crit" : accent ? "stat accent" : "stat"
   return (
     <div className={cls} style={{ animationDelay: `${delay}s` }}>
-      <div className="stat-label">{label}</div>
+      <div className="stat-label">{label}{tip && <InfoTip text={tip} />}</div>
       <div className="stat-value">{value.toLocaleString()}</div>
       {sub && <div className="stat-sub">{sub}</div>}
     </div>

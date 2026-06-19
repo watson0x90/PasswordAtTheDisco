@@ -467,6 +467,7 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 .table-wrap.virtual .accounts td { height: 38px; box-sizing: border-box; overflow: hidden; }
 .accounts .num { text-align: right; font-variant-numeric: tabular-nums; }
 .muted { color: var(--faint); }
+.infotip { margin-left: 4px; font-size: 11px; color: var(--faint); cursor: help; user-select: none; }
 
 .badge {
   display: inline-block;

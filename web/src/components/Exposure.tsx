@@ -6,6 +6,8 @@ import { useAuth } from "../auth"
 import { RISK_CLASS } from "../util"
 import { crossDomainBridges, hibpTriage, blastRadius, type BridgeCluster } from "../exposure"
 import { ExposureHeadline } from "./ExposureHeadline"
+import { InfoTip } from "./InfoTip"
+import { GLOSSARY } from "../glossary"
 
 export function Exposure() {
   const { me } = useAuth()
@@ -95,7 +97,7 @@ export function Exposure() {
       )}
 
       {/* ── Cross-domain credential bridges ── */}
-      <div className="section-label">Cross-domain credential bridges</div>
+      <div className="section-label">Cross-domain credential bridges<InfoTip text={GLOSSARY.bridge_matrix} /></div>
       {bridges.domains.length < 2 ? (
         <div className="panel">
           <div className="muted">No credentials are shared across domains.</div>
@@ -186,7 +188,7 @@ export function Exposure() {
       <div className="section-label">HIBP urgency triage</div>
       <div className="panel">
         <div className="tier-head">
-          <b>Tier 1 · {triage.tier1.length} — cracked + breached</b>
+          <b>Tier 1 · {triage.tier1.length} — cracked + breached</b><InfoTip text={GLOSSARY.tier1_hibp} />
           <div className="muted">exact credential is public → reset now</div>
         </div>
         {triage.tier1.length === 0 ? (
@@ -196,7 +198,7 @@ export function Exposure() {
         )}
 
         <div className="tier-head t2">
-          <b>Tier 2 · {triage.tier2.length} — breached, not cracked</b>
+          <b>Tier 2 · {triage.tier2.length} — breached, not cracked</b><InfoTip text={GLOSSARY.tier2_hibp} />
           <div className="muted">hash in breach data → rotate next cycle</div>
         </div>
         {triage.tier2.length === 0 ? (
