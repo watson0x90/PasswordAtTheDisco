@@ -1543,3 +1543,25 @@ func TestDeleteDomain(t *testing.T) {
 		t.Fatalf("no domain_delete ingest event for CORP_A found in: %+v", ingests)
 	}
 }
+
+func TestAuditAccountsEndpoint(t *testing.T) {
+	srv := newServer("secret")
+	id := seed(t, srv)
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	openAudit(t, srv, lc, lcsrf, id) // unlocks the store for this session
+	rr := do(srv, "GET", "/api/audits/"+id+"/accounts", lc)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", rr.Code, rr.Body.String())
+	}
+	// the seeded account username must be present (redacted), no cleartext
+	if !strings.Contains(rr.Body.String(), "alice") {
+		t.Fatalf("expected seeded account in body: %s", rr.Body.String())
+	}
+	if strings.Contains(rr.Body.String(), "Welcome1") {
+		t.Fatalf("LEAKED cleartext in audit-accounts body")
+	}
+	rr2 := do(srv, "GET", "/api/audits/nope/accounts", lc)
+	if rr2.Code != http.StatusOK || strings.TrimSpace(rr2.Body.String()) != "[]" {
+		t.Fatalf("unknown id = %d %q, want 200 []", rr2.Code, rr2.Body.String())
+	}
+}

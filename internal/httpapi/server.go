@@ -144,6 +144,7 @@ func (s *Server) Routes() http.Handler {
 	// Views scoped to the session's active audit
 	mux.Handle("GET /api/summary", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleSummary))))
 	mux.Handle("GET /api/accounts", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleAccounts))))
+	mux.Handle("GET /api/audits/{id}/accounts", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleAuditAccounts))))
 	mux.Handle("GET /api/report", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleReport))))
 	mux.Handle("GET /api/report/terms", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleReportTerms))))
 	mux.Handle("GET /api/ingests", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleIngests))))
@@ -1251,6 +1252,20 @@ func (s *Server) handleAccounts(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, []model.Account{})
 		return
 	}
+	accts, err := s.Store.Accounts(id, false)
+	if err != nil {
+		writeJSON(w, http.StatusOK, []model.Account{})
+		return
+	}
+	writeJSON(w, http.StatusOK, accts)
+}
+
+// handleAuditAccounts returns the redacted accounts for a SPECIFIC audit by id
+// (not necessarily the session's active audit) -- used by Compare to open the
+// account drawer for either compared audit. Same redaction + gating as
+// /api/accounts; unknown/empty id yields 200 [].
+func (s *Server) handleAuditAccounts(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
 	accts, err := s.Store.Accounts(id, false)
 	if err != nil {
 		writeJSON(w, http.StatusOK, []model.Account{})
