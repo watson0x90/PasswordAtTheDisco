@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { api, ApiError, type Account, type Report, type ReportAccount, type ReuseGroup } from "../api"
 import { useAccountsData } from "../accountsData"
 import { useAudits } from "../auditsData"
-import { hasDA } from "../util"
+import { hasDA, RISK_CLASS } from "../util"
 import { hibpSplit, posture, riskDistribution } from "../insights"
 import { ChartCard, Donut, PostureGauge } from "./Charts"
 import { AccountsTable } from "./AccountsTable"
@@ -98,6 +98,8 @@ export function Domains() {
 }
 
 function DomainDetail({ domain, accounts, report, reportErr, onBack }: { domain: string; accounts: Account[]; report: Report | null; reportErr: string; onBack: () => void }) {
+  const [tab, setTab] = useState<"overview" | "risk" | "compliance" | "accounts">("overview")
+
   const p = posture(accounts)
   const pol = domainPolicy(accounts)
   const wl = domainWordlist(accounts)
@@ -110,6 +112,18 @@ function DomainDetail({ domain, accounts, report, reportErr, onBack }: { domain:
   const breached = accounts.filter((a) => a.hibp_breached).length
   const critical = accounts.filter((a) => a.risk_level === "Critical").length
   const da = accounts.filter((a) => hasDA(a.da_domains)).length
+  const neverExpires = accounts.filter((a) => a.pwd_never_expires === true).length
+  const stale = accounts.filter((a) => (a.days_out_of_compliance ?? 0) > 0).length
+  const kerberoastable = accounts.filter((a) => a.has_spn === true).length
+  const asrep = accounts.filter((a) => a.dont_req_preauth === true).length
+  const escalatedDA = accounts.filter((a) => a.escalated_by_shared_da).length
+
+  const TABS: { key: typeof tab; label: string }[] = [
+    { key: "overview", label: "Overview" },
+    { key: "risk", label: "Credential Risk" },
+    { key: "compliance", label: "Policy & Compliance" },
+    { key: "accounts", label: "Accounts" },
+  ]
 
   return (
     <>
@@ -127,44 +141,147 @@ function DomainDetail({ domain, accounts, report, reportErr, onBack }: { domain:
         </div>
       </div>
 
-      <div className="domain-strips">
-        <div className="panel strip">
-          <div className="strip-title">Policy</div>
-          <div className="strip-stats"><DStat label="Meets" value={pol.meets} /><DStat label="Fails" value={pol.fails} tone="high" /><DStat label="Disabled" value={pol.disabled} /></div>
-        </div>
-        <div className="panel strip">
-          <div className="strip-title">Wordlist hits</div>
-          <div className="strip-stats"><DStat label="Common" value={wl.common} tone="high" /><DStat label="Dictionary" value={wl.dictionary} /><DStat label="Forbidden" value={wl.banned} tone="high" /><DStat label="Keyboard" value={wl.keyboard} /></div>
-        </div>
+      <div className="domain-tabs">
+        {TABS.map((t) => (
+          <button key={t.key} className={`domain-tab ${tab === t.key ? "active" : ""}`} onClick={() => setTab(t.key)}>
+            {t.label}
+          </button>
+        ))}
       </div>
 
-      <div className="chart-grid">
-        <ChartCard title="Risk distribution"><Donut data={riskDistribution(accounts)} /></ChartCard>
-        <ChartCard title="HIBP exposure"><Donut data={hibpSplit(accounts)} /></ChartCard>
-      </div>
+      {tab === "overview" && (
+        <>
+          <div className="stat-grid stat-grid-secondary">
+            <StatMini label="Never Expires" value={neverExpires} />
+            <StatMini label="Stale Passwords" value={stale} tone="high" />
+            <StatMini label="Kerberoastable" value={kerberoastable} tone="high" />
+            <StatMini label="AS-REP Roastable" value={asrep} tone="crit" />
+            <StatMini label="Escalated (Shared-DA)" value={escalatedDA} tone="crit" />
+            <StatMini label="Disabled" value={accounts.filter((a) => !a.enabled).length} />
+          </div>
+          <div className="chart-grid">
+            <ChartCard title="Risk distribution"><Donut data={riskDistribution(accounts)} /></ChartCard>
+            <ChartCard title="HIBP exposure"><Donut data={hibpSplit(accounts)} /></ChartCard>
+          </div>
+          <div className="domain-strips">
+            <div className="panel strip">
+              <div className="strip-title">Policy</div>
+              <div className="strip-stats"><DStat label="Meets" value={pol.meets} /><DStat label="Fails" value={pol.fails} tone="high" /><DStat label="Disabled" value={pol.disabled} /></div>
+            </div>
+            <div className="panel strip">
+              <div className="strip-title">Wordlist hits</div>
+              <div className="strip-stats"><DStat label="Common" value={wl.common} tone="high" /><DStat label="Dictionary" value={wl.dictionary} /><DStat label="Forbidden" value={wl.banned} tone="high" /><DStat label="Keyboard" value={wl.keyboard} /></div>
+            </div>
+          </div>
+        </>
+      )}
 
-      {reportErr && <div className="hint">{reportErr} — cluster/DA panels need the report.</div>}
+      {tab === "risk" && (
+        <>
+          {reportErr && <div className="hint">{reportErr} — cluster/DA panels need the report.</div>}
 
-      <ReuseClusters title="Reused passwords (cracked)" groups={clusters.cracked} lateral={false} />
-      <ReuseClusters title="Shared uncracked hashes (lateral movement)" groups={clusters.uncracked} lateral={true} />
+          <div className="section-label sub">DA-pathway accounts</div>
+          <div className="panel">
+            {daPaths.length === 0 ? (
+              <div className="muted">No BloodHound DA pathways in this domain.</div>
+            ) : (
+              <table className="accounts compact"><thead><tr><th>Username</th><th>Risk</th><th className="num">Score</th><th className="num">HIBP</th><th>DA domains</th><th className="num">Controlled</th></tr></thead>
+                <tbody>{daPaths.map((a) => (<tr key={a.username}><td>{a.username}</td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td className="num">{a.hibp_breach_count || "—"}</td><td className="muted">{a.da_domains ?? "—"}</td><td className="num">{(a as any).controlled_object_count || "—"}</td></tr>))}</tbody>
+              </table>
+            )}
+          </div>
 
-      <div className="section-label sub">DA-pathway accounts</div>
-      <div className="panel">
-        {daPaths.length === 0 ? (
-          <div className="muted">No BloodHound DA pathways in this domain (run enrichment from Setup → Integrations → BloodHound).</div>
-        ) : (
-          <table className="accounts compact"><thead><tr><th>Username</th><th>Risk</th><th className="num">HIBP</th><th>DA domains</th></tr></thead>
-            <tbody>{daPaths.map((a) => (<tr key={a.username}><td>{a.username}</td><td>{a.risk_level}</td><td className="num">{a.hibp_breach_count || "—"}</td><td className="muted">{a.da_domains ?? "—"}</td></tr>))}</tbody>
-          </table>
-        )}
-      </div>
+          <ReuseClusters title="Reused passwords (cracked)" groups={clusters.cracked} lateral={false} />
+          <ReuseClusters title="Shared uncracked hashes (lateral movement)" groups={clusters.uncracked} lateral={true} />
 
-      <div className="section-label sub">Quick wins — top {QUICK_WINS_N} weakest cracked</div>
-      <AccountsTable accounts={quick} />
+          <div className="section-label sub">Escalated by Shared-DA</div>
+          <div className="panel">
+            {escalatedDA === 0 ? (
+              <div className="muted">No accounts escalated via hash-sharing with a DA.</div>
+            ) : (
+              <table className="accounts compact"><thead><tr><th>Username</th><th>Risk</th><th className="num">Score</th><th className="num">Shared</th></tr></thead>
+                <tbody>{accounts.filter((a) => a.escalated_by_shared_da).slice(0, 50).map((a) => (
+                  <tr key={a.username}><td>{a.username}</td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td className="num">{a.shared_with}</td></tr>
+                ))}</tbody>
+              </table>
+            )}
+          </div>
+        </>
+      )}
 
-      <div className="section-label sub">All accounts</div>
-      <AccountsTable accounts={accounts} />
+      {tab === "compliance" && (
+        <>
+          <div className="domain-strips">
+            <div className="panel strip">
+              <div className="strip-title">Policy compliance</div>
+              <div className="strip-stats"><DStat label="Meets" value={pol.meets} /><DStat label="Fails" value={pol.fails} tone="high" /><DStat label="Disabled" value={pol.disabled} /></div>
+            </div>
+            <div className="panel strip">
+              <div className="strip-title">Wordlist hits</div>
+              <div className="strip-stats"><DStat label="Common" value={wl.common} tone="high" /><DStat label="Dictionary" value={wl.dictionary} /><DStat label="Forbidden" value={wl.banned} tone="high" /><DStat label="Keyboard" value={wl.keyboard} /></div>
+            </div>
+          </div>
+
+          <div className="section-label sub">Stale passwords (past max age)</div>
+          <div className="panel">
+            {stale === 0 ? (
+              <div className="muted">No stale passwords in this domain.</div>
+            ) : (
+              <table className="accounts compact"><thead><tr><th>Username</th><th>Risk</th><th className="num">Score</th><th className="num">Days overdue</th><th>Enabled</th></tr></thead>
+                <tbody>{accounts.filter((a) => (a.days_out_of_compliance ?? 0) > 0).sort((a, b) => (b.days_out_of_compliance ?? 0) - (a.days_out_of_compliance ?? 0)).slice(0, 100).map((a) => (
+                  <tr key={a.username}><td>{a.username}</td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td className="num">{a.days_out_of_compliance}d</td><td>{a.enabled ? "Yes" : <span className="muted">No</span>}</td></tr>
+                ))}</tbody>
+              </table>
+            )}
+          </div>
+
+          <div className="section-label sub">Password never expires</div>
+          <div className="panel">
+            {neverExpires === 0 ? (
+              <div className="muted">No accounts with non-expiring passwords.</div>
+            ) : (
+              <table className="accounts compact"><thead><tr><th>Username</th><th>Risk</th><th className="num">Score</th><th className="num">HIBP</th><th>Enabled</th></tr></thead>
+                <tbody>{accounts.filter((a) => a.pwd_never_expires === true).sort((a, b) => b.risk_score - a.risk_score).slice(0, 100).map((a) => (
+                  <tr key={a.username}><td>{a.username}</td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td className="num">{a.hibp_breached ? a.hibp_breach_count.toLocaleString() : "—"}</td><td>{a.enabled ? "Yes" : <span className="muted">No</span>}</td></tr>
+                ))}</tbody>
+              </table>
+            )}
+          </div>
+
+          <div className="section-label sub">Kerberoastable accounts</div>
+          <div className="panel">
+            {kerberoastable === 0 ? (
+              <div className="muted">No Kerberoastable accounts in this domain.</div>
+            ) : (
+              <table className="accounts compact"><thead><tr><th>Username</th><th>Risk</th><th className="num">Score</th><th>DA</th><th className="num">Controlled</th></tr></thead>
+                <tbody>{accounts.filter((a) => a.has_spn === true).sort((a, b) => b.risk_score - a.risk_score).map((a) => (
+                  <tr key={a.username}><td>{a.username}</td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td>{hasDA(a.da_domains) ? <span className="badge crit">{a.da_domains}</span> : "—"}</td><td className="num">{a.controlled_object_count || "—"}</td></tr>
+                ))}</tbody>
+              </table>
+            )}
+          </div>
+        </>
+      )}
+
+      {tab === "accounts" && (
+        <>
+          <div className="section-label sub">Quick wins — top {QUICK_WINS_N} weakest cracked</div>
+          <AccountsTable accounts={quick} />
+
+          <div className="section-label sub">All accounts</div>
+          <AccountsTable accounts={accounts} />
+        </>
+      )}
     </>
+  )
+}
+
+function StatMini({ label, value, tone }: { label: string; value: number; tone?: string }) {
+  return (
+    <div className="stat" style={{ padding: "14px 18px" }}>
+      <div className="stat-label">{label}</div>
+      <div className={`stat-value ${tone ? `c-${tone}` : ""}`} style={{ fontSize: 24, marginTop: 6 }}>{value.toLocaleString()}</div>
+    </div>
   )
 }
 

@@ -239,6 +239,14 @@ internal/webui/dist/
 # Browser-test artifacts + ad-hoc verification screenshots (root-level PNGs)
 .playwright-mcp/
 /*.png
+# Web screenshots + ad-hoc dev scripts -- contain real lab data / demo creds; never commit
+web/screenshots/
+web/test-enrich.mjs
 
 # Visual brainstorming companion (superpowers)
 .superpowers/
+
+.creds
+
+.vscode/
+.github/

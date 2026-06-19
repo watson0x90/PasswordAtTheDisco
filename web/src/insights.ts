@@ -172,3 +172,263 @@ export function complexityCounts(accts: Account[]): Bar[] {
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value)
 }
+
+// Controlled objects buckets (all accounts with enrichment data).
+export function controlledObjectsBuckets(accts: Account[]): Bar[] {
+  const labels = ["0", "1–10", "11–50", "51–100", "101–500", "500+"]
+  const c = [0, 0, 0, 0, 0, 0]
+  for (const a of accts) {
+    const n = a.controlled_object_count
+    if (n <= 0) c[0]++
+    else if (n <= 10) c[1]++
+    else if (n <= 50) c[2]++
+    else if (n <= 100) c[3]++
+    else if (n <= 500) c[4]++
+    else c[5]++
+  }
+  return labels.map((name, i) => ({ name, value: c[i] })).filter((b) => b.value > 0)
+}
+
+// Password age buckets (accounts with pwd_last_set > 0, in days since last set).
+export function passwordAgeBuckets(accts: Account[]): Bar[] {
+  const now = Date.now() / 1000
+  const labels = ["< 30d", "30–90d", "90–180d", "180–365d", "1–2y", "2y+"]
+  const c = [0, 0, 0, 0, 0, 0]
+  for (const a of accts) {
+    if (!a.pwd_last_set || a.pwd_last_set <= 0) continue
+    const days = (now - a.pwd_last_set) / 86400
+    if (days < 30) c[0]++
+    else if (days < 90) c[1]++
+    else if (days < 180) c[2]++
+    else if (days < 365) c[3]++
+    else if (days < 730) c[4]++
+    else c[5]++
+  }
+  return labels.map((name, i) => ({ name, value: c[i] })).filter((b) => b.value > 0)
+}
+
+// Accounts with "never expires" flag set (from BloodHound enrichment).
+export function neverExpiresCount(accts: Account[]): number {
+  return accts.filter((a) => a.pwd_never_expires === true).length
+}
+
+// Accounts escalated by shared-DA lateral movement detection.
+export function escalatedBySharedDA(accts: Account[]): Account[] {
+  return accts.filter((a) => a.escalated_by_shared_da).sort((a, b) => b.risk_score - a.risk_score)
+}
+
+// Top N accounts by controlled object count (the privilege hotspots).
+export function topControlled(accts: Account[], n: number): Account[] {
+  return accts
+    .filter((a) => a.controlled_object_count > 0)
+    .sort((a, b) => b.controlled_object_count - a.controlled_object_count)
+    .slice(0, n)
+}
+
+// Similarity distribution among cracked accounts (buckets by similarity score).
+export function similarityBuckets(accts: Account[]): Bar[] {
+  const labels = ["< 0.5", "0.5–0.7", "0.7–0.8", "0.8–0.9", "0.9+"]
+  const c = [0, 0, 0, 0, 0]
+  for (const a of accts) {
+    const s = a.similarity_score ?? 0
+    if (s <= 0) continue // not computed or no similarity
+    if (s < 0.5) c[0]++
+    else if (s < 0.7) c[1]++
+    else if (s < 0.8) c[2]++
+    else if (s < 0.9) c[3]++
+    else c[4]++
+  }
+  return labels.map((name, i) => ({ name, value: c[i] })).filter((b) => b.value > 0)
+}
+
+export interface RadarDatum { factor: string; value: number }
+export interface RadarSeries { name: string; color: string; data: RadarDatum[] }
+
+// riskFactorsRadar: average factor values by risk tier (for radar chart).
+// Factors are scaled 0-10 for visualization (inverted where lower=better).
+export function riskFactorsRadar(accts: Account[]): RadarSeries[] {
+  const levels: [string, string][] = [
+    ["Critical", "#fb7185"],
+    ["High", "#fbbf24"],
+    ["Medium", "#a3e635"],
+    ["Low", "#22d3ee"],
+  ]
+  const factorNames = ["Complexity", "Length", "Dictionary", "Similarity", "Compliance", "Expiration", "Privilege", "Sharing", "Domain", "HIBP"]
+  const series: RadarSeries[] = []
+
+  for (const [level, color] of levels) {
+    const group = accts.filter((a) => a.risk_level === level && a.score_breakdown)
+    if (group.length === 0) continue
+
+    const sums = new Array(10).fill(0)
+    for (const a of group) {
+      const bd = a.score_breakdown!
+      // For complexity & length factors, lower is better (more complex/longer), so invert: (1-val)*10
+      sums[0] += (1 - bd.complexity_factor) * 10
+      sums[1] += (1 - bd.length_factor) * 10
+      // Dictionary & similarity: higher = worse, already 0-1 scale
+      sums[2] += bd.dictionary_factor * 10
+      sums[3] += bd.similarity_factor * 10
+      // Compliance/expiration: these are multipliers 0.6-1.0 where higher = worse
+      sums[4] += Math.min(10, (bd.compliance_factor - 0.6) * 25)
+      sums[5] += Math.min(10, (bd.expiration_factor - 0.85) * 66.7)
+      // Privilege/share/domain/hibp: multipliers 1.0-1.5+, higher = worse
+      sums[6] += Math.min(10, (bd.privilege_factor - 1) * 20)
+      sums[7] += Math.min(10, (bd.share_factor - 1) * 20)
+      sums[8] += Math.min(10, (bd.domain_factor - 1) * 33.3)
+      sums[9] += Math.min(10, (bd.hibp_factor - 1) * 20)
+    }
+    const data: RadarDatum[] = factorNames.map((factor, i) => ({
+      factor,
+      value: Math.round((sums[i] / group.length) * 10) / 10,
+    }))
+    series.push({ name: level, color, data })
+  }
+  return series
+}
+
+// passwordAgeScatter: pwd_last_set (days ago) vs risk score scatter data.
+export function passwordAgeScatter(accts: Account[]): Series[] {
+  const now = Date.now() / 1000
+  const levels: [string, string][] = [
+    ["Critical", "#fb7185"],
+    ["High", "#fbbf24"],
+    ["Medium", "#a3e635"],
+    ["Low", "#22d3ee"],
+  ]
+  return levels
+    .map(([name, color]) => ({
+      name,
+      color,
+      points: accts
+        .filter((a) => a.risk_level === name && a.pwd_last_set && a.pwd_last_set > 0)
+        .map((a) => ({ x: Math.floor((now - a.pwd_last_set!) / 86400), y: a.risk_score })),
+    }))
+    .filter((s) => s.points.length > 0)
+}
+
+// expirationSplit: pie data for password expiration status.
+export function expirationSplit(accts: Account[]): Slice[] {
+  let expires = 0, neverExpires = 0, unknown = 0
+  for (const a of accts) {
+    if (a.pwd_never_expires === true) neverExpires++
+    else if (a.pwd_never_expires === false) expires++
+    else unknown++
+  }
+  return [
+    { name: "Expires", value: expires, color: "#34d399" },
+    { name: "Never expires", value: neverExpires, color: "#fb7185" },
+    { name: "Unknown", value: unknown, color: "#475569" },
+  ].filter((s) => s.value > 0)
+}
+
+// topRiskiest: top N accounts by risk_score across all domains.
+export function topRiskiest(accts: Account[], n: number): Account[] {
+  return [...accts].sort((a, b) => b.risk_score - a.risk_score).slice(0, n)
+}
+
+// --- Network graph data ---
+
+export interface GraphNode { id: string; label: string; size: number; color: string }
+export interface GraphEdge { source: string; target: string; weight: number; label?: string }
+
+// crossDomainReuseGraph: builds nodes (domains) and edges (# shared accounts between them).
+// This requires the reuse groups from the Report (which have domain counts + members).
+export function crossDomainReuseGraph(accts: Account[]): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  // Group by domain, compute domain stats
+  const domainMap = new Map<string, { total: number; cracked: number; critical: number }>()
+  for (const a of accts) {
+    let d = domainMap.get(a.domain)
+    if (!d) { d = { total: 0, cracked: 0, critical: 0 }; domainMap.set(a.domain, d) }
+    d.total++
+    if (a.cracked) d.cracked++
+    if (a.risk_level === "Critical") d.critical++
+  }
+  // Build edges: accounts sharing credentials across domains.
+  // We detect this by shared_with > 0 — but for cross-domain links we need accounts
+  // in different domains with shared_with > 0. Since we don't have the NT hash, we
+  // approximate: for each pair of domains, count accounts that share passwords (shared_with > 0).
+  // A better approach uses the Report's reuse groups, but this is a quick heuristic from accounts data.
+  const domainPairs = new Map<string, number>()
+  const domains = [...domainMap.keys()]
+  if (domains.length < 2) {
+    // Single domain — no cross-domain graph
+    return { nodes: [], edges: [] }
+  }
+  // Heuristic: for each account with shared_with > 0, count its domain contribution
+  // The real cross-domain link count comes from the report's reuse groups (see domainData.ts).
+  // Here we'll use a simpler proxy: count shared accounts per domain pair based on
+  // the fact that shared_with includes cross-domain sharing.
+  // For the graph, we show domains as nodes sized by account count, and link them
+  // with edge weight = min of shared accounts in each domain (conservative estimate).
+  const sharedPerDomain = new Map<string, number>()
+  for (const a of accts) {
+    if (a.shared_with > 0) {
+      sharedPerDomain.set(a.domain, (sharedPerDomain.get(a.domain) || 0) + 1)
+    }
+  }
+  // Connect all domain pairs with edges weighted by min shared count
+  for (let i = 0; i < domains.length; i++) {
+    for (let j = i + 1; j < domains.length; j++) {
+      const w1 = sharedPerDomain.get(domains[i]) || 0
+      const w2 = sharedPerDomain.get(domains[j]) || 0
+      const w = Math.min(w1, w2)
+      if (w > 0) {
+        domainPairs.set(`${domains[i]}|${domains[j]}`, w)
+      }
+    }
+  }
+
+  const nodes: GraphNode[] = domains.map((d) => {
+    const stats = domainMap.get(d)!
+    const crit = stats.critical
+    const color = crit > 20 ? "#fb7185" : crit > 5 ? "#fbbf24" : "#22d3ee"
+    return { id: d, label: d, size: 12 + Math.sqrt(stats.total) * 2, color }
+  })
+  const edges: GraphEdge[] = []
+  for (const [key, weight] of domainPairs) {
+    const [src, tgt] = key.split("|")
+    edges.push({ source: src, target: tgt, weight: Math.ceil(weight / 10), label: `${weight} shared` })
+  }
+  return { nodes, edges }
+}
+
+// similarityNetwork: builds a cluster of passwords that are similar to each other.
+// Uses the similarity_score field — accounts with sim > 0.7 are linked.
+// Returns nodes = accounts (labeled by username), edges = similarity links.
+export function similarityNetwork(accts: Account[], maxNodes: number = 60): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  // Only cracked accounts with similarity data
+  const candidates = accts.filter((a) => a.cracked && (a.similarity_score ?? 0) >= 0.7)
+  if (candidates.length < 2) return { nodes: [], edges: [] }
+
+  // Take the top N by similarity score to keep the graph readable
+  const sorted = [...candidates].sort((a, b) => (b.similarity_score ?? 0) - (a.similarity_score ?? 0)).slice(0, maxNodes)
+
+  const nodes: GraphNode[] = sorted.map((a) => ({
+    id: `${a.domain}/${a.username}`,
+    label: a.username,
+    size: 10 + (a.similarity_score ?? 0) * 12,
+    color: a.risk_level === "Critical" ? "#fb7185" : a.risk_level === "High" ? "#fbbf24" : a.risk_level === "Medium" ? "#a3e635" : "#22d3ee",
+  }))
+
+  // We don't have pair-level similarity data in the API (just the max score per account).
+  // Approximate: connect accounts in the same domain with high similarity as a cluster.
+  const edges: GraphEdge[] = []
+  const byDomain = new Map<string, typeof sorted>()
+  for (const a of sorted) {
+    const arr = byDomain.get(a.domain) || []
+    arr.push(a)
+    byDomain.set(a.domain, arr)
+  }
+  for (const [, group] of byDomain) {
+    // Connect consecutive pairs within a domain cluster (chain)
+    for (let i = 0; i < group.length - 1 && i < 20; i++) {
+      edges.push({
+        source: `${group[i].domain}/${group[i].username}`,
+        target: `${group[i + 1].domain}/${group[i + 1].username}`,
+        weight: Math.round((group[i].similarity_score ?? 0.7) * 3),
+      })
+    }
+  }
+  return { nodes, edges }
+}

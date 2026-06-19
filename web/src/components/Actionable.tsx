@@ -204,6 +204,84 @@ export function Actionable() {
           }}
         />
       </Section>
+
+      <Section
+        title="Escalated by Shared-DA"
+        action="Accounts sharing an NT hash with a Domain Admin — lateral movement path to DA even if this account alone wouldn't reach it"
+        count={report.escalated_by_shared_da.length}
+        tone="crit"
+      >
+        <AccountTable
+          rows={report.escalated_by_shared_da}
+          metricHead="DA pathway"
+          metric={(a) => <span className="badge crit">{a.da_domains || "shared"}</span>}
+        />
+      </Section>
+
+      <Section
+        title="High-Privilege Accounts"
+        action="Accounts controlling > 100 AD objects — compromise gives broad lateral movement; prioritize password hygiene"
+        count={report.high_controlled.length}
+        tone="high"
+      >
+        <AccountTable
+          rows={report.high_controlled}
+          metricHead="Risk"
+          metric={(a) => <span>{a.risk_score.toFixed(1)}</span>}
+        />
+      </Section>
+
+      <Section
+        title="Password Never Expires"
+        action="Accounts with 'password never expires' set — stale credentials accumulate risk over time; enforce rotation"
+        count={report.never_expires.length}
+        tone="med"
+      >
+        <AccountTable
+          rows={report.never_expires}
+          metricHead="Risk"
+          metric={(a) => <span>{a.risk_score.toFixed(1)}</span>}
+        />
+      </Section>
+
+      <Section
+        title="Stale Passwords (Past Max Age)"
+        action="Password age exceeds the domain's max-age policy — credential has not been rotated; force reset"
+        count={report.stale_passwords.length}
+        tone="high"
+      >
+        <AccountTable
+          rows={report.stale_passwords}
+          metricHead="Risk"
+          metric={(a) => <span>{a.risk_score.toFixed(1)}</span>}
+        />
+      </Section>
+
+      <Section
+        title="Kerberoastable Accounts"
+        action="Accounts with a Service Principal Name — their TGS ticket can be requested and cracked offline by any domain user"
+        count={report.kerberoastable.length}
+        tone="high"
+      >
+        <AccountTable
+          rows={report.kerberoastable}
+          metricHead="DA"
+          metric={(a) => a.da_domains && a.da_domains !== "None" ? <span className="badge crit">{a.da_domains}</span> : <span className="muted">—</span>}
+        />
+      </Section>
+
+      <Section
+        title="AS-REP Roastable Accounts"
+        action="Accounts without Kerberos pre-authentication — AS-REP hash can be captured and cracked offline without any credentials"
+        count={report.asrep_roastable.length}
+        tone="crit"
+      >
+        <AccountTable
+          rows={report.asrep_roastable}
+          metricHead="DA"
+          metric={(a) => a.da_domains && a.da_domains !== "None" ? <span className="badge crit">{a.da_domains}</span> : <span className="muted">—</span>}
+        />
+      </Section>
     </>
   )
 }

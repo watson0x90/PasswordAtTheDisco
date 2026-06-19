@@ -150,6 +150,7 @@ func (s *Server) Routes() http.Handler {
 	// Web upload of dump files into the active audit (lead)
 	mux.Handle("POST /api/upload", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleAudit)))))
 	mux.Handle("POST /api/upload/cracks", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleApplyCracks)))))
+	mux.Handle("POST /api/upload/bheusers", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleUploadBHEUsers)))))
 	mux.Handle("DELETE /api/domains/{domain}", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleDeleteDomain)))))
 	// Redacted exports of the active audit (any operator)
 	mux.Handle("GET /api/export/csv", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportCSV))))
@@ -1539,6 +1540,78 @@ func (s *Server) handleApplyCracks(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "apply_cracks", Source: r.RemoteAddr, Result: "ok"})
 	writeJSON(w, http.StatusOK, map[string]int{"crack_entries": len(cracks), "hashes_matched": len(matched), "newly_cracked": newly})
+}
+
+// handleUploadBHEUsers accepts a BloodHound users JSON export (SharpHound or BHE
+// format) and merges the AD properties (pwdLastSet, pwdNeverExpires, enabled,
+// controlled objects) into the active audit's accounts. This avoids querying BHE
+// for per-user properties — only DA-path graph queries still need a live connection.
+func (s *Server) handleUploadBHEUsers(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	auditID, ok := s.activeAudit(w, sess)
+	if !ok {
+		return
+	}
+	// Parse multipart: expect a single file field "bheusers".
+	if err := r.ParseMultipartForm(256 << 20); err != nil { // 256 MB max
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid upload"})
+		return
+	}
+	f, fh, err := r.FormFile("bheusers")
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bheusers file required"})
+		return
+	}
+	defer f.Close()
+
+	users, err := bloodhound.ParseUsersExport(f)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "parse error: " + err.Error()})
+		return
+	}
+	if len(users) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no users found in the upload"})
+		return
+	}
+
+	// Mutate accounts: merge BHE properties into matching accounts.
+	var matched int
+	if err := s.Store.Mutate(auditID, func(current []model.Account) []model.Account {
+		next := make([]model.Account, len(current))
+		copy(next, current)
+		for i := range next {
+			key := bloodhound.LookupKey(next[i].Username, next[i].Domain)
+			imp, ok := users[key]
+			if !ok {
+				continue
+			}
+			matched++
+			next[i].Enabled = imp.Enabled
+			if imp.PwdLastSet > 0 {
+				next[i].PwdLastSet = imp.PwdLastSet
+			}
+			ne := imp.PwdNeverExpires
+			next[i].PwdNeverExpires = &ne
+			if imp.Controllables > 0 {
+				next[i].Controlled = imp.Controllables
+			}
+		}
+		return next
+	}); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	_ = s.Store.RecordIngest(auditID, model.IngestEvent{
+		Filename: fh.Filename, Kind: "enrich",
+		AccountsLoaded: matched, At: time.Now().UTC(), By: sess.Username,
+	})
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "upload_bhe_users", Target: auditID, Source: r.RemoteAddr, Result: "ok"})
+	writeJSON(w, http.StatusOK, map[string]any{"uploaded_users": len(users), "matched_accounts": matched})
 }
 
 // handleDeleteDomain removes one domain's accounts from the active audit (lead only).

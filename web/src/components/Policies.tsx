@@ -11,7 +11,7 @@ const CLASS_FIELDS: [keyof PolicyRule, string][] = [
 
 type Row = { id: number; name: string; rule: PolicyRule }
 
-function PolicyFields({ rule, onChange }: { rule: PolicyRule; onChange: (r: PolicyRule) => void }) {
+function PolicyFields({ rule, onChange, showRiskLevel }: { rule: PolicyRule; onChange: (r: PolicyRule) => void; showRiskLevel?: boolean }) {
   const set = (patch: Partial<PolicyRule>) => onChange({ ...rule, ...patch })
   return (
     <div className="policy-fields">
@@ -34,6 +34,18 @@ function PolicyFields({ rule, onChange }: { rule: PolicyRule; onChange: (r: Poli
           onChange={(e) => set({ max_password_age_days: Number(e.target.value) })}
         />
       </label>
+      {showRiskLevel && (
+        <label className="pf-num">
+          Domain risk
+          <select value={rule.domain_risk_level || ""} onChange={(e) => set({ domain_risk_level: e.target.value || undefined })}>
+            <option value="">Normal</option>
+            <option value="Low">Low</option>
+            <option value="Medium">Medium (1.1×)</option>
+            <option value="High">High (1.2×)</option>
+            <option value="Critical">Critical (1.3×)</option>
+          </select>
+        </label>
+      )}
       <div className="pf-checks">
         {CLASS_FIELDS.map(([k, label]) => (
           <label key={k} className="pf-check">
@@ -138,7 +150,7 @@ export function Policies() {
                 remove
               </button>
             </div>
-            <PolicyFields rule={row.rule} onChange={(r) => patchRow(row.id, { rule: r })} />
+            <PolicyFields rule={row.rule} onChange={(r) => patchRow(row.id, { rule: r })} showRiskLevel />
           </div>
         ))}
 

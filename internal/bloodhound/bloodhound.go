@@ -87,6 +87,7 @@ type Client struct {
 	domCache    []Domain
 	domCachedAt time.Time
 	domTTL      time.Duration
+	daGroups    map[string]string // cached DA group SID per domain
 }
 
 // New builds a Client from a Config.
@@ -114,6 +115,11 @@ func New(cfg Config) *Client {
 	if concurrency > 32 {
 		concurrency = 32
 	}
+	// The semaphore bounds in-flight HTTP requests. Since each enrichment worker
+	// makes ~10 sequential HTTP calls per user, the semaphore must be larger than
+	// the worker pool count to avoid self-contention. Size it at workers × 4 so
+	// workers rarely block on each other's sequential calls.
+	semSize := concurrency * 4
 	return &Client{
 		scheme:             scheme,
 		host:               cfg.Host,
@@ -122,7 +128,7 @@ func New(cfg Config) *Client {
 		http:               &http.Client{Timeout: time.Duration(readTimeout) * time.Second},
 		searchLimit:        searchLimit,
 		controllablesLimit: controllablesLimit,
-		sem:                make(chan struct{}, concurrency),
+		sem:                make(chan struct{}, semSize),
 		domTTL:             60 * time.Second,
 	}
 }
@@ -381,22 +387,12 @@ func (c *Client) computerDomain(objectID string) string {
 func (c *Client) GetUserControllables(objectID string) (map[string]map[string]int, error) {
 	out := map[string]map[string]int{}
 
-	// First call discovers the total count, the second fetches them all.
+	// Single call with the configured limit (avoids double round-trip).
 	env, status, err := c.get(fmt.Sprintf("/api/v2/base/%s/controllables?skip=0&limit=%d&type=list", objectID, c.controllablesLimit))
 	if err != nil {
 		return nil, err
 	}
-	if status != http.StatusOK {
-		return out, nil
-	}
-	if env.Count == 0 {
-		return out, nil // nothing to fetch; avoids a limit=0 round-trip
-	}
-	env, status, err = c.get(fmt.Sprintf("/api/v2/base/%s/controllables?skip=0&limit=%d&type=list", objectID, env.Count))
-	if err != nil {
-		return nil, err
-	}
-	if status != http.StatusOK {
+	if status != http.StatusOK || env.Count == 0 {
 		return out, nil
 	}
 
@@ -462,16 +458,45 @@ func (c *Client) GetShortestPath(src, dst string) (hasPath, known bool, err erro
 
 // ProcessUserDAPath reports whether the user (by SID) has a Domain Admin pathway
 // in domainName. Returns nil when indeterminate (group not found / path unknown).
+// The DA group SID is cached per domain so repeated lookups skip the search call.
 func (c *Client) ProcessUserDAPath(domainName, userSID string) *bool {
-	grp, ok, err := c.GetGroup("DOMAIN ADMINS@" + domainName)
-	if err != nil || !ok {
-		return nil
+	grpSID, ok := c.cachedDAGroup(domainName)
+	if !ok {
+		grp, found, err := c.GetGroup("DOMAIN ADMINS@" + domainName)
+		if err != nil || !found {
+			c.setDAGroup(domainName, "") // cache the miss
+			return nil
+		}
+		grpSID = grp.ObjectID
+		c.setDAGroup(domainName, grpSID)
 	}
-	hasPath, known, err := c.GetShortestPath(userSID, grp.ObjectID)
+	if grpSID == "" {
+		return nil // cached miss
+	}
+	hasPath, known, err := c.GetShortestPath(userSID, grpSID)
 	if err != nil || !known {
 		return nil
 	}
 	return &hasPath
+}
+
+func (c *Client) cachedDAGroup(domain string) (string, bool) {
+	c.domMu.Lock()
+	defer c.domMu.Unlock()
+	if c.daGroups == nil {
+		return "", false
+	}
+	sid, ok := c.daGroups[domain]
+	return sid, ok
+}
+
+func (c *Client) setDAGroup(domain, sid string) {
+	c.domMu.Lock()
+	defer c.domMu.Unlock()
+	if c.daGroups == nil {
+		c.daGroups = map[string]string{}
+	}
+	c.daGroups[domain] = sid
 }
 
 // DomainControllables holds, for one domain, the user's controllable-object

@@ -72,6 +72,22 @@ export interface Summary {
   risk_counts: Record<string, number>
   posture: Posture
   generated_at: string
+  // Extended stats
+  disabled_accounts: number
+  never_expires: number
+  stale_passwords: number
+  escalated_by_shared_da: number
+  policy_violations: number
+  high_controlled: number
+  // Executive breach impact
+  breach_impact: BreachImpact
+}
+
+export interface BreachImpact {
+  probability: string
+  probability_pct: string
+  estimated_cost: string
+  recovery_time: string
 }
 
 export interface Account {
@@ -95,6 +111,33 @@ export interface Account {
   is_dictionary_word?: boolean
   banned_word_count?: number
   keyboard_pattern_count?: number
+  // Enrichment-derived temporal/privilege signals
+  pwd_last_set?: number
+  pwd_never_expires?: boolean
+  days_out_of_compliance?: number
+  similarity_score?: number
+  escalated_by_shared_da?: boolean
+  // Kerberos attack surface
+  has_spn?: boolean
+  dont_req_preauth?: boolean
+  // Full score breakdown (cracked accounts only)
+  score_breakdown?: ScoreBreakdown
+}
+
+export interface ScoreBreakdown {
+  base_score: number
+  complexity_factor: number
+  length_factor: number
+  dictionary_factor: number
+  similarity_factor: number
+  temporal_score: number
+  compliance_factor: number
+  expiration_factor: number
+  environmental_score: number
+  privilege_factor: number
+  share_factor: number
+  domain_factor: number
+  hibp_factor: number
 }
 
 // A redacted account row in the Actionable reports — no cleartext, no NT hash.
@@ -156,6 +199,12 @@ export interface Report {
   hibp_exposed: ReportAccount[]
   weak_passwords: ReportAccount[]
   violation_counts: ViolationCounts
+  escalated_by_shared_da: ReportAccount[]
+  high_controlled: ReportAccount[]
+  never_expires: ReportAccount[]
+  stale_passwords: ReportAccount[]
+  kerberoastable: ReportAccount[]
+  asrep_roastable: ReportAccount[]
 }
 
 export interface PolicyRule {
@@ -165,6 +214,7 @@ export interface PolicyRule {
   require_digits: boolean
   require_special: boolean
   max_password_age_days: number
+  domain_risk_level?: string
 }
 
 export interface PoliciesPayload {
@@ -291,6 +341,12 @@ export const api = {
     const fd = new FormData()
     fd.append("crackfile", crackfile)
     return uploadForm<ApplyCracksResult>("/upload/cracks", fd, csrf, onProgress)
+  },
+
+  uploadBHEUsers: (file: File, csrf: string, onProgress?: (l: number, t: number) => void) => {
+    const fd = new FormData()
+    fd.append("bheusers", file)
+    return uploadForm<BHEUsersResult>("/upload/bheusers", fd, csrf, onProgress)
   },
 
   ingests: () => request<IngestEvent[]>("/ingests"),
@@ -572,6 +628,11 @@ export interface ApplyCracksResult {
   newly_cracked: number
 }
 
+export interface BHEUsersResult {
+  uploaded_users: number
+  matched_accounts: number
+}
+
 export interface IngestEvent {
   filename: string
   kind: "dump" | "cracks" | "domain_delete" | "enrich"
@@ -592,4 +653,5 @@ export interface EnrichJob {
   started_at?: string
   elapsed_sec: number
   error?: string
+  message?: string
 }

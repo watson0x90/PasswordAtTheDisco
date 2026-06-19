@@ -41,6 +41,32 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
+## What's new in 2.8
+
+**BloodHound graph integration** plus a set of **exposure analytics dashboards**
+that turn raw cracked-credential data into attack-path context:
+
+- **BloodHound users import.** Upload a BloodHound users export (`POST
+  /api/upload/bheusers`) and AD properties — `pwdLastSet`, `pwdNeverExpires`,
+  `lastLogon`, controlled-object counts, and object SIDs — are applied to accounts
+  at upload time, so BHE is only queried for the DA-pathway graph checks that
+  actually need it.
+- **Bulk Cypher enrichment.** A Cypher client pre-fetches DA reachability and
+  controlled-object counts for every user in one pass instead of per-account
+  round-trips, cutting enrichment time substantially.
+- **Exposure dashboards.** New analytics surface cross-domain credential reuse,
+  HIBP-vs-risk triage, blast-radius / controlled-object buckets, DA exposure by
+  domain, password-age distribution, never-expires counts, and a risk-factors
+  radar — see the rebuilt **Insights** and **Domains** views.
+- **Network graph.** An interactive graph visualizes cross-domain credential
+  reuse and password-similarity clusters, making shared-credential bridges
+  between domains visible at a glance.
+
+> Lab note: this repo ships **fictional** placeholder domains
+> (`PHANTOM.CORP` / `GHOST.CORP`) in `lists/password_policy.json`. Point it at
+> your own domains locally — real domain names, usernames, and cracked data are
+> never committed.
+
 ## What's new in 2.7
 
 An **audit-data UX overhaul** so uploaded data is visible immediately and the

@@ -1,7 +1,9 @@
 import { useAccountsData } from "../accountsData"
 import { useAudits } from "../auditsData"
-import { complexityCounts, daExposureByDomain, hibpVsRisk, scoreBuckets, sharingDistribution } from "../insights"
-import { Bars, ChartCard, HBars, ScatterPlot } from "./Charts"
+import { complexityCounts, controlledObjectsBuckets, crossDomainReuseGraph, daExposureByDomain, expirationSplit, hibpVsRisk, passwordAgeBuckets, passwordAgeScatter, riskFactorsRadar, scoreBuckets, sharingDistribution, similarityBuckets, similarityNetwork, topRiskiest } from "../insights"
+import { Bars, ChartCard, Donut, HBars, RiskRadar, ScatterPlot } from "./Charts"
+import { NetworkGraph } from "./NetworkGraph"
+import { RISK_CLASS, hasDA } from "../util"
 
 export function Insights() {
   const { activeId } = useAudits()
@@ -14,6 +16,15 @@ export function Insights() {
 
   const complexity = complexityCounts(accounts)
   const da = daExposureByDomain(accounts)
+  const controlledBuckets = controlledObjectsBuckets(accounts)
+  const ageBuckets = passwordAgeBuckets(accounts)
+  const simBuckets = similarityBuckets(accounts)
+  const radarSeries = riskFactorsRadar(accounts)
+  const ageScatter = passwordAgeScatter(accounts)
+  const expirSlices = expirationSplit(accounts)
+  const crossDomain = crossDomainReuseGraph(accounts)
+  const simNet = similarityNetwork(accounts)
+  const topN = topRiskiest(accounts, 10)
 
   return (
     <>
@@ -47,6 +58,111 @@ export function Insights() {
             </div>
           )}
         </ChartCard>
+        <ChartCard title="Controlled objects">
+          {controlledBuckets.length ? (
+            <Bars data={controlledBuckets} color="#fbbf24" />
+          ) : (
+            <div className="chart-empty">No controlled-object data — run BloodHound enrichment to populate.</div>
+          )}
+        </ChartCard>
+      </div>
+
+      <div className="chart-grid">
+        <ChartCard title="Password age">
+          {ageBuckets.length ? (
+            <Bars data={ageBuckets} color="#a78bfa" />
+          ) : (
+            <div className="chart-empty">No password-age data — BloodHound enrichment provides PwdLastSet.</div>
+          )}
+        </ChartCard>
+        <ChartCard title="Password similarity (cracked)">
+          {simBuckets.length ? (
+            <Bars data={simBuckets} color="#f472b6" />
+          ) : (
+            <div className="chart-empty">No similarity data — computed for domains with ≤ 5000 cracked accounts.</div>
+          )}
+        </ChartCard>
+      </div>
+
+      <div className="chart-grid">
+        <ChartCard title="Risk factor contribution (radar)">
+          {radarSeries.length ? (
+            <RiskRadar series={radarSeries} />
+          ) : (
+            <div className="chart-empty">No score breakdown data — re-ingest or re-enrich to populate.</div>
+          )}
+        </ChartCard>
+        <ChartCard title="Password age vs risk score">
+          {ageScatter.length ? (
+            <ScatterPlot series={ageScatter} xLabel="Days since password set →" />
+          ) : (
+            <div className="chart-empty">No password-age data available.</div>
+          )}
+        </ChartCard>
+      </div>
+
+      <div className="chart-grid">
+        <ChartCard title="Password expiration status">
+          {expirSlices.length > 1 || (expirSlices.length === 1 && expirSlices[0].name !== "Unknown") ? (
+            <Donut data={expirSlices} />
+          ) : (
+            <div className="chart-empty">No expiration data — run BloodHound enrichment to populate.</div>
+          )}
+        </ChartCard>
+        <ChartCard title="Cross-domain credential reuse">
+          {crossDomain.nodes.length >= 2 ? (
+            <NetworkGraph nodes={crossDomain.nodes} edges={crossDomain.edges} />
+          ) : (
+            <div className="chart-empty">Cross-domain graph requires ≥ 2 domains with shared credentials.</div>
+          )}
+        </ChartCard>
+      </div>
+
+      {simNet.nodes.length >= 2 && (
+        <>
+          <div className="section-label">Password Similarity Clusters</div>
+          <div className="panel">
+            <p className="muted" style={{ fontSize: 12, marginBottom: 12 }}>
+              Accounts with ≥ 70% password similarity — clustered by domain. Near-duplicate passwords are
+              trivially guessable if one is compromised.
+            </p>
+            <NetworkGraph nodes={simNet.nodes} edges={simNet.edges} height={400} />
+          </div>
+        </>
+      )}
+
+      <div className="section-label">Top 10 Riskiest Accounts</div>
+      <div className="panel">
+        <div className="table-wrap">
+          <table className="accounts compact">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Username</th>
+                <th>Domain</th>
+                <th>Risk</th>
+                <th className="num">Score</th>
+                <th className="num">HIBP</th>
+                <th>DA</th>
+                <th className="num">Controlled</th>
+              </tr>
+            </thead>
+            <tbody>
+              {topN.map((a, i) => (
+                <tr key={`${a.domain}/${a.username}`}>
+                  <td className="muted">{i + 1}</td>
+                  <td>{a.username}{!a.enabled && <span className="badge-disabled">disabled</span>}</td>
+                  <td className="muted">{a.domain}</td>
+                  <td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td>
+                  <td className="num">{a.risk_score.toFixed(1)}</td>
+                  <td className="num">{a.hibp_breached ? a.hibp_breach_count.toLocaleString() : "—"}</td>
+                  <td>{hasDA(a.da_domains) ? <span className="badge crit">{a.da_domains}</span> : "—"}</td>
+                  <td className="num">{a.controlled_object_count || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </>
   )

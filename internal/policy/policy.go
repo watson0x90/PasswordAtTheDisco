@@ -16,12 +16,17 @@ import (
 
 // Policy is one domain's password policy.
 type Policy struct {
-	MinLength          int  `json:"min_length"`
-	RequireLowercase   bool `json:"require_lowercase"`
-	RequireUppercase   bool `json:"require_uppercase"`
-	RequireDigits      bool `json:"require_digits"`
-	RequireSpecial     bool `json:"require_special"`
-	MaxPasswordAgeDays int  `json:"max_password_age_days"`
+	MinLength          int    `json:"min_length"`
+	RequireLowercase   bool   `json:"require_lowercase"`
+	RequireUppercase   bool   `json:"require_uppercase"`
+	RequireDigits      bool   `json:"require_digits"`
+	RequireSpecial     bool   `json:"require_special"`
+	MaxPasswordAgeDays int    `json:"max_password_age_days"`
+	// DomainRiskLevel is an optional per-domain criticality classification that
+	// scales environmental scoring: "Critical" (1.3×), "High" (1.2×), "Medium"
+	// (1.1×), "Low" or "" (1.0×). Set it for domains that are more valuable
+	// targets (Tier-0 infra, crown-jewel domains, etc.).
+	DomainRiskLevel string `json:"domain_risk_level,omitempty"`
 }
 
 // Default is the built-in fallback when no file/default policy is present.

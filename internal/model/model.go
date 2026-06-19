@@ -86,6 +86,41 @@ func PostureScore(accounts []Account) Posture {
 	return p
 }
 
+// EstimateBreachImpact produces a simplified breach-impact estimate for the
+// executive summary, mirroring the legacy Python report's approach.
+func EstimateBreachImpact(crit, da int) BreachImpact {
+	var bi BreachImpact
+	switch {
+	case crit > 50 || da > 20:
+		bi.Probability = "Very High"
+		bi.ProbabilityPct = ">75%"
+	case crit > 20 || da > 10:
+		bi.Probability = "High"
+		bi.ProbabilityPct = "50-75%"
+	case crit > 5 || da > 3:
+		bi.Probability = "Medium"
+		bi.ProbabilityPct = "25-50%"
+	default:
+		bi.Probability = "Low"
+		bi.ProbabilityPct = "<25%"
+	}
+	switch {
+	case crit > 50:
+		bi.EstimatedCost = "$1M – $5M+"
+		bi.RecoveryTime = "6–12 months"
+	case crit > 20:
+		bi.EstimatedCost = "$500K – $1M"
+		bi.RecoveryTime = "3–6 months"
+	case crit > 5:
+		bi.EstimatedCost = "$100K – $500K"
+		bi.RecoveryTime = "1–3 months"
+	default:
+		bi.EstimatedCost = "$50K – $100K"
+		bi.RecoveryTime = "2–4 weeks"
+	}
+	return bi
+}
+
 // Account is a single audited AD account. Password holds the cracked cleartext
 // -- the sensitive field that must never leave the process unredacted without
 // authorization.
@@ -124,6 +159,48 @@ type Account struct {
 	// audited terms endpoint.
 	BannedWords      []string `json:"banned_words,omitempty"`
 	KeyboardPatterns []string `json:"keyboard_patterns,omitempty"`
+
+	// Enrichment-derived temporal/privilege signals. Stored so the UI can surface
+	// them without decoding the risk vector. PwdLastSet is Unix epoch seconds (or 0
+	// if unknown); PwdNeverExpires and DaysOutOfCompliance are from BloodHound.
+	PwdLastSet         int64 `json:"pwd_last_set,omitempty"`
+	PwdNeverExpires    *bool `json:"pwd_never_expires,omitempty"`
+	DaysOutOfCompliance int  `json:"days_out_of_compliance,omitempty"`
+
+	// Kerberos attack surface (from BloodHound).
+	HasSPN         *bool `json:"has_spn,omitempty"`          // Kerberoastable — SPN set
+	DontReqPreauth *bool `json:"dont_req_preauth,omitempty"` // AS-REP roastable
+
+	// SimilarityScore is the max Levenshtein similarity (0–1) to another cracked
+	// password in the same domain. Zero means not computed or no similarity.
+	SimilarityScore float64 `json:"similarity_score,omitempty"`
+
+	// EscalatedBySharedDA is true when this account was escalated to Critical by
+	// EscalateSharedWithDA (shares an NT hash with a DA account).
+	EscalatedBySharedDA bool `json:"escalated_by_shared_da,omitempty"`
+
+	// ScoreBreakdown holds the numeric risk-factor components that produced the
+	// final RiskScore. Stored so the UI can explain *why* an account scored high
+	// without operators having to decode the vector string manually.
+	ScoreBreakdown *ScoreBreakdown `json:"score_breakdown,omitempty"`
+}
+
+// ScoreBreakdown is the per-component detail of a CVSS-style risk score. Only
+// populated for cracked accounts (uncracked use a simplified formula).
+type ScoreBreakdown struct {
+	BaseScore          float64 `json:"base_score"`
+	ComplexityFactor   float64 `json:"complexity_factor"`
+	LengthFactor       float64 `json:"length_factor"`
+	DictionaryFactor   float64 `json:"dictionary_factor"`
+	SimilarityFactor   float64 `json:"similarity_factor"`
+	TemporalScore      float64 `json:"temporal_score"`
+	ComplianceFactor   float64 `json:"compliance_factor"`
+	ExpirationFactor   float64 `json:"expiration_factor"`
+	EnvironmentalScore float64 `json:"environmental_score"`
+	PrivilegeFactor    float64 `json:"privilege_factor"`
+	ShareFactor        float64 `json:"share_factor"`
+	DomainFactor       float64 `json:"domain_factor"`
+	HIBPFactor         float64 `json:"hibp_factor"`
 }
 
 // IsWeak reports whether the password matched any wordlist signal (common,
@@ -140,6 +217,7 @@ func (a Account) Redacted() Account {
 	a.NTHash = ""
 	a.BannedWords = nil
 	a.KeyboardPatterns = nil
+	// PwdNeverExpires is safe to expose (boolean, not a credential).
 	return a
 }
 
@@ -214,6 +292,7 @@ func EscalateSharedWithDA(accts []Account) {
 		if !strings.Contains(a.RiskVector, "SHARED-DA") {
 			a.RiskVector += "/SHARED-DA"
 		}
+		a.EscalatedBySharedDA = true
 	}
 }
 
@@ -248,4 +327,23 @@ type Summary struct {
 	RiskCounts    map[string]int `json:"risk_counts"`
 	Posture       Posture        `json:"posture"`
 	GeneratedAt   time.Time      `json:"generated_at"`
+
+	// Extended stats for the dashboard gap-fills.
+	DisabledAccounts    int `json:"disabled_accounts"`
+	NeverExpires        int `json:"never_expires"`
+	StalePasswords      int `json:"stale_passwords"`       // days_out_of_compliance > 0
+	EscalatedBySharedDA int `json:"escalated_by_shared_da"` // escalated via hash-sharing with a DA
+	PolicyViolations    int `json:"policy_violations"`      // cracked && !meets_policy
+	HighControlled      int `json:"high_controlled"`        // controlled_object_count > 100
+
+	// Executive breach impact estimate.
+	BreachImpact BreachImpact `json:"breach_impact"`
+}
+
+// BreachImpact is a simplified breach-impact estimate for the executive summary.
+type BreachImpact struct {
+	Probability    string `json:"probability"`     // Very High | High | Medium | Low
+	ProbabilityPct string `json:"probability_pct"` // >75% | 50-75% | 25-50% | <25%
+	EstimatedCost  string `json:"estimated_cost"`  // $1M-$5M+ etc.
+	RecoveryTime   string `json:"recovery_time"`   // 6-12 months etc.
 }

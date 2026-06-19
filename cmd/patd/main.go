@@ -28,6 +28,7 @@ import (
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/audit"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/auth"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/bloodhound"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/enrich"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/hibp"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/httpapi"
@@ -152,10 +153,16 @@ func main() {
 	st := store.NewPersistent(vlt)
 
 	// Enrichment job manager: drives BloodHound prefetch + rescore in the background.
-	// Concurrency is left at the default (8); the BHE client's own semaphore — sized
-	// from the BHE config when the client is built lazily in handleBHEConfig — is the
-	// real in-flight bound, so there is nothing useful to set here.
+	// Concurrency is taken from the BHE config (enrich_concurrency) so the worker pool
+	// matches the client's semaphore — no artificial bottleneck between them.
+	enrichConc := 32 // default if no BHE config
+	if cfg, err := bloodhound.LoadConfig(bhePath); err == nil {
+		if cfg.EnrichConcurrency > 0 {
+			enrichConc = cfg.EnrichConcurrency
+		}
+	}
 	enrichMgr := enrich.NewManager(eng, st)
+	enrichMgr.Concurrency = enrichConc
 
 	api := &httpapi.Server{
 		Store:         st,

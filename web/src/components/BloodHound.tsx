@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { api, ApiError, type BHEStatus, type BHETestResult, type BHEConfigInput } from "../api"
 import { useAuth } from "../auth"
+import { useAudits } from "../auditsData"
 import { useJobs } from "../jobs"
 
 export function BloodHound() {
@@ -189,16 +190,63 @@ export function BloodHound() {
           {enrichJob && enrichJob.phase !== "idle" && (
             <div className="hint">
               {enrichJob.phase === "running"
-                ? `Enriching… ${enrichJob.processed}/${enrichJob.total}`
+                ? `${enrichJob.message || "Enriching…"} ${enrichJob.processed}/${enrichJob.total} (${enrichJob.elapsed_sec}s)`
                 : enrichJob.phase === "done"
-                  ? `Done — enriched ${enrichJob.enriched}/${enrichJob.total}.`
+                  ? `✓ Done — enriched ${enrichJob.enriched}/${enrichJob.total} accounts in ${enrichJob.elapsed_sec}s.`
                   : enrichJob.phase === "failed"
-                    ? `Failed: ${enrichJob.error ?? "unknown"}`
+                    ? `✗ Failed: ${enrichJob.error ?? "unknown"}`
                     : enrichJob.phase}
             </div>
           )}
         </div>
       </div>
+
+      <div className="section-label">Upload user properties (offline)</div>
+      <div className="panel">
+        <p className="ingest-note">
+          Upload a <b>BloodHound users JSON export</b> (SharpHound collection, BHE export, or simplified format)
+          to populate AD properties (<code>pwdLastSet</code>, <code>pwdNeverExpires</code>, <code>enabled</code>,
+          controlled objects) on your accounts — <b>no live BHE connection needed</b>. Only DA-pathway checks
+          require a live connection (use "Run enrichment" above for those).
+        </p>
+        <BHEUpload csrf={csrf} />
+      </div>
+    </div>
+  )
+}
+
+function BHEUpload({ csrf }: { csrf: string }) {
+  const { bumpData } = useAudits()
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState("")
+  const [error, setError] = useState("")
+
+  async function upload() {
+    const file = fileRef.current?.files?.[0]
+    if (!file) return
+    setBusy(true)
+    setResult("")
+    setError("")
+    try {
+      const r = await api.uploadBHEUsers(file, csrf)
+      setResult(`Uploaded ${r.uploaded_users.toLocaleString()} users, matched ${r.matched_accounts.toLocaleString()} accounts.`)
+      bumpData()
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "upload failed")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="field">
+      <input ref={fileRef} type="file" accept=".json" />
+      <button className="btn btn-primary" onClick={upload} disabled={busy}>
+        {busy ? "Uploading…" : "Upload user data"}
+      </button>
+      {result && <div className="ingest-ok">✓ {result}</div>}
+      {error && <div className="error">{error}</div>}
     </div>
   )
 }

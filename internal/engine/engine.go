@@ -38,6 +38,8 @@ type Enrichment struct {
 	PwdLastSet        *int64 // epoch seconds
 	PwdNeverExpires   *bool
 	Enabled           *bool
+	HasSPN            *bool // Kerberoastable
+	DontReqPreauth    *bool // AS-REP roastable
 }
 
 // Enricher supplies BloodHound enrichment for a normalized username.
@@ -94,6 +96,28 @@ func (e *Engine) CurrentEnricher() Enricher {
 	e.encMu.RLock()
 	defer e.encMu.RUnlock()
 	return e.Enricher
+}
+
+// BuildBulkEnricher attempts to create a BulkBloodhoundEnricher by running 3
+// Cypher queries against BHE. Returns nil if BHE is not configured or if the
+// bulk prefetch fails (caller should fall back to per-user enrichment).
+func (e *Engine) BuildBulkEnricher() Enricher {
+	e.encMu.RLock()
+	enr := e.Enricher
+	e.encMu.RUnlock()
+	if enr == nil {
+		return nil
+	}
+	// Only works if the enricher wraps a *bloodhound.Client (the normal case).
+	bhe, ok := enr.(BloodhoundEnricher)
+	if !ok {
+		return nil
+	}
+	bulk := bloodhound.NewBulkEnricher(bhe.Client)
+	if err := bulk.Prefetch(); err != nil {
+		return nil // fall back to per-user
+	}
+	return BulkBloodhoundEnricher{Bulk: bulk}
 }
 
 // ProcessDomain scores all cracked and uncracked accounts for a domain and
@@ -209,13 +233,15 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 	count := e.hibpCount(a.Hash)
 	enrData := enrichVia(enr, a.Username, domain)
 
+	daysOOC := daysOutOfCompliance(enrData.PwdLastSet, now, pol.MaxPasswordAgeDays)
 	rctx := risk.Context{
 		SharedWith:          sharedWith,
 		DADomains:           enrData.DADomains,
 		ControlledObjects:   enrData.ControlledObjects,
-		DaysOutOfCompliance: daysOutOfCompliance(enrData.PwdLastSet, now, pol.MaxPasswordAgeDays),
+		DaysOutOfCompliance: daysOOC,
 		PasswordExpires:     passwordExpires(enrData.PwdNeverExpires),
 		HIBPBreachCount:     count,
+		DomainRiskLevel:     pol.DomainRiskLevel,
 	}
 	ran := risk.Analysis{
 		ComplexityLabel:       an.ComplexityLabel,
@@ -227,6 +253,15 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 		SimilarMax:            simMax,
 	}
 	res := risk.Score(ran, rctx)
+
+	var pwdLastSet int64
+	if enrData.PwdLastSet != nil {
+		pwdLastSet = *enrData.PwdLastSet
+	}
+	var daysOOCVal int
+	if daysOOC != nil {
+		daysOOCVal = *daysOOC
+	}
 
 	return model.Account{
 		Username:        a.Username,
@@ -253,19 +288,46 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 		KeyboardPatternCount: len(an.KeyboardPatterns),
 		BannedWords:          an.BannedWords,
 		KeyboardPatterns:     an.KeyboardPatterns,
+		// Temporal/privilege signals for the UI
+		PwdLastSet:          pwdLastSet,
+		PwdNeverExpires:     enrData.PwdNeverExpires,
+		DaysOutOfCompliance: daysOOCVal,
+		SimilarityScore:     simMax,
+		HasSPN:              enrData.HasSPN,
+		DontReqPreauth:      enrData.DontReqPreauth,
+		// Score breakdown for per-account factor visibility
+		ScoreBreakdown: &model.ScoreBreakdown{
+			BaseScore:          res.Breakdown.BaseScore,
+			ComplexityFactor:   res.Breakdown.ComplexityFactor,
+			LengthFactor:       res.Breakdown.LengthFactor,
+			DictionaryFactor:   res.Breakdown.DictionaryFactor,
+			SimilarityFactor:   res.Breakdown.SimilarityFactor,
+			TemporalScore:      res.Breakdown.TemporalScore,
+			ComplianceFactor:   res.Breakdown.ComplianceFactor,
+			ExpirationFactor:   res.Breakdown.ExpirationFactor,
+			EnvironmentalScore: res.Breakdown.EnvironmentalScore,
+			PrivilegeFactor:    res.Breakdown.PrivilegeFactor,
+			ShareFactor:        res.Breakdown.ShareFactor,
+			DomainFactor:       res.Breakdown.DomainFactor,
+			HIBPFactor:         res.Breakdown.HIBPFactor,
+		},
 	}
 }
 
 // scoreUncracked applies the simplified uncracked-hash scoring (base 5.0 scaled
-// by privilege/share/HIBP factors). BHE is consulted only for shared hashes.
+// by privilege/share/HIBP factors). BHE is always consulted when available so
+// DA pathways, controlled objects, and account properties are captured even for
+// uncracked accounts (their hash may be in HIBP or shared with a DA).
 func (e *Engine) scoreUncracked(domain string, a secretsdump.ParsedAccount, sharedWith int, now time.Time, enr Enricher) model.Account {
 	count := e.hibpCount(a.Hash)
-	var enrData Enrichment
-	if sharedWith > 0 {
-		enrData = enrichVia(enr, a.Username, domain)
-	}
+	enrData := enrichVia(enr, a.Username, domain)
 	hasDA := len(enrData.DADomains) > 0
 	score := uncrackedScore(hasDA, sharedWith, count)
+
+	var pwdLastSet int64
+	if enrData.PwdLastSet != nil {
+		pwdLastSet = *enrData.PwdLastSet
+	}
 
 	return model.Account{
 		Username:        a.Username,
@@ -281,6 +343,10 @@ func (e *Engine) scoreUncracked(domain string, a secretsdump.ParsedAccount, shar
 		Controlled:      derefInt(enrData.ControlledObjects),
 		SharedWith:      sharedWith,
 		Enabled:         enabledOrUnknown(enrData.Enabled),
+		PwdLastSet:      pwdLastSet,
+		PwdNeverExpires: enrData.PwdNeverExpires,
+		HasSPN:          enrData.HasSPN,
+		DontReqPreauth:  enrData.DontReqPreauth,
 	}
 }
 
@@ -422,6 +488,7 @@ func derefInt(p *int) int {
 func enabledOrUnknown(p *bool) bool { return p == nil || *p }
 
 // BloodhoundEnricher adapts a *bloodhound.Client to the Enricher interface.
+// This is the per-user REST version (slow, used for single-user lookups).
 type BloodhoundEnricher struct {
 	Client *bloodhound.Client
 }
@@ -445,4 +512,34 @@ func (b BloodhoundEnricher) Enrich(username string) Enrichment {
 		enr.PwdLastSet = &v
 	}
 	return enr
+}
+
+// BulkBloodhoundEnricher satisfies the Enricher interface using pre-fetched bulk
+// Cypher data. Instantiate with NewBulkEnricher, call Prefetch once, then use as
+// an Enricher for re-scoring. O(1) per lookup — no network calls during scoring.
+type BulkBloodhoundEnricher struct {
+	Bulk *bloodhound.BulkEnricher
+}
+
+// Enrich returns enrichment data from the pre-fetched bulk cache.
+func (b BulkBloodhoundEnricher) Enrich(username string) Enrichment {
+	props, daDomains, ctrl := b.Bulk.Lookup(username)
+	enabled := props.Enabled
+	never := props.PwdNeverExpires
+	hasSPN := props.HasSPN
+	dontReqPreauth := props.DontReqPreauth
+	var pwdLastSet *int64
+	if props.PwdLastSet > 0 {
+		v := props.PwdLastSet
+		pwdLastSet = &v
+	}
+	return Enrichment{
+		DADomains:         daDomains,
+		ControlledObjects: &ctrl,
+		PwdNeverExpires:   &never,
+		Enabled:           &enabled,
+		PwdLastSet:        pwdLastSet,
+		HasSPN:            &hasSPN,
+		DontReqPreauth:    &dontReqPreauth,
+	}
 }

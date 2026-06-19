@@ -72,6 +72,11 @@ func Score(a Analysis, c Context) Result {
 	hasDA := len(c.DADomains) > 0
 	env, privF, shareF, domF, hibpF := environmentalScore(
 		temporal, hasDA, c.ControlledObjects, c.SharedWith, c.DomainRiskLevel, c.HIBPBreachCount)
+	// Apply the final-score floor: the environmental result must never drop below
+	// the cracked-password minimum for this password's characteristics. This prevents
+	// "unknown" temporal/environmental factors from diluting a clearly weak password
+	// below the risk tier it inherently belongs to.
+	env = finalFloor(env, a, c.HIBPBreachCount)
 	final := round1(env)
 	return Result{
 		Score:     final,
@@ -93,6 +98,33 @@ func Score(a Analysis, c Context) Result {
 			DomainFactor:       round2(domF),
 			HIBPFactor:         round2(hibpF),
 		},
+	}
+}
+
+// finalFloor ensures the FINAL score (after all multipliers) never drops below a
+// minimum for a cracked password with the given characteristics. This catches the
+// case where "unknown" temporal/environmental factors (multipliers < 1) would
+// otherwise dilute a clearly dangerous password below its appropriate risk tier.
+func finalFloor(score float64, a Analysis, hibpCount int) float64 {
+	switch {
+	case hibpCount >= 1000000:
+		return math.Max(score, 8.0)
+	case hibpCount >= 100000:
+		return math.Max(score, 7.0)
+	case hibpCount >= 10000 || a.IsCommon:
+		return math.Max(score, 6.5)
+	case hibpCount >= 1000 || a.IsDictionaryWord:
+		return math.Max(score, 5.5)
+	case hibpCount >= 100:
+		return math.Max(score, 4.5)
+	case a.PasswordLength < 8:
+		return math.Max(score, 4.0) // Very short cracked password = at least Medium
+	case hibpCount >= 10 || a.BannedWordsCount > 0 || a.KeyboardPatternsCount > 0:
+		return math.Max(score, 4.0)
+	case a.PasswordLength < 12:
+		return math.Max(score, 3.0)
+	default:
+		return math.Max(score, 2.0)
 	}
 }
 
@@ -185,8 +217,10 @@ func floorBase(base float64, a Analysis, hibpCount int) float64 {
 		return math.Max(base, 5.0)
 	case hibpCount >= 10 || a.BannedWordsCount > 0 || a.KeyboardPatternsCount > 0:
 		return math.Max(base, 4.0)
-	case hibpCount > 0 || a.PasswordLength < 12:
-		return math.Max(base, 3.0)
+	case hibpCount > 0 || a.PasswordLength < 8:
+		return math.Max(base, 4.0)
+	case a.PasswordLength < 12:
+		return math.Max(base, 3.5)
 	default:
 		return math.Max(base, 2.0)
 	}
