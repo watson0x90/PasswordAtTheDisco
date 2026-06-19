@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react"
-import { api, ApiError, type DiffAccount, type DiffResult } from "../api"
+import { api, ApiError, type Account, type DiffAccount, type DiffResult } from "../api"
 import { useAudits } from "../auditsData"
 import { RISK_CLASS } from "../util"
+import { AccountLink } from "./AccountLink"
 
 export function Compare() {
   const { audits } = useAudits()
@@ -10,6 +11,7 @@ export function Compare() {
   const [res, setRes] = useState<DiffResult | null>(null)
   const [err, setErr] = useState("")
   const [busy, setBusy] = useState(false)
+  const [acctIndex, setAcctIndex] = useState<Account[]>([])
 
   // Default: baseline = second-newest, current = newest.
   useEffect(() => {
@@ -32,6 +34,27 @@ export function Compare() {
       .then((r) => active && setRes(r))
       .catch((e) => active && setErr(e instanceof ApiError ? e.message : "compare failed"))
       .finally(() => active && setBusy(false))
+    return () => {
+      active = false
+    }
+  }, [a, b])
+
+  useEffect(() => {
+    if (!a || !b || a === b) {
+      setAcctIndex([])
+      return
+    }
+    let active = true
+    Promise.all([api.auditAccounts(b), api.auditAccounts(a)])
+      .then(([curr, base]) => {
+        if (!active) return
+        const byKey = new Map<string, Account>()
+        // insert baseline first, then current overwrites so current (b) wins
+        for (const acc of base) byKey.set(`${acc.username}\t${acc.domain}`, acc)
+        for (const acc of curr) byKey.set(`${acc.username}\t${acc.domain}`, acc)
+        setAcctIndex([...byKey.values()])
+      })
+      .catch(() => active && setAcctIndex([])) // links gracefully fall back to plain text
     return () => {
       active = false
     }
@@ -71,12 +94,12 @@ export function Compare() {
       {a === b && <div className="chart-empty">Pick two different audits to compare.</div>}
       {err && <div className="error">{err}</div>}
       {busy && <div className="center-state"><div className="spinner">comparing</div></div>}
-      {res && a !== b && <DiffView res={res} />}
+      {res && a !== b && <DiffView res={res} accounts={acctIndex} />}
     </>
   )
 }
 
-function DiffView({ res }: { res: DiffResult }) {
+function DiffView({ res, accounts }: { res: DiffResult; accounts: Account[] }) {
   const d = res.diff
   const delta = Math.round((d.posture_b - d.posture_a) * 10) / 10
   return (
@@ -98,17 +121,27 @@ function DiffView({ res }: { res: DiffResult }) {
       </div>
 
       <div className="chart-grid">
-        <CohortCard title="Newly cracked" tone="crit" items={d.newly_cracked} />
-        <CohortCard title="Remediated" tone="low" items={d.remediated} />
-        <CohortCard title="Risk regressed" tone="high" items={d.regressed} />
-        <CohortCard title="Newly breached" tone="crit" items={d.newly_breached} />
+        <CohortCard title="Newly cracked" tone="crit" items={d.newly_cracked} accounts={accounts} />
+        <CohortCard title="Remediated" tone="low" items={d.remediated} accounts={accounts} />
+        <CohortCard title="Risk regressed" tone="high" items={d.regressed} accounts={accounts} />
+        <CohortCard title="Newly breached" tone="crit" items={d.newly_breached} accounts={accounts} />
       </div>
       <div className="meta-line">{d.still_cracked.toLocaleString()} account(s) still cracked in both.</div>
     </>
   )
 }
 
-function CohortCard({ title, tone, items: raw }: { title: string; tone: string; items: DiffAccount[] | null }) {
+function CohortCard({
+  title,
+  tone,
+  items: raw,
+  accounts,
+}: {
+  title: string
+  tone: string
+  items: DiffAccount[] | null
+  accounts: Account[]
+}) {
   const items = raw ?? []
   const [showAll, setShowAll] = useState(false)
   const shown = showAll ? items : items.slice(0, 50)
@@ -123,7 +156,7 @@ function CohortCard({ title, tone, items: raw }: { title: string; tone: string; 
         <div className="cohort-list">
           {shown.map((x, i) => (
             <div className="cohort-row" key={i}>
-              <span>{x.username}</span>
+              <AccountLink username={x.username} domain={x.domain} accounts={accounts} />
               <span className="cohort-meta">
                 {x.risk_a && x.risk_b && x.risk_a !== x.risk_b ? (
                   <span className="risk-transition">
