@@ -1,15 +1,19 @@
 import { useEffect, useState, type ReactNode } from "react"
-import { api, ApiError, type Report, type ReportAccount, type ReuseGroup, type Terms } from "../api"
+import { api, ApiError, type Account, type Report, type ReportAccount, type ReuseGroup, type Terms } from "../api"
+import { useAccountsData } from "../accountsData"
 import { useAudits } from "../auditsData"
 import { useAuth } from "../auth"
 import { RISK_CLASS, weaknessTags } from "../util"
+import { priorityWorklist } from "../worklist"
 import { BarChart } from "./BarChart"
+import { InfoTip } from "./InfoTip"
 
 const TOP = 50
 
 export function Actionable() {
   const { activeId, dataVersion } = useAudits()
   const { me } = useAuth()
+  const { accounts } = useAccountsData()
   const [report, setReport] = useState<Report | null>(null)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(true)
@@ -78,6 +82,8 @@ export function Actionable() {
         <Stat n={report.hibp_exposed.length} label="in HIBP" tone="high" />
         <Stat n={report.weak_passwords.length} label="weak (wordlist)" tone="high" />
       </div>
+
+      <PriorityWorklist accounts={accounts ?? []} />
 
       <Section
         title="Domain Admin Pathways"
@@ -286,6 +292,72 @@ export function Actionable() {
         />
       </Section>
     </>
+  )
+}
+
+// PriorityWorklist is a single ranked remediation list at the top of Actionable:
+// fix these first, why (reason badges), and the recommended action.
+function PriorityWorklist({ accounts }: { accounts: Account[] }) {
+  const [showAllWork, setShowAllWork] = useState(false)
+  const worklist = priorityWorklist(accounts)
+  if (worklist.length === 0) return null
+  const shown = showAllWork ? worklist : worklist.slice(0, TOP)
+  return (
+    <div className="action-section">
+      <div className="section-label">
+        Priority worklist{" "}
+        <InfoTip text="Fix these first — ranked by Domain-Admin reach, public-breach exposure, cracked status, and password reuse." />
+      </div>
+      <div className="table-wrap action-table">
+        <table className="accounts">
+          <thead>
+            <tr>
+              <th>Account</th>
+              <th>Domain</th>
+              <th>Risk</th>
+              <th>Why</th>
+              <th>Recommended action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((item, i) => {
+              const a = item.account
+              return (
+                <tr key={`${a.domain}/${a.username}/${i}`}>
+                  <td>
+                    {a.username}@{a.domain}
+                    {a.enabled === false && (
+                      <span className="badge-disabled" title="account disabled in AD">disabled</span>
+                    )}
+                  </td>
+                  <td className="muted">{a.domain}</td>
+                  <td>
+                    <span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span>{" "}
+                    <span className="num">{a.risk_score.toFixed(1)}</span>
+                  </td>
+                  <td>
+                    <span className="row-gap-xs">
+                      {item.reasons.map((r) => (
+                        <span key={r} className="badge wtag">{r}</span>
+                      ))}
+                    </span>
+                  </td>
+                  <td>{item.action}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+        {worklist.length > TOP && (
+          <div className="meta-line">
+            showing {shown.length.toLocaleString()} of {worklist.length.toLocaleString()}{" "}
+            <button className="link-btn" onClick={() => setShowAllWork((v) => !v)}>
+              {showAllWork ? "show fewer" : `show all ${worklist.length}`}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 
