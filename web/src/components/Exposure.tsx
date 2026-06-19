@@ -223,7 +223,7 @@ export function Exposure() {
                 <tr key={`${row.account.domain}/${u}/${i}`}>
                   <td className="num">{i + 1}</td>
                   <td>
-                    {u}
+                    <AccountLink username={u} domain={row.account.domain} />
                     {!row.account.enabled && (
                       <span className="badge-disabled" title="disabled in AD — hash still reusable">
                         disabled
