@@ -63,6 +63,7 @@ export function Reports() {
   return (
     <>
       <div className="section-label">Reports</div>
+      <div className="view-sub">Export for tickets and leadership.</div>
 
       <div className="panel report-export">
         <div className="report-export-head">

@@ -233,6 +233,8 @@ a { color: var(--accent); text-decoration: none; }
 .section-label:first-child { margin-top: 0; }
 .section-label.sub { margin-top: 28px; font-size: 12px; }
 
+.view-sub { font-size: 13px; color: var(--dim); margin: -8px 0 18px; }
+
 /* ---- stat grid ---- */
 
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-lg); margin-bottom: 38px; }

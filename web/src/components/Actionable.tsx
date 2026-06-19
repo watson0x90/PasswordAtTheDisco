@@ -68,6 +68,7 @@ export function Actionable() {
   return (
     <>
       <div className="section-label">Actionable reports</div>
+      <div className="view-sub">What do I fix first? Prioritized remediation.</div>
       <div className="report-strip">
         <Stat n={report.total_accounts} label="accounts" />
         <Stat n={report.cracked_count} label="cracked" tone="high" />

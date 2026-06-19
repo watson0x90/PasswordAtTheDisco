@@ -74,6 +74,7 @@ export function Domains() {
   return (
     <>
       <div className="section-label">Domains</div>
+      <div className="view-sub">Which domain is worst? Per-domain health.</div>
       <div className="domain-grid">
         {domains.map((d) => {
           const crackPct = d.total ? Math.round((d.cracked / d.total) * 100) : 0

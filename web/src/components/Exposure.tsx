@@ -5,7 +5,6 @@ import { useAudits } from "../auditsData"
 import { useAuth } from "../auth"
 import { RISK_CLASS } from "../util"
 import { crossDomainBridges, hibpTriage, blastRadius, type BridgeCluster } from "../exposure"
-import { ExposureHeadline } from "./ExposureHeadline"
 import { InfoTip } from "./InfoTip"
 import { GLOSSARY } from "../glossary"
 
@@ -90,7 +89,8 @@ export function Exposure() {
 
   return (
     <>
-      <ExposureHeadline accounts={accounts ?? []} report={report} />
+      <div className="section-label">Exposure</div>
+      <div className="view-sub">How do attackers move between domains? Cross-domain credential reuse.</div>
 
       {reportErr && (
         <div className="hint">{reportErr} — bridge/HIBP panels need the report.</div>

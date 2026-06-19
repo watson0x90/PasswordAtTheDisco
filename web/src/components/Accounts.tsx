@@ -44,6 +44,7 @@ export function Accounts() {
   return (
     <>
       <div className="section-label">Accounts</div>
+      <div className="view-sub">The full, searchable account worklist — filter and drill in.</div>
       <div className="toolbar">
         <input className="search" placeholder="search username or domain…" value={query}
                spellCheck={false} onChange={(e) => setQuery(e.target.value)} />

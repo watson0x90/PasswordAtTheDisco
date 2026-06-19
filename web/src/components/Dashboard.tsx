@@ -75,6 +75,7 @@ export function Dashboard() {
           <button className="btn" onClick={() => nav("reports")}>Reports &amp; export →</button>
         </div>
       </div>
+      <div className="view-sub">Where do we stand? Org-wide posture at a glance.</div>
       <div className="stat-grid">
         <Stat label="Accounts" value={total} delay={0} />
         <Stat label="Cracked" value={cracked} sub={`${crackPct}% of accounts`} delay={0.06} />
