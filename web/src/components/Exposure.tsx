@@ -21,6 +21,7 @@ export function Exposure() {
   const [revealError, setRevealError] = useState("")
 
   const [pairFilter, setPairFilter] = useState<[string, string] | null>(null)
+  const [showAllBridges, setShowAllBridges] = useState(false)
   const [openCluster, setOpenCluster] = useState<string | null>(null)
   const timers = useRef<number[]>([])
 
@@ -87,6 +88,9 @@ export function Exposure() {
       )
     : bridges.clusters
 
+  const totalBridges = bridges.clusters.length
+  const visibleBridges = showAllBridges ? shown : shown.slice(0, 10)
+
   return (
     <>
       <div className="section-label">Exposure</div>
@@ -136,8 +140,10 @@ export function Exposure() {
             </tbody>
           </table>
           </div>
+          <div className="matrix-legend muted">Each cell = shared-password groups bridging the two domains · darker = more</div>
 
           <div className="bridge-clusters">
+            <div className="section-label">Top credential bridges ({totalBridges} total)</div>
             {pairFilter && (
               <div className="meta-line">
                 showing {pairFilter[0]} ↔ {pairFilter[1]} —{" "}
@@ -146,7 +152,7 @@ export function Exposure() {
                 </button>
               </div>
             )}
-            {shown.map((c) => {
+            {visibleBridges.map((c) => {
               // Key on the cluster's position in the UNFILTERED list so open
               // state survives a pairFilter change (filtered-index keys shift).
               const cid = c.domains.join("/") + "#" + bridges.clusters.indexOf(c)
@@ -180,6 +186,11 @@ export function Exposure() {
                 </div>
               )
             })}
+            {shown.length > 10 && (
+              <button className="link-btn" onClick={() => setShowAllBridges((v) => !v)}>
+                {showAllBridges ? "show fewer" : `show all ${shown.length}`}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -206,6 +217,9 @@ export function Exposure() {
         ) : (
           <TriageTable rows={triage.tier2} />
         )}
+        <div className="muted triage-note">
+          Accounts sharing a password share its breach count (same hash) — repetition is expected, not a duplicate.
+        </div>
       </div>
 
       {/* ── Blast-radius worklist ── */}

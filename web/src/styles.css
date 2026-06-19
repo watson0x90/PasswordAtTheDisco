@@ -1146,6 +1146,8 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
 .tier-head.t2 { border-left-color: #fbbf24; }
 .bridge-clusters { margin-top: 12px; }
 .bridge-cluster-row { padding: 6px 0; border-bottom: 1px solid #161d30; font-size: 13px; }
+.matrix-legend { font-size: 12px; margin-top: 8px; }
+.triage-note { font-size: 12px; margin: 10px 0; }
 
 .forbidden-words-area {
   width: 100%;
