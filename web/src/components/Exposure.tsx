@@ -5,7 +5,8 @@ import { useAudits } from "../auditsData"
 import { useAuth } from "../auth"
 import { RISK_CLASS } from "../util"
 import { crossDomainBridges, hibpTriage, blastRadius, type BridgeCluster } from "../exposure"
-import { ExposureHeadline } from "./ExposureHeadline"
+import { InfoTip } from "./InfoTip"
+import { GLOSSARY } from "../glossary"
 
 export function Exposure() {
   const { me } = useAuth()
@@ -19,7 +20,7 @@ export function Exposure() {
   const [revealing, setRevealing] = useState("")
   const [revealError, setRevealError] = useState("")
 
-  const [pairFilter, setPairFilter] = useState<[string, string] | null>(null)
+  const [showAllBridges, setShowAllBridges] = useState(false)
   const [openCluster, setOpenCluster] = useState<string | null>(null)
   const timers = useRef<number[]>([])
 
@@ -76,109 +77,89 @@ export function Exposure() {
   if (report && report.total_accounts === 0)
     return <div className="center-state">No data yet — select or create an audit and upload a dump.</div>
 
-  const bridges = report ? crossDomainBridges(report) : { matrix: {}, clusters: [] as BridgeCluster[], domains: [] as string[] }
+  const bridges = report ? crossDomainBridges(report) : { clusters: [] as BridgeCluster[], domains: [] as string[] }
   const triage = report ? hibpTriage(report) : { tier1: [] as ReportAccount[], tier2: [] as ReportAccount[] }
   const work = blastRadius(accounts ?? ([] as Account[]))
 
-  const shown = pairFilter
-    ? bridges.clusters.filter(
-        (c) => c.domains.includes(pairFilter[0]) && c.domains.includes(pairFilter[1]),
-      )
-    : bridges.clusters
+  const visibleBridges = showAllBridges ? bridges.clusters : bridges.clusters.slice(0, 10)
+  const totalBridges = bridges.clusters.length
 
   return (
     <>
-      <ExposureHeadline accounts={accounts ?? []} report={report} />
+      <div className="section-label">Exposure</div>
+      <div className="view-sub">How do attackers move between domains? Cross-domain credential reuse.</div>
 
       {reportErr && (
         <div className="hint">{reportErr} — bridge/HIBP panels need the report.</div>
       )}
 
       {/* ── Cross-domain credential bridges ── */}
-      <div className="section-label">Cross-domain credential bridges</div>
+      <div className="section-label">
+        Cross-domain credential bridges<InfoTip text={GLOSSARY.bridge_matrix} />
+      </div>
       {bridges.domains.length < 2 ? (
         <div className="panel">
           <div className="muted">No credentials are shared across domains.</div>
         </div>
       ) : (
         <div className="panel">
-          <div className="table-wrap">
-          <table className="bridge-matrix">
-            <thead>
-              <tr>
-                <th></th>
-                {bridges.domains.map((d) => (
-                  <th key={d}>{d}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {bridges.domains.map((rowDom) => (
-                <tr key={rowDom}>
-                  <td className="rowh">{rowDom}</td>
-                  {bridges.domains.map((colDom) => {
-                    if (colDom <= rowDom) return <td key={colDom} />
-                    const n = bridges.matrix[rowDom]?.[colDom] ?? 0
-                    return (
-                      <td
-                        key={colDom}
-                        className={`m${n === 0 ? 0 : n < 3 ? 1 : n < 7 ? 2 : 3}`}
-                        onClick={n > 0 ? () => setPairFilter([rowDom, colDom]) : undefined}
-                      >
-                        {n || ""}
-                      </td>
-                    )
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="meta-line muted">
+            {totalBridges} bridge{totalBridges === 1 ? "" : "s"} — a shared password lets an
+            attacker pivot between these domains. Worst first.
           </div>
-
-          <div className="bridge-clusters">
-            {pairFilter && (
-              <div className="meta-line">
-                showing {pairFilter[0]} ↔ {pairFilter[1]} —{" "}
-                <button className="link-btn" onClick={() => setPairFilter(null)}>
-                  clear
-                </button>
-              </div>
-            )}
-            {shown.map((c) => {
-              // Key on the cluster's position in the UNFILTERED list so open
-              // state survives a pairFilter change (filtered-index keys shift).
+          <div className="bridge-cards">
+            {visibleBridges.map((c) => {
               const cid = c.domains.join("/") + "#" + bridges.clusters.indexOf(c)
+              const tier = c.hasDA ? "crit" : c.cracked ? "high" : "low"
+              const tierLabel = c.hasDA
+                ? "⚠ Reaches Domain Admin"
+                : c.cracked
+                  ? "Cracked"
+                  : "Uncracked — shared hash, no cleartext"
+              const open = openCluster === cid
               return (
-                <div key={cid} className="bridge-cluster-row">
-                  <span className="muted">{c.domains.join(" ↔ ")}</span>
-                  {" · "}
-                  {c.size} accounts{" · "}
-                  {c.cracked ? "cracked" : "uncracked"}
-                  {c.hasDA && <span className="badge crit ml-xs">DA</span>}
-                  {c.hibpMax > 0 && (
-                    <span className="badge ml-xs">
-                      HIBP {c.hibpMax.toLocaleString()}
-                    </span>
+                <div key={cid} className={`bridge-card ${tier}`}>
+                  <div className="bridge-card-head">
+                    <div>
+                      <div className="bridge-tier">{tierLabel}</div>
+                      <div className="bridge-domains">{c.domains.join(" ↔ ")}</div>
+                    </div>
+                    <div className="bridge-count">
+                      <div className="bridge-count-n">{c.size}</div>
+                      <div className="bridge-count-l">accounts</div>
+                    </div>
+                  </div>
+                  <div className="bridge-badges">
+                    <span className={`badge ${c.cracked ? "high" : ""}`}>{c.cracked ? "cracked" : "uncracked"}</span>
+                    {c.hibpMax > 0 && <span className="badge">HIBP {c.hibpMax.toLocaleString()}</span>}
+                    <span className="badge">{c.domains.length} domains</span>
+                    <button
+                      className="link-btn bridge-members-btn"
+                      onClick={() => setOpenCluster(open ? null : cid)}
+                    >
+                      {open ? "▾" : "▸"} {c.members.length} members
+                    </button>
+                  </div>
+                  {open && (
+                    <div className="bridge-members">
+                      {c.members.map((m, mi) => (
+                        <div key={`${m.domain}/${m.username}/${mi}`} className="member-row">
+                          <span className="muted">
+                            {m.username} · {m.domain} · {m.risk_level}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   )}
-                  {" "}
-                  <button
-                    className="link-btn"
-                    onClick={() => setOpenCluster(openCluster === cid ? null : cid)}
-                  >
-                    members ({c.members.length})
-                  </button>
-                  {openCluster === cid &&
-                    c.members.map((m, mi) => (
-                      <div key={`${m.domain}/${m.username}/${mi}`} className="member-row">
-                        <span className="muted">
-                          {m.username} · {m.domain} · {m.risk_level}
-                        </span>
-                      </div>
-                    ))}
                 </div>
               )
             })}
           </div>
+          {totalBridges > 10 && (
+            <button className="link-btn" onClick={() => setShowAllBridges((v) => !v)}>
+              {showAllBridges ? "show fewer" : `show all ${totalBridges}`}
+            </button>
+          )}
         </div>
       )}
 
@@ -186,7 +167,7 @@ export function Exposure() {
       <div className="section-label">HIBP urgency triage</div>
       <div className="panel">
         <div className="tier-head">
-          <b>Tier 1 · {triage.tier1.length} — cracked + breached</b>
+          <b>Tier 1 · {triage.tier1.length} — cracked + breached</b><InfoTip text={GLOSSARY.tier1_hibp} />
           <div className="muted">exact credential is public → reset now</div>
         </div>
         {triage.tier1.length === 0 ? (
@@ -196,7 +177,7 @@ export function Exposure() {
         )}
 
         <div className="tier-head t2">
-          <b>Tier 2 · {triage.tier2.length} — breached, not cracked</b>
+          <b>Tier 2 · {triage.tier2.length} — breached, not cracked</b><InfoTip text={GLOSSARY.tier2_hibp} />
           <div className="muted">hash in breach data → rotate next cycle</div>
         </div>
         {triage.tier2.length === 0 ? (
@@ -204,6 +185,9 @@ export function Exposure() {
         ) : (
           <TriageTable rows={triage.tier2} />
         )}
+        <div className="muted triage-note">
+          Accounts sharing a password share its breach count (same hash) — repetition is expected, not a duplicate.
+        </div>
       </div>
 
       {/* ── Blast-radius worklist ── */}

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react"
 import { api, ApiError, type Account } from "../api"
 import { useAuth } from "../auth"
 import { RISK_CLASS, hasDA, weaknessTags } from "../util"
+import { InfoTip } from "./InfoTip"
+import { GLOSSARY } from "../glossary"
 
 // Above this many rows, virtualize (window) the table so we don't mount tens of
 // thousands of <tr> nodes. Below it, render all (handles variable-height reveal rows).
@@ -102,12 +104,12 @@ export function AccountsTable({ accounts }: { accounts: Account[] }) {
               <th>Username</th>
               <th>Domain</th>
               <th>Risk</th>
-              <th className="num">Score</th>
-              <th className="num">HIBP</th>
+              <th className="num">Score<InfoTip text={GLOSSARY.risk_score} /></th>
+              <th className="num">HIBP<InfoTip text={GLOSSARY.hibp_count} /></th>
               <th>Policy</th>
-              <th>Weak</th>
-              <th className="num">Shared</th>
-              <th>DA Pathway</th>
+              <th>Weak<InfoTip text={GLOSSARY.weak_categories} /></th>
+              <th className="num">Shared<InfoTip text={GLOSSARY.shared_with} /></th>
+              <th>DA Pathway<InfoTip text={GLOSSARY.da_pathway} /></th>
               {isLead && <th>Secret</th>}
             </tr>
           </thead>

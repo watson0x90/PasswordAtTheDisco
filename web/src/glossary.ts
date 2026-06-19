@@ -1,0 +1,15 @@
+// Plain-English definitions surfaced as InfoTip tooltips across the dashboards.
+export const GLOSSARY = {
+  da_pathway: "Domain-Admin pathway: this account can reach Domain Admin via an AD attack path (BloodHound).",
+  hibp: "Have I Been Pwned: the password's NT hash appears in public breach corpora. The number is how many times it's been seen.",
+  hibp_count: "How many times this password has been seen in public breaches. Accounts sharing a password share this count (same hash) — repetition is expected.",
+  shared_with: "How many other accounts use the exact same password (same NT hash).",
+  escalated_shared_da: "This account shares its password with a Domain-Admin account — cracking it yields DA.",
+  high_controlled: "Controls a large number of AD objects (BloodHound). >100 objects = high blast radius.",
+  tier1_hibp: "Tier 1 — cracked AND in public breaches: the exact password is public. Reset now.",
+  tier2_hibp: "Tier 2 — the hash is in breach data but not cracked here. Rotate next cycle.",
+  weak_categories: "Why a password is weak: Forbidden (banned term), Common (top breached), Dictionary (a dictionary word), Keyboard (a keyboard walk).",
+  risk_score: "Per-account risk, 0–10 — higher is worse (opposite of the org health score).",
+  bridge_matrix: "Each cell = number of shared-password groups that bridge the two domains. Darker = more bridges.",
+  breach_impact: "Directional estimate from this audit's critical-risk + Domain-Admin-path counts; cost & recovery use IBM Cost of a Data Breach industry averages — not a quote.",
+} as const

@@ -41,6 +41,24 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
+## What's new in 2.12
+
+A **dashboard-clarity pass** driven by a first-time CISO + blue-team review:
+
+- **Posture score reads as health** — labeled "higher is better, target ≥ 75", and
+  the sub-bars relabeled so a full (green) bar always means *healthier* (e.g.
+  "Privilege exposure" → "Privilege control").
+- **Jargon defined inline** — hover **ⓘ** tooltips explain DA pathway, HIBP, shared
+  hashes, controlled objects, the weak-password categories, and the Tier 1/2 triage
+  (the glossary that was hidden on the export page, surfaced on the dashboards).
+- **Each view says what it answers** — one-line purpose subtitles, the duplicated
+  headline strip removed from Exposure, and a legend + top-N list on the
+  cross-domain bridge matrix.
+- **Actionable is now a ranked Priority Worklist** — "fix these first," with reason
+  badges (DA path · public-breach · cracked · reuse) and a recommended action per
+  account, instead of a wall of all-10.0 tables.
+- Breach-impact estimate gets a methodology note.
+
 ## What's new in 2.11
 
 This release merges two complementary lines of work — **BloodHound graph

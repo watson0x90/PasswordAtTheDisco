@@ -10,7 +10,6 @@ export interface BridgeCluster {
   members: ReportAccount[]
 }
 export interface CrossDomain {
-  matrix: Record<string, Record<string, number>>
   clusters: BridgeCluster[]
   domains: string[]
 }
@@ -43,36 +42,26 @@ export function exposureHeadline(
   return { crackedDA, crackedHibp, crossDomainGroups, domainsSpanned: spanned.size }
 }
 
-// crossDomainBridges — domain×domain shared-credential matrix + ranked clusters.
+// crossDomainBridges — ranked cross-domain shared-credential clusters.
 export function crossDomainBridges(report: Report): CrossDomain {
-  const matrix: Record<string, Record<string, number>> = {}
   const clusters: BridgeCluster[] = []
   const domains = new Set<string>()
   for (const g of [...report.cracked_reuse, ...report.uncracked_reuse]) {
     const doms = [...new Set(g.members.map((m) => m.domain))].sort()
     if (doms.length < 2) continue
     doms.forEach((d) => domains.add(d))
-    for (let i = 0; i < doms.length; i++) {
-      for (let j = i + 1; j < doms.length; j++) {
-        const a = doms[i]
-        const b = doms[j]
-        matrix[a] = matrix[a] || {}
-        matrix[a][b] = (matrix[a][b] || 0) + 1
-      }
-    }
     clusters.push({
       domains: doms, size: g.size, cracked: g.cracked, hasDA: g.has_da_pathway,
       hibpMax: g.hibp_breach_count, members: g.members,
     })
   }
   // DA clusters first, then by blast radius = size × distinct-domain count.
-  // (BridgeCluster.domains is the string[] of domains, not ReuseGroup.domains the count.)
   clusters.sort(
     (x, y) =>
       (y.hasDA ? 1 : 0) - (x.hasDA ? 1 : 0) ||
       y.size * y.domains.length - x.size * x.domains.length,
   )
-  return { matrix, clusters, domains: [...domains].sort() }
+  return { clusters, domains: [...domains].sort() }
 }
 
 // hibpTriage — Tier 1 (cracked+breached) vs Tier 2 (breached, not cracked).

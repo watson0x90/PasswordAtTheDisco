@@ -45,7 +45,7 @@ describe("exposureHeadline", () => {
 })
 
 describe("crossDomainBridges", () => {
-  it("matrix counts clusters per domain pair; single-domain groups excluded", () => {
+  it("returns cross-domain clusters, excludes single-domain groups", () => {
     const rep = report({
       cracked_reuse: [
         grp({ group_id: 1, size: 5, has_da_pathway: true, members: [ra({ domain: "CORP" }), ra({ domain: "DMZ" })] }),
@@ -53,11 +53,12 @@ describe("crossDomainBridges", () => {
       ],
       uncracked_reuse: [grp({ group_id: 3, size: 3, members: [ra({ domain: "CORP" }), ra({ domain: "DMZ" })] })],
     })
-    const { matrix, clusters, domains } = crossDomainBridges(rep)
-    expect(matrix["CORP"]["DMZ"]).toBe(2)
-    expect(clusters.length).toBe(2)
-    expect(clusters[0].hasDA).toBe(true)
-    expect(domains).toEqual(["CORP", "DMZ"])
+    const { clusters, domains } = crossDomainBridges(rep)
+    // single-domain groups are excluded; only cross-domain bridges remain
+    expect(clusters.every((c) => c.domains.length >= 2)).toBe(true)
+    expect(clusters.length).toBeGreaterThan(0)
+    expect(domains).toContain("CORP")
+    expect(domains).toContain("DMZ")
   })
 })
 

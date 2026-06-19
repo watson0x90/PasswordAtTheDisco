@@ -334,11 +334,12 @@ td{padding:7px 10px;border-bottom:1px solid #1b2236;white-space:nowrap}
     <div class="score" style="color:{{if ge .Score 85.0}}#34d399{{else if ge .Score 70.0}}#fbbf24{{else}}#fb7185{{end}}">{{f1 .Score}}</div>
     <div class="rating" style="color:{{if ge .Score 85.0}}#34d399{{else if ge .Score 70.0}}#fbbf24{{else}}#fb7185{{end}}">{{.Rating}}</div>
     <div class="meta">breach likelihood: {{.Likelihood}}</div>
+    <div class="meta">security health — higher is better · target ≥ 75</div>
   </div>
   <div class="br">
-    <div class="brrow"><span>Risk distribution</span><span>{{f1 (index .BR 0)}} / 40</span></div><div class="track"><div class="fill" style="width:{{index .BRPct 0}}%"></div></div>
+    <div class="brrow"><span>Risk profile</span><span>{{f1 (index .BR 0)}} / 40</span></div><div class="track"><div class="fill" style="width:{{index .BRPct 0}}%"></div></div>
     <div class="brrow"><span>Password strength</span><span>{{f1 (index .BR 1)}} / 30</span></div><div class="track"><div class="fill" style="width:{{index .BRPct 1}}%"></div></div>
-    <div class="brrow"><span>Privilege exposure</span><span>{{f1 (index .BR 2)}} / 15</span></div><div class="track"><div class="fill" style="width:{{index .BRPct 2}}%"></div></div>
+    <div class="brrow"><span>Privilege control</span><span>{{f1 (index .BR 2)}} / 15</span></div><div class="track"><div class="fill" style="width:{{index .BRPct 2}}%"></div></div>
     <div class="brrow"><span>Policy compliance</span><span>{{f1 (index .BR 3)}} / 15</span></div><div class="track"><div class="fill" style="width:{{index .BRPct 3}}%"></div></div>
   </div>
 </div>
