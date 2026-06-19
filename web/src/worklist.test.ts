@@ -27,4 +27,19 @@ describe("priorityWorklist", () => {
     ])
     expect(wl[0].account.username).toBe("b")
   })
+  it("surfaces a never-expires-only account with Enforce expiry, ranked low", () => {
+    const wl = priorityWorklist([
+      acct({ username: "ne", pwd_never_expires: true }),
+      acct({ username: "cr", cracked: true, risk_score: 5 }),
+    ])
+    const ne = wl.find((w) => w.account.username === "ne")
+    expect(ne).toBeTruthy()
+    expect(ne!.action).toBe("Enforce expiry")
+    expect(wl[0].account.username).toBe("cr") // cracked outranks never-expires-only
+  })
+  it("recommends rotation for a shared (reused) but uncracked password", () => {
+    const [w] = priorityWorklist([acct({ shared_with: 4 })])
+    expect(w.action).toBe("Rotate (shared password)")
+    expect(w.reasons).toContain("Shared 4")
+  })
 })
