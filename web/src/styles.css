@@ -1153,6 +1153,11 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
 .bridge-badges { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .bridge-members-btn { margin-left: auto; }
 .bridge-members { margin-top: 10px; border-top: 1px solid var(--glass-border); padding-top: 8px; display: grid; gap: 3px; }
+.member-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
+.member-table th { text-align: left; color: var(--faint); font-weight: 600; padding: 4px 10px; border-bottom: 1px solid var(--glass-border); }
+.member-table td { padding: 5px 10px; border-bottom: 1px solid var(--hairline); }
+.member-table td.num { font-family: var(--mono); }
+.member-table .link-btn { font-family: var(--mono); }
 .tier-head { border-left: 3px solid #fb7185; padding-left: 10px; margin: 10px 0 6px; }
 .tier-head.t2 { border-left-color: #fbbf24; }
 .triage-note { font-size: 12px; margin: 10px 0; }
