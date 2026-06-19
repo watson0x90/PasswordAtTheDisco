@@ -102,7 +102,7 @@ export function AccountsTable({ accounts }: { accounts: Account[] }) {
               <th>Username</th>
               <th>Domain</th>
               <th>Risk</th>
-              <th className="num">Score</th>
+              <th className="num" title="Risk 0–10 · higher = worse (opposite of the org health score)">Score</th>
               <th className="num">HIBP</th>
               <th>Policy</th>
               <th>Weak</th>

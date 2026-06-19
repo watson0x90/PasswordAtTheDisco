@@ -102,11 +102,13 @@ export function Dashboard() {
                 Estimated breach likelihood:{" "}
                 <b style={{ color: LIKELIHOOD_COLOR[p.likelihood] }}>{p.likelihood}</b>
               </div>
+              <div className="posture-cap">Security health · higher is better · target ≥ 75</div>
             </div>
             <div className="posture-breakdown">
-              <PostureBar label="Risk distribution" value={p.breakdown.risk} max={40} />
+              <div className="posture-cap">Each bar: more filled = healthier</div>
+              <PostureBar label="Risk profile" value={p.breakdown.risk} max={40} />
               <PostureBar label="Password strength" value={p.breakdown.strength} max={30} />
-              <PostureBar label="Privilege exposure" value={p.breakdown.privilege} max={15} />
+              <PostureBar label="Privilege control" value={p.breakdown.privilege} max={15} />
               <PostureBar label="Policy compliance" value={p.breakdown.compliance} max={15} />
             </div>
           </>

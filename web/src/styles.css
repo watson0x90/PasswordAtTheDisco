@@ -906,6 +906,7 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 .posture-panel { display: flex; gap: 36px; align-items: center; flex-wrap: wrap; margin-bottom: 32px; }
 .posture-gauge-wrap { flex: 0 0 220px; text-align: center; }
 .posture-likelihood { font-size: 12px; color: var(--dim); margin-top: 4px; }
+.posture-cap { font-size: 12px; color: var(--dim); margin-top: 6px; }
 .gauge { position: relative; }
 .gauge-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; padding-bottom: 18px; }
 .gauge-score { font-family: var(--mono); font-size: 40px; font-weight: 600; line-height: 1; }
