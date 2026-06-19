@@ -326,7 +326,7 @@ function PriorityWorklist({ accounts }: { accounts: Account[] }) {
               return (
                 <tr key={`${a.domain}/${a.username}/${i}`}>
                   <td>
-                    <AccountLink username={a.username} domain={a.domain} />@{a.domain}
+                    <AccountLink username={a.username} domain={a.domain} />
                     {a.enabled === false && (
                       <span className="badge-disabled" title="account disabled in AD">disabled</span>
                     )}
