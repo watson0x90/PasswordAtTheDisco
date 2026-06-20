@@ -5,6 +5,9 @@ export const RISK_CLASS: Record<string, string> = {
   Low: "low",
 }
 
+// Severity rank for sorting (Critical highest). Mirrors RISK_CLASS keys.
+export const RISK_RANK: Record<string, number> = { Critical: 4, High: 3, Medium: 2, Low: 1 }
+
 // hasDA reports whether an account has a Domain Admin pathway.
 export function hasDA(daDomains: string): boolean {
   return daDomains !== "" && daDomains !== "None" && daDomains !== "Unknown"
