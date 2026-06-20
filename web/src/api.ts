@@ -143,6 +143,11 @@ export interface ScoreBreakdown {
   hibp_factor: number
 }
 
+export interface ProbeResult {
+  count: number
+  matches: Account[]
+}
+
 // A redacted account row in the Actionable reports — no cleartext, no NT hash.
 export interface ReportAccount {
   username: string
@@ -331,6 +336,13 @@ export const api = {
 
   revealSecret: (username: string) =>
     request<{ username: string; password: string }>(`/accounts/${encodeURIComponent(username)}/secret`),
+
+  probe: (password: string, csrf: string) =>
+    request<ProbeResult>("/probe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+      body: JSON.stringify({ password }),
+    }),
 
   audit: (domain: string, cracked: File | null, uncracked: File | null, csrf: string, onProgress?: (l: number, t: number) => void) => {
     const fd = new FormData()
