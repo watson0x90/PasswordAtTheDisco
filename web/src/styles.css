@@ -839,7 +839,7 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 
 .acct-name { color: var(--text); font-weight: 500; }
 .acct-name:hover { color: var(--accent); }
-.drawer-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 70; }
+.drawer-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 190; }
 .drawer {
   position: fixed;
   top: 0;
@@ -847,7 +847,7 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
   bottom: 0;
   width: 480px;
   max-width: 90vw;
-  z-index: 71;
+  z-index: 191;
   background: #121a2e;
   border-left: 1px solid var(--glass-border);
   box-shadow: -24px 0 60px -24px rgba(0, 0, 0, 0.85);

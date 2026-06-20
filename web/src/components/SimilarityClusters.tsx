@@ -9,6 +9,12 @@ export function SimilarityClusters({ accounts }: { accounts: Account[] }) {
   const net = useMemo(() => similarityNetwork(accounts), [accounts])
   const [expanded, setExpanded] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [modalH, setModalH] = useState(() => Math.round(window.innerHeight * 0.7))
+  useEffect(() => {
+    function onResize() { setModalH(Math.round(window.innerHeight * 0.7)) }
+    window.addEventListener("resize", onResize)
+    return () => window.removeEventListener("resize", onResize)
+  }, [])
 
   useEffect(() => {
     if (!expanded) return
@@ -47,7 +53,7 @@ export function SimilarityClusters({ accounts }: { accounts: Account[] }) {
             </div>
             <div className="simgraph-body">
               <div className="simgraph-graph">
-                <NetworkGraph nodes={net.nodes} edges={net.edges} height={Math.round(window.innerHeight * 0.7)} onNodeClick={setSelectedId} />
+                <NetworkGraph nodes={net.nodes} edges={net.edges} height={modalH} onNodeClick={setSelectedId} />
               </div>
               <div className="simgraph-side">
                 <SimilarityBreakdown account={selected} accounts={accounts} />
