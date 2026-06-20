@@ -2,7 +2,9 @@ import { useEffect, useState } from "react"
 import { api, ApiError, type Account, type DiffAccount, type DiffResult } from "../api"
 import { useAudits } from "../auditsData"
 import { RISK_CLASS } from "../util"
+import { useSortablePaged, type SortColumn } from "../sortPage"
 import { AccountLink } from "./AccountLink"
+import { Pager } from "./Pager"
 
 export function Compare() {
   const { audits } = useAudits()
@@ -143,8 +145,8 @@ function CohortCard({
   accounts: Account[]
 }) {
   const items = raw ?? []
-  const [showAll, setShowAll] = useState(false)
-  const shown = showAll ? items : items.slice(0, 50)
+  const PAGE_COLS: SortColumn<DiffAccount>[] = [{ key: "n", get: () => 0 }]
+  const page = useSortablePaged(items, PAGE_COLS, { defaultSort: { key: "n", dir: "asc" }, pageSize: 50 })
   return (
     <div className="panel chart-card">
       <div className="chart-title">
@@ -154,7 +156,7 @@ function CohortCard({
         <div className="chart-empty">none</div>
       ) : (
         <div className="cohort-list">
-          {shown.map((x, i) => (
+          {page.rows.map((x, i) => (
             <div className="cohort-row" key={i}>
               <AccountLink username={x.username} domain={x.domain} accounts={accounts} />
               <span className="cohort-meta">
@@ -170,11 +172,7 @@ function CohortCard({
               </span>
             </div>
           ))}
-          {items.length > 50 && (
-            <button className="link-btn" onClick={() => setShowAll((v) => !v)}>
-              {showAll ? "show top 50" : `show all ${items.length.toLocaleString()}`}
-            </button>
-          )}
+          <Pager page={page} />
         </div>
       )}
     </div>
