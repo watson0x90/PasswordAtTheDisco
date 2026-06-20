@@ -262,8 +262,14 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 		// top 5 by score. Self never appears: Similar() excludes exact matches, so
 		// s.Password != pw and pwAccounts[s.Password] cannot contain this account.
 		peers := make([]model.SimilarPeer, 0, 5)
+		seen := map[string]bool{}
 		for _, s := range sims {
 			for _, acct := range pwAccounts[s.Password] {
+				key := acct.Domain + "/" + acct.Username
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
 				peers = append(peers, model.SimilarPeer{Username: acct.Username, Domain: acct.Domain, Score: s.Score})
 			}
 			if len(peers) >= 5 {

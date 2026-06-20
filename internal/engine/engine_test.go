@@ -238,9 +238,10 @@ func TestSimilarPeers(t *testing.T) {
 	e := newEngine()
 	cracked := []secretsdump.ParsedAccount{
 		{Username: "alice", Domain: "CORP", Hash: "H1", Password: "Summer2024!", Cracked: true},
-		{Username: "bob", Domain: "CORP", Hash: "H2", Password: "Summer2023!", Cracked: true},
+		{Username: "bob", Domain: "CORP", Hash: "H2", Password: "Summer2023!", Cracked: true},  // ~0.9 to alice
+		{Username: "erin", Domain: "CORP", Hash: "H5", Password: "Summer2023!", Cracked: true}, // shares bob's pw (reuse)
 		{Username: "carol", Domain: "CORP", Hash: "H3", Password: "totally-different-xyz", Cracked: true},
-		{Username: "dave", Domain: "CORP", Hash: "H4", Password: "Summer2024!", Cracked: true},
+		{Username: "dave", Domain: "CORP", Hash: "H4", Password: "Summer2024!", Cracked: true}, // exact reuse of alice
 	}
 	out := e.ProcessDomainNoEnrich("CORP", cracked, nil)
 	by := map[string]model.Account{}
@@ -248,20 +249,27 @@ func TestSimilarPeers(t *testing.T) {
 		by[a.Username] = a
 	}
 	peers := by["alice"].SimilarPeers
-	if len(peers) != 1 || peers[0].Username != "bob" {
-		t.Fatalf("alice.SimilarPeers = %+v, want [bob]", peers)
+	got := map[string]int{}
+	for _, p := range peers {
+		got[p.Domain+"/"+p.Username]++
+		if p.Score < 0.7 {
+			t.Errorf("alice peer %s score %v < 0.7", p.Username, p.Score)
+		}
 	}
-	if peers[0].Score < 0.7 {
-		t.Errorf("alice->bob score = %v, want >= 0.7", peers[0].Score)
+	if got["CORP/bob"] != 1 || got["CORP/erin"] != 1 {
+		t.Errorf("alice peers should include bob and erin exactly once: %+v", peers)
 	}
-	if peers[0].Domain != "CORP" {
-		t.Errorf("peer domain = %q, want CORP", peers[0].Domain)
+	if got["CORP/dave"] != 0 || got["CORP/alice"] != 0 {
+		t.Errorf("alice peers must exclude exact-reuse dave and self: %+v", peers)
+	}
+	if len(peers) != 2 {
+		t.Errorf("alice should have exactly 2 deduped peers, got %d: %+v", len(peers), peers)
 	}
 	if len(by["carol"].SimilarPeers) != 0 {
 		t.Errorf("carol.SimilarPeers = %+v, want empty", by["carol"].SimilarPeers)
 	}
 	red := by["alice"].Redacted()
-	if len(red.SimilarPeers) != 1 || red.Password != "" {
+	if len(red.SimilarPeers) != 2 || red.Password != "" {
 		t.Errorf("redacted alice = %+v (peers should survive, password cleared)", red)
 	}
 }
