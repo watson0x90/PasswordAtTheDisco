@@ -1,29 +1,14 @@
 import { useEffect, useRef, useState } from "react"
 import { api, ApiError, type Account } from "../api"
 import { useAuth } from "../auth"
-import { RISK_CLASS, hasDA } from "../util"
+import { RISK_CLASS, RISK_RANK, hasDA, weaknessTags } from "../util"
+import { useSortablePaged, type SortColumn } from "../sortPage"
+import { SortHeader } from "./SortHeader"
+import { Pager } from "./Pager"
 import { WeakCell } from "./AccountDrawer"
 import { AccountLink } from "./AccountLink"
 import { InfoTip } from "./InfoTip"
 import { GLOSSARY } from "../glossary"
-
-// Above this many rows, virtualize (window) the table so we don't mount tens of
-// thousands of <tr> nodes. Below it, render all (handles variable-height reveal rows).
-const VIRT_THRESHOLD = 200
-const ROW_H = 38 // px, must match the CSS row height when virtualizing
-const OVERSCAN = 10
-
-export function tableWindow(
-  total: number,
-  scrollTop: number,
-  viewH: number,
-): { virtual: boolean; start: number; end: number } {
-  const virtual = total > VIRT_THRESHOLD
-  if (!virtual) return { virtual: false, start: 0, end: total }
-  const start = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN)
-  const end = Math.min(total, Math.ceil((scrollTop + viewH) / ROW_H) + OVERSCAN)
-  return { virtual, start, end }
-}
 
 export function AccountsTable({ accounts }: { accounts: Account[] }) {
   const { me } = useAuth()
@@ -32,28 +17,22 @@ export function AccountsTable({ accounts }: { accounts: Account[] }) {
   const [revealed, setRevealed] = useState<Record<string, string>>({})
   const [revealing, setRevealing] = useState("")
   const [revealError, setRevealError] = useState("")
-
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const [scrollTop, setScrollTop] = useState(0)
-  const [viewH, setViewH] = useState(560)
   const timers = useRef<number[]>([])
-
-  useEffect(() => {
-    const el = scrollRef.current
-    if (!el) return
-    setViewH(el.clientHeight)
-    const ro = new ResizeObserver(() => setViewH(el.clientHeight)) // keep the window correct on resize
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
 
   useEffect(() => () => { timers.current.forEach(clearTimeout) }, [])
 
-  // reset scroll to top when the accounts set changes (e.g. filter/search in parent)
-  useEffect(() => {
-    setScrollTop(0)
-    if (scrollRef.current) scrollRef.current.scrollTop = 0
-  }, [accounts])
+  const COLS: SortColumn<Account>[] = [
+    { key: "username", get: (a) => a.username },
+    { key: "domain", get: (a) => a.domain },
+    { key: "risk", get: (a) => RISK_RANK[a.risk_level] ?? 0, defaultDir: "desc" },
+    { key: "score", get: (a) => a.risk_score, defaultDir: "desc" },
+    { key: "hibp", get: (a) => a.hibp_breach_count, defaultDir: "desc" },
+    { key: "policy", get: (a) => (!a.cracked ? null : a.meets_policy ? 1 : 0) },
+    { key: "weak", get: (a) => weaknessTags(a).length, defaultDir: "desc" },
+    { key: "shared", get: (a) => a.shared_with, defaultDir: "desc" },
+    { key: "da", get: (a) => a.da_domains ?? "" },
+  ]
+  const page = useSortablePaged(accounts, COLS, { defaultSort: { key: "score", dir: "desc" } })
 
   async function copy(text: string) {
     try {
@@ -85,43 +64,29 @@ export function AccountsTable({ accounts }: { accounts: Account[] }) {
     })
   }
 
-  const total = accounts.length
-  const { virtual, start, end } = tableWindow(total, scrollTop, viewH)
-  const visible = accounts.slice(start, end)
-  const cols = isLead ? 10 : 9
-
   return (
     <>
       {revealError && <div className="error">{revealError}</div>}
 
-      <div
-        className={virtual ? "table-wrap virtual" : "table-wrap"}
-        ref={scrollRef}
-        onScroll={(e) => virtual && setScrollTop(e.currentTarget.scrollTop)}
-      >
+      <div className="table-wrap">
         <table className="accounts">
           <thead>
             <tr>
-              <th>Username</th>
-              <th>Domain</th>
-              <th>Risk</th>
-              <th className="num">Score<InfoTip text={GLOSSARY.risk_score} /></th>
-              <th className="num">HIBP<InfoTip text={GLOSSARY.hibp_count} /></th>
-              <th>Policy</th>
-              <th>Weak<InfoTip text={GLOSSARY.weak_categories} /></th>
-              <th className="num">Shared<InfoTip text={GLOSSARY.shared_with} /></th>
-              <th>DA Pathway<InfoTip text={GLOSSARY.da_pathway} /></th>
+              <SortHeader label="Username" colKey="username" sort={page.sort} onSort={page.setSort} />
+              <SortHeader label="Domain" colKey="domain" sort={page.sort} onSort={page.setSort} />
+              <SortHeader label="Risk" colKey="risk" sort={page.sort} onSort={page.setSort} />
+              <SortHeader label="Score" colKey="score" numeric sort={page.sort} onSort={page.setSort} info={<InfoTip text={GLOSSARY.risk_score} />} />
+              <SortHeader label="HIBP" colKey="hibp" numeric sort={page.sort} onSort={page.setSort} info={<InfoTip text={GLOSSARY.hibp_count} />} />
+              <SortHeader label="Policy" colKey="policy" sort={page.sort} onSort={page.setSort} />
+              <SortHeader label="Weak" colKey="weak" sort={page.sort} onSort={page.setSort} info={<InfoTip text={GLOSSARY.weak_categories} />} />
+              <SortHeader label="Shared" colKey="shared" numeric sort={page.sort} onSort={page.setSort} info={<InfoTip text={GLOSSARY.shared_with} />} />
+              <SortHeader label="DA Pathway" colKey="da" sort={page.sort} onSort={page.setSort} info={<InfoTip text={GLOSSARY.da_pathway} />} />
               {isLead && <th>Secret</th>}
             </tr>
           </thead>
           <tbody>
-            {virtual && start > 0 && (
-              <tr style={{ height: start * ROW_H }}>
-                <td colSpan={cols} />
-              </tr>
-            )}
-            {visible.map((a, i) => (
-              <tr key={`${a.domain}/${a.username}/${start + i}`}>
+            {page.rows.map((a) => (
+              <tr key={`${a.domain}/${a.username}`}>
                 <td>
                   <AccountLink username={a.username} domain={a.domain} />
                   {!a.enabled && <span className="badge-disabled" title="account disabled in AD">disabled</span>}
@@ -169,14 +134,11 @@ export function AccountsTable({ accounts }: { accounts: Account[] }) {
                 )}
               </tr>
             ))}
-            {virtual && end < total && (
-              <tr style={{ height: (total - end) * ROW_H }}>
-                <td colSpan={cols} />
-              </tr>
-            )}
           </tbody>
         </table>
       </div>
+
+      <Pager page={page} />
 
       {isLead && (
         <div className="meta-line">⚠ revealing a credential is recorded in the audit log — operator, account, and timestamp.</div>
