@@ -31,6 +31,7 @@ export function Search() {
       setProbeErr(err instanceof ApiError ? err.message : "probe failed")
     } finally {
       setCandidate("") // never keep the candidate around longer than the request
+      setShowPw(false) // restore masked default for the next entry
       setBusy(false)
     }
   }
