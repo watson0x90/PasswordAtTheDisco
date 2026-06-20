@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -1637,7 +1638,8 @@ func TestRevealDomainAware(t *testing.T) {
 
 	payload := `{"accounts":[` +
 		`{"username":"svc","domain":"CORP","password":"AlphaPass1","cracked":true,"nt_hash":"AAAA","risk_level":"High"},` +
-		`{"username":"svc","domain":"GHOST","password":"BetaPass2","cracked":true,"nt_hash":"BBBB","risk_level":"High"}]}`
+		`{"username":"svc","domain":"GHOST","password":"BetaPass2","cracked":true,"nt_hash":"BBBB","risk_level":"High"},` +
+		`{"username":"u@CORP","domain":"CORP","password":"GammaPass3","cracked":true,"nt_hash":"CCCC","risk_level":"High"}]}`
 	ireq := httptest.NewRequest("POST", "/api/ingest", strings.NewReader(payload))
 	ireq.Header.Set("Authorization", "Bearer secret")
 	irec := httptest.NewRecorder()
@@ -1691,5 +1693,16 @@ func TestRevealDomainAware(t *testing.T) {
 	}
 	if !strings.Contains(al, `"result":"denied"`) || !strings.Contains(al, `"result":"ok"`) {
 		t.Errorf("expected both ok and denied reveal results in audit: %s", al)
+	}
+
+	if rec := get("/api/accounts/"+url.PathEscape("u@CORP")+"/secret?domain=CORP", lc); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "GammaPass3") {
+		t.Errorf("reveal u@CORP: %d %s", rec.Code, rec.Body.String())
+	}
+	al2 := auditBuf.String()
+	if !strings.Contains(al2, `"target":"u@CORP"`) {
+		t.Errorf("at-username target should be u@CORP (not doubled): %s", al2)
+	}
+	if strings.Contains(al2, "u@CORP@CORP") {
+		t.Errorf("audit target double-appended domain: %s", al2)
 	}
 }

@@ -1395,7 +1395,7 @@ func (s *Server) handleReveal(w http.ResponseWriter, r *http.Request) {
 	username := r.PathValue("username")
 	domain := r.URL.Query().Get("domain")
 	target := username
-	if domain != "" {
+	if domain != "" && !strings.Contains(username, "@") {
 		target = username + "@" + domain
 	}
 	ev := func(result string) audit.Event {
