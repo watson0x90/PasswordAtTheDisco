@@ -81,7 +81,7 @@ export function CommandPalette() {
           spellCheck={false}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "ArrowDown") { e.preventDefault(); setActive((i) => Math.min(i + 1, rows.length - 1)) }
+            if (e.key === "ArrowDown") { e.preventDefault(); setActive((i) => Math.min(i + 1, Math.max(0, rows.length - 1))) }
             else if (e.key === "ArrowUp") { e.preventDefault(); setActive((i) => Math.max(i - 1, 0)) }
             else if (e.key === "Enter" && rows[active]) { e.preventDefault(); activate(rows[active]) }
           }}
