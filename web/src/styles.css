@@ -1337,6 +1337,7 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
 .simbreak-user { font-weight: 600; }
 .simbreak-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--faint); margin-bottom: 8px; }
 .simbreak-list { display: flex; flex-direction: column; gap: 6px; }
-.simbreak-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.simbreak-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.simbreak-reveal { margin: 8px 0 4px; }
 .simbreak-score { font-family: var(--mono); font-size: 12px; color: var(--accent); }
 .simbreak-note { margin-top: 14px; }

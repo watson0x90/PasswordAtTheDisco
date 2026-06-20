@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react"
-import type { Account } from "../api"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { api, ApiError, type Account } from "../api"
+import { useAuth } from "../auth"
 import { RISK_CLASS } from "../util"
 import { similarityNetwork } from "../insights"
 import { NetworkGraph } from "./NetworkGraph"
@@ -67,6 +68,61 @@ export function SimilarityClusters({ accounts }: { accounts: Account[] }) {
 }
 
 function SimilarityBreakdown({ account, accounts }: { account: Account | null; accounts: Account[] }) {
+  const { me } = useAuth()
+  const isLead = me?.role === "lead"
+  const [revealed, setRevealed] = useState<Record<string, string>>({})
+  const [revealing, setRevealing] = useState("")
+  const [revealErr, setRevealErr] = useState("")
+  const timers = useRef<number[]>([])
+  useEffect(() => () => { timers.current.forEach(clearTimeout) }, [])
+
+  async function reveal(username: string, domain: string) {
+    const key = `${domain}/${username}`
+    setRevealing(key)
+    setRevealErr("")
+    try {
+      const r = await api.revealSecret(username, domain)
+      setRevealed((prev) => ({ ...prev, [key]: r.password }))
+      timers.current.push(window.setTimeout(() => hide(key), 45000))
+    } catch (e) {
+      setRevealErr(e instanceof ApiError ? `reveal failed: ${e.message}` : "reveal failed")
+    } finally {
+      setRevealing("")
+    }
+  }
+  function hide(key: string) {
+    setRevealed((prev) => {
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+  }
+  async function copy(text: string) {
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      /* clipboard may be unavailable; ignore */
+    }
+  }
+  function revealCell(username: string, domain: string) {
+    if (!isLead) return null
+    const key = `${domain}/${username}`
+    if (key in revealed) {
+      return (
+        <span className="secret">
+          <span className="mono-pw">{revealed[key]}</span>
+          <button className="link-btn" onClick={() => copy(revealed[key])} title="Copy">copy</button>
+          <button className="link-btn" onClick={() => hide(key)}>hide</button>
+        </span>
+      )
+    }
+    return (
+      <button className="reveal-btn" disabled={revealing === key} onClick={() => reveal(username, domain)}>
+        {revealing === key ? "…" : "reveal"}
+      </button>
+    )
+  }
+
   if (!account) {
     return <div className="simbreak-empty">Click an account in the graph to see its closest password matches.</div>
   }
@@ -78,6 +134,7 @@ function SimilarityBreakdown({ account, accounts }: { account: Account | null; a
         <span className="muted">{account.domain}</span>
         <span className={`badge ${RISK_CLASS[account.risk_level] || ""}`}>{account.risk_level}</span>
       </div>
+      {isLead && <div className="simbreak-reveal">{revealCell(account.username, account.domain)}</div>}
       <div className="simbreak-label">Most similar passwords in this audit</div>
       {peers.length === 0 ? (
         <div className="muted fs-12">No close matches recorded for this account.</div>
@@ -87,12 +144,14 @@ function SimilarityBreakdown({ account, accounts }: { account: Account | null; a
             <div className="simbreak-row" key={`${p.domain}/${p.username}/${i}`}>
               <AccountLink username={p.username} domain={p.domain} accounts={accounts} />
               <span className="simbreak-score">{Math.round(p.score * 100)}%</span>
+              {revealCell(p.username, p.domain)}
             </div>
           ))}
         </div>
       )}
+      {revealErr && <div className="error">{revealErr}</div>}
       <p className="muted fs-12 simbreak-note">
-        Near-duplicate passwords — cracking one likely cracks the others. Passwords are never shown.
+        Revealing a password is lead-only and recorded in the audit log — never the password itself.
       </p>
     </div>
   )
