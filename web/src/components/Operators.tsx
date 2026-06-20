@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from "react"
 import { api, ApiError, type Operator, type Role, type LoginAttempt } from "../api"
 import { useAuth } from "../auth"
 import { fmtWhen } from "../format"
+import { useSortablePaged, type SortColumn } from "../sortPage"
+import { SortHeader } from "./SortHeader"
+import { Pager } from "./Pager"
 
 export function Operators() {
   const { me } = useAuth()
@@ -124,6 +127,14 @@ export function Operators() {
     }
   }
 
+  const COLS: SortColumn<(typeof ops)[number]>[] = [
+    { key: "username", get: (u) => u.username },
+    { key: "role", get: (u) => u.role },
+    { key: "last_login", get: (u) => u.last_login ?? "", defaultDir: "desc" },
+    { key: "status", get: (u) => (u.locked ? 2 : u.disabled ? 1 : 0), defaultDir: "desc" },
+  ]
+  const page = useSortablePaged(ops, COLS, { defaultSort: { key: "username", dir: "asc" }, pageSize: 50 })
+
   if (me?.role !== "lead") return <div className="center-state">Operator management requires the lead role.</div>
   if (loading)
     return (
@@ -146,15 +157,15 @@ export function Operators() {
         <table className="ops-table">
           <thead>
             <tr>
-              <th>Operator</th>
-              <th>Role</th>
-              <th>Last login</th>
-              <th>Status</th>
+              <SortHeader label="Operator" colKey="username" sort={page.sort} onSort={page.setSort} />
+              <SortHeader label="Role" colKey="role" sort={page.sort} onSort={page.setSort} />
+              <SortHeader label="Last login" colKey="last_login" sort={page.sort} onSort={page.setSort} />
+              <SortHeader label="Status" colKey="status" sort={page.sort} onSort={page.setSort} />
               <th className="ops-actions-col">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {ops.map((u) => (
+            {page.rows.map((u) => (
               <tr key={u.username} className={u.disabled ? "ops-row disabled" : "ops-row"}>
                 <td className="ops-user">
                   {u.username}
@@ -230,6 +241,7 @@ export function Operators() {
           </tbody>
         </table>
         </div>
+        <Pager page={page} />
 
         {error && <div className="error">{error}</div>}
         {ok && <div className="ingest-ok">✓ {ok}</div>}
