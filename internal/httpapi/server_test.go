@@ -1630,3 +1630,60 @@ func TestProbeEndpoint(t *testing.T) {
 		t.Errorf("audit log leaked the candidate password: %s", al)
 	}
 }
+
+func TestRevealDomainAware(t *testing.T) {
+	var auditBuf bytes.Buffer
+	srv := newServerAudit("secret", &auditBuf)
+
+	payload := `{"accounts":[` +
+		`{"username":"svc","domain":"CORP","password":"AlphaPass1","cracked":true,"nt_hash":"AAAA","risk_level":"High"},` +
+		`{"username":"svc","domain":"GHOST","password":"BetaPass2","cracked":true,"nt_hash":"BBBB","risk_level":"High"}]}`
+	ireq := httptest.NewRequest("POST", "/api/ingest", strings.NewReader(payload))
+	ireq.Header.Set("Authorization", "Bearer secret")
+	irec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(irec, ireq)
+	if irec.Code != http.StatusOK {
+		t.Fatalf("ingest: %d %s", irec.Code, irec.Body.String())
+	}
+	var ing struct {
+		AuditID string `json:"audit_id"`
+	}
+	_ = json.Unmarshal(irec.Body.Bytes(), &ing)
+
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	openAudit(t, srv, lc, lcsrf, ing.AuditID)
+
+	get := func(path string, cookie *http.Cookie) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("GET", path, nil)
+		if cookie != nil {
+			req.AddCookie(cookie)
+		}
+		rec := httptest.NewRecorder()
+		srv.Routes().ServeHTTP(rec, req)
+		return rec
+	}
+
+	if rec := get("/api/accounts/svc/secret?domain=GHOST", lc); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "BetaPass2") || strings.Contains(rec.Body.String(), "AlphaPass1") {
+		t.Errorf("reveal GHOST: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := get("/api/accounts/svc/secret?domain=CORP", lc); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "AlphaPass1") {
+		t.Errorf("reveal CORP: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := get("/api/accounts/svc/secret", lc); rec.Code != http.StatusOK {
+		t.Errorf("reveal no-domain: %d %s", rec.Code, rec.Body.String())
+	}
+
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	openAudit(t, srv, ac, acsrf, ing.AuditID)
+	if rec := get("/api/accounts/svc/secret?domain=GHOST", ac); rec.Code != http.StatusForbidden {
+		t.Errorf("non-lead reveal: want 403, got %d", rec.Code)
+	}
+
+	al := auditBuf.String()
+	if !strings.Contains(al, "reveal_secret") || !strings.Contains(al, "svc@GHOST") {
+		t.Errorf("audit missing reveal_secret svc@GHOST: %s", al)
+	}
+	if strings.Contains(al, "BetaPass2") || strings.Contains(al, "AlphaPass1") {
+		t.Errorf("audit leaked a password: %s", al)
+	}
+}

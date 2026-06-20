@@ -659,6 +659,22 @@ func (s *Store) Find(id, username string) (model.Account, bool) {
 	return model.Account{}, false
 }
 
+// FindByDomain returns the full (unredacted) account for username+domain within an
+// audit. The exact domain match disambiguates a username that repeats across domains
+// (e.g. "administrator" in every domain), which Find cannot.
+func (s *Store) FindByDomain(id, username, domain string) (model.Account, bool) {
+	a, err := s.ensureLoaded(id)
+	if err != nil {
+		return model.Account{}, false
+	}
+	for _, acc := range a.ds.Accounts {
+		if acc.Username == username && acc.Domain == domain {
+			return acc, true
+		}
+	}
+	return model.Account{}, false
+}
+
 // Summary returns an audit's non-sensitive aggregate stats.
 func (s *Store) Summary(id string) (model.Summary, error) {
 	a, err := s.ensureLoaded(id)

@@ -1393,8 +1393,13 @@ func (s *Server) handleReportTerms(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleReveal(w http.ResponseWriter, r *http.Request) {
 	sess, _ := sessionFrom(r.Context())
 	username := r.PathValue("username")
+	domain := r.URL.Query().Get("domain")
+	target := username
+	if domain != "" {
+		target = username + "@" + domain
+	}
 	ev := func(result string) audit.Event {
-		return audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "reveal_secret", Target: username, Source: r.RemoteAddr, Result: result}
+		return audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "reveal_secret", Target: target, Source: r.RemoteAddr, Result: result}
 	}
 	// Every reveal attempt is fail-closed on the audit write -- if the audit sink is
 	// down we refuse the request rather than act unlogged (symmetric across branches).
@@ -1409,8 +1414,14 @@ func (s *Server) handleReveal(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	acct, ok := s.Store.Find(id, username)
-	if !ok {
+	var acct model.Account
+	var found bool
+	if domain != "" {
+		acct, found = s.Store.FindByDomain(id, username, domain)
+	} else {
+		acct, found = s.Store.Find(id, username)
+	}
+	if !found {
 		if !s.auditOrFail(w, ev("not_found")) {
 			return
 		}
