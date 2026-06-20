@@ -465,8 +465,6 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 .accounts td:nth-child(2) { white-space: nowrap; }
 .accounts tbody tr:last-child td { border-bottom: none; }
 .accounts tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
-/* Uniform 38px rows when the table is virtualized (spacer math depends on it). */
-.table-wrap.virtual .accounts td { height: 38px; box-sizing: border-box; overflow: hidden; }
 .accounts .num { text-align: right; font-variant-numeric: tabular-nums; }
 .muted { color: var(--faint); }
 .infotip { margin-left: 4px; font-size: 11px; color: var(--faint); cursor: help; user-select: none; }
