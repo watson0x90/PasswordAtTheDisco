@@ -436,22 +436,24 @@ export function similarityNetwork(accts: Account[], maxNodes: number = 60): { no
     color: a.risk_level === "Critical" ? "#fb7185" : a.risk_level === "High" ? "#fbbf24" : a.risk_level === "Medium" ? "#a3e635" : "#22d3ee",
   }))
 
-  // We don't have pair-level similarity data in the API (just the max score per account).
-  // Approximate: connect accounts in the same domain with high similarity as a cluster.
+  // Real edges from server-computed similar peers (same-domain). Only link peers
+  // that are themselves nodes; dedup undirected pairs.
+  const nodeIds = new Set(nodes.map((n) => n.id))
   const edges: GraphEdge[] = []
-  const byDomain = new Map<string, typeof sorted>()
+  const seen = new Set<string>()
   for (const a of sorted) {
-    const arr = byDomain.get(a.domain) || []
-    arr.push(a)
-    byDomain.set(a.domain, arr)
-  }
-  for (const [, group] of byDomain) {
-    // Connect consecutive pairs within a domain cluster (chain)
-    for (let i = 0; i < group.length - 1 && i < 20; i++) {
+    const srcId = `${a.domain}/${a.username}`
+    for (const p of a.similar_peers ?? []) {
+      const dstId = `${p.domain}/${p.username}`
+      if (!nodeIds.has(dstId) || dstId === srcId) continue
+      const key = srcId < dstId ? `${srcId}|${dstId}` : `${dstId}|${srcId}`
+      if (seen.has(key)) continue
+      seen.add(key)
       edges.push({
-        source: `${group[i].domain}/${group[i].username}`,
-        target: `${group[i + 1].domain}/${group[i + 1].username}`,
-        weight: Math.round((group[i].similarity_score ?? 0.7) * 3),
+        source: srcId,
+        target: dstId,
+        weight: Math.max(1, Math.round(p.score * 3)),
+        label: `${Math.round(p.score * 100)}%`,
       })
     }
   }

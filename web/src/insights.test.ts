@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import type { Account } from "./api"
-import { posture, riskDistribution, hibpSplit, complexityLabel } from "./insights"
+import { posture, riskDistribution, hibpSplit, complexityLabel, similarityNetwork } from "./insights"
 
 function acct(p: Partial<Account>): Account {
   return {
@@ -86,5 +86,23 @@ describe("complexityLabel", () => {
   })
   it("passes through unknown keys unchanged", () => {
     expect(complexityLabel("weird")).toBe("weird")
+  })
+})
+
+const sa = (username: string, domain: string, score: number, peers: { username: string; domain: string; score: number }[]): Account =>
+  ({ username, domain, cracked: true, similarity_score: score, risk_level: "High", similar_peers: peers } as Account)
+
+describe("similarityNetwork edges", () => {
+  it("builds deduped edges only between nodes, from similar_peers", () => {
+    const accts: Account[] = [
+      sa("alice", "CORP", 0.9, [{ username: "bob", domain: "CORP", score: 0.9 }]),
+      sa("bob", "CORP", 0.9, [{ username: "alice", domain: "CORP", score: 0.9 }]),
+      sa("carol", "CORP", 0.8, [{ username: "ghost", domain: "OTHER", score: 0.85 }]),
+    ]
+    const { nodes, edges } = similarityNetwork(accts)
+    expect(nodes.length).toBe(3)
+    expect(edges.length).toBe(1)
+    expect(edges[0].weight).toBe(3)
+    expect(edges[0].label).toBe("90%")
   })
 })

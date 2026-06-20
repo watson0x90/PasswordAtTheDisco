@@ -119,6 +119,7 @@ export interface Account {
   pwd_never_expires?: boolean
   days_out_of_compliance?: number
   similarity_score?: number
+  similar_peers?: SimilarPeer[]
   escalated_by_shared_da?: boolean
   // Kerberos attack surface
   has_spn?: boolean
@@ -141,6 +142,12 @@ export interface ScoreBreakdown {
   share_factor: number
   domain_factor: number
   hibp_factor: number
+}
+
+export interface SimilarPeer {
+  username: string
+  domain: string
+  score: number
 }
 
 export interface ProbeResult {
