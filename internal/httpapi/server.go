@@ -27,6 +27,7 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/bloodhound"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/engine"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/enrich"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/hibp"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/pwanalysis"
@@ -145,6 +146,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /api/summary", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleSummary))))
 	mux.Handle("GET /api/accounts", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleAccounts))))
 	mux.Handle("GET /api/audits/{id}/accounts", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleAuditAccounts))))
+	mux.Handle("POST /api/probe", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleProbe)))))
 	mux.Handle("GET /api/report", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleReport))))
 	mux.Handle("GET /api/report/terms", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleReportTerms))))
 	mux.Handle("GET /api/ingests", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleIngests))))
@@ -1272,6 +1274,52 @@ func (s *Server) handleAuditAccounts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, accts)
+}
+
+// ProbeResult is the response for POST /api/probe: the redacted accounts in the
+// active audit whose password matches the supplied candidate, plus the count.
+type ProbeResult struct {
+	Count   int             `json:"count"`
+	Matches []model.Account `json:"matches"`
+}
+
+// handleProbe answers "which accounts in the active audit use this exact
+// password?" by hashing the operator's candidate to NTLM and matching it against
+// the stored NT hashes. The candidate is never stored, logged, or echoed; the
+// response carries only redacted accounts. Any authenticated operator may probe;
+// every call is audit-logged (password_probe) with the match COUNT only.
+func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	var body struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Password == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password required"})
+		return
+	}
+	candidate := hibp.NTLMHash(body.Password)
+	id, ok := s.activeAuditRead(sess)
+	if !ok {
+		writeJSON(w, http.StatusOK, ProbeResult{Count: 0, Matches: []model.Account{}})
+		return
+	}
+	full, err := s.Store.Accounts(id, true) // includeSecrets=true to read NTHash
+	if err != nil {
+		writeJSON(w, http.StatusOK, ProbeResult{Count: 0, Matches: []model.Account{}})
+		return
+	}
+	matches := []model.Account{}
+	for _, a := range full {
+		if a.NTHash != "" && strings.EqualFold(a.NTHash, candidate) {
+			matches = append(matches, a.Redacted())
+		}
+	}
+	s.Audit.Log(audit.Event{
+		Actor: sess.Username, Role: string(sess.Role),
+		Action: "password_probe", Target: fmt.Sprintf("matches=%d", len(matches)),
+		Source: r.RemoteAddr, Result: "ok",
+	})
+	writeJSON(w, http.StatusOK, ProbeResult{Count: len(matches), Matches: matches})
 }
 
 func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {

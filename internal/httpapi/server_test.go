@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -19,6 +20,7 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/bloodhound"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/engine"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/enrich"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/hibp"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/pwanalysis"
@@ -1563,5 +1565,68 @@ func TestAuditAccountsEndpoint(t *testing.T) {
 	rr2 := do(srv, "GET", "/api/audits/nope/accounts", lc)
 	if rr2.Code != http.StatusOK || strings.TrimSpace(rr2.Body.String()) != "[]" {
 		t.Fatalf("unknown id = %d %q, want 200 []", rr2.Code, rr2.Body.String())
+	}
+}
+
+func TestProbeEndpoint(t *testing.T) {
+	var auditBuf bytes.Buffer
+	srv := newServerAudit("secret", &auditBuf)
+
+	want := hibp.NTLMHash("Welcome1")
+	payload := `{"accounts":[{"username":"alice","domain":"CORP","password":"Welcome1",` +
+		`"cracked":true,"risk_level":"Critical","nt_hash":"` + want + `"}]}`
+	ireq := httptest.NewRequest("POST", "/api/ingest", strings.NewReader(payload))
+	ireq.Header.Set("Authorization", "Bearer secret")
+	irec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(irec, ireq)
+	if irec.Code != http.StatusOK {
+		t.Fatalf("ingest: %d %s", irec.Code, irec.Body.String())
+	}
+	var ing struct {
+		AuditID string `json:"audit_id"`
+	}
+	_ = json.Unmarshal(irec.Body.Bytes(), &ing)
+
+	cookie, csrf := loginCSRF(t, srv, "lead", "leadpw")
+	openAudit(t, srv, cookie, csrf, ing.AuditID)
+
+	probe := func(pw string) *httptest.ResponseRecorder {
+		body := `{"password":` + strconv.Quote(pw) + `}`
+		req := httptest.NewRequest("POST", "/api/probe", strings.NewReader(body))
+		req.AddCookie(cookie)
+		req.Header.Set("X-CSRF-Token", csrf)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		srv.Routes().ServeHTTP(rec, req)
+		return rec
+	}
+
+	rec := probe("Welcome1")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("probe match: %d %s", rec.Code, rec.Body.String())
+	}
+	bodyStr := rec.Body.String()
+	if !strings.Contains(bodyStr, `"count":1`) || !strings.Contains(bodyStr, "alice") {
+		t.Errorf("expected one match for alice, got %s", bodyStr)
+	}
+	if strings.Contains(bodyStr, "Welcome1") || strings.Contains(strings.ToLower(bodyStr), "nt_hash") {
+		t.Errorf("probe response leaked a secret: %s", bodyStr)
+	}
+
+	rec = probe("nope-not-it")
+	if !strings.Contains(rec.Body.String(), `"count":0`) {
+		t.Errorf("expected count 0, got %s", rec.Body.String())
+	}
+
+	if rec := probe(""); rec.Code != http.StatusBadRequest {
+		t.Errorf("empty probe: want 400, got %d", rec.Code)
+	}
+
+	al := auditBuf.String()
+	if !strings.Contains(al, "password_probe") {
+		t.Errorf("audit log missing password_probe: %s", al)
+	}
+	if strings.Contains(al, "Welcome1") {
+		t.Errorf("audit log leaked the candidate password: %s", al)
 	}
 }
