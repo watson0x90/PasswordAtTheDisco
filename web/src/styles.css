@@ -1301,3 +1301,42 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
 .probe-result { margin-top: 14px; font-size: 14px; font-weight: 500; }
 
 .net-node { cursor: pointer; }
+
+/* Password Similarity Clusters — expand modal + breakdown */
+.simgraph-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 10px; }
+.simgraph-expand { flex: none; }
+.simgraph-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 180;
+  background: rgba(6, 10, 20, 0.66);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4vh 4vw;
+}
+.simgraph-modal {
+  width: 92vw;
+  height: 86vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--glass-strong);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.85);
+}
+.simgraph-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--hairline); }
+.simgraph-body { flex: 1; display: flex; min-height: 0; }
+.simgraph-graph { flex: 1; min-width: 0; padding: 10px; overflow: hidden; }
+.simgraph-side { width: 320px; flex: none; border-left: 1px solid var(--hairline); padding: 16px 18px; overflow-y: auto; }
+.simbreak { margin-top: 14px; }
+.simgraph-side .simbreak { margin-top: 0; }
+.simbreak-empty { color: var(--faint); font-size: 13px; }
+.simbreak-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.simbreak-user { font-weight: 600; }
+.simbreak-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--faint); margin-bottom: 8px; }
+.simbreak-list { display: flex; flex-direction: column; gap: 6px; }
+.simbreak-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.simbreak-score { font-family: var(--mono); font-size: 12px; color: var(--accent); }
+.simbreak-note { margin-top: 14px; }

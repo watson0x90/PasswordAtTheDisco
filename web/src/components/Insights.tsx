@@ -1,9 +1,10 @@
 import { useAccountsData } from "../accountsData"
 import { useAudits } from "../auditsData"
-import { complexityCounts, controlledObjectsBuckets, crossDomainReuseGraph, daExposureByDomain, expirationSplit, hibpVsRisk, passwordAgeBuckets, passwordAgeScatter, riskFactorsRadar, scoreBuckets, sharingDistribution, similarityBuckets, similarityNetwork, topRiskiest } from "../insights"
+import { complexityCounts, controlledObjectsBuckets, crossDomainReuseGraph, daExposureByDomain, expirationSplit, hibpVsRisk, passwordAgeBuckets, passwordAgeScatter, riskFactorsRadar, scoreBuckets, sharingDistribution, similarityBuckets, topRiskiest } from "../insights"
 import { AccountLink } from "./AccountLink"
 import { Bars, ChartCard, Donut, HBars, RiskRadar, ScatterPlot } from "./Charts"
 import { NetworkGraph } from "./NetworkGraph"
+import { SimilarityClusters } from "./SimilarityClusters"
 import { RISK_CLASS, hasDA } from "../util"
 
 export function Insights() {
@@ -24,7 +25,6 @@ export function Insights() {
   const ageScatter = passwordAgeScatter(accounts)
   const expirSlices = expirationSplit(accounts)
   const crossDomain = crossDomainReuseGraph(accounts)
-  const simNet = similarityNetwork(accounts)
   const topN = topRiskiest(accounts, 10)
 
   return (
@@ -119,18 +119,7 @@ export function Insights() {
         </ChartCard>
       </div>
 
-      {simNet.nodes.length >= 2 && (
-        <>
-          <div className="section-label">Password Similarity Clusters</div>
-          <div className="panel">
-            <p className="muted fs-12 mb-md">
-              Accounts with ≥ 70% password similarity — clustered by domain. Near-duplicate passwords are
-              trivially guessable if one is compromised.
-            </p>
-            <NetworkGraph nodes={simNet.nodes} edges={simNet.edges} height={400} />
-          </div>
-        </>
-      )}
+      <SimilarityClusters accounts={accounts} />
 
       <div className="section-label">Top 10 Riskiest Accounts</div>
       <div className="panel">
