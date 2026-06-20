@@ -12,8 +12,6 @@ import { InfoTip } from "./InfoTip"
 import { SortHeader } from "./SortHeader"
 import { Pager } from "./Pager"
 
-const TOP = 50
-
 export function Actionable() {
   const { activeId, dataVersion } = useAudits()
   const { me } = useAuth()
@@ -457,16 +455,14 @@ function AccountTable({
 }
 
 function ReuseGroups({ groups, cracked }: { groups: ReuseGroup[]; cracked?: boolean }) {
+  const PAGE_COLS: SortColumn<ReuseGroup>[] = [{ key: "n", get: () => 0 }]
+  const page = useSortablePaged(groups, PAGE_COLS, { defaultSort: { key: "n", dir: "asc" }, pageSize: 50 })
   return (
     <div className="reuse-list">
-      {groups.slice(0, TOP).map((g) => (
+      {page.rows.map((g) => (
         <ReuseGroupRow key={g.group_id} g={g} cracked={cracked} />
       ))}
-      {groups.length > TOP && (
-        <div className="meta-line">
-          showing top {TOP} of {groups.length.toLocaleString()} groups
-        </div>
-      )}
+      <Pager page={page} />
     </div>
   )
 }
