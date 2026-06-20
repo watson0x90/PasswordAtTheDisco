@@ -121,6 +121,15 @@ func EstimateBreachImpact(crit, da int) BreachImpact {
 	return bi
 }
 
+// SimilarPeer is another account whose cracked password is a near-duplicate of
+// this account's (Levenshtein ratio). Username/Domain/Score only — never the
+// password — so it is safe to expose and survives Redacted().
+type SimilarPeer struct {
+	Username string  `json:"username"`
+	Domain   string  `json:"domain"`
+	Score    float64 `json:"score"`
+}
+
 // Account is a single audited AD account. Password holds the cracked cleartext
 // -- the sensitive field that must never leave the process unredacted without
 // authorization.
@@ -174,6 +183,11 @@ type Account struct {
 	// SimilarityScore is the max Levenshtein similarity (0–1) to another cracked
 	// password in the same domain. Zero means not computed or no similarity.
 	SimilarityScore float64 `json:"similarity_score,omitempty"`
+
+	// SimilarPeers are the accounts (same domain) whose cracked passwords are
+	// near-duplicates of this one — username/domain/score only, never the
+	// password — so it survives Redacted().
+	SimilarPeers []SimilarPeer `json:"similar_peers,omitempty"`
 
 	// EscalatedBySharedDA is true when this account was escalated to Critical by
 	// EscalateSharedWithDA (shares an NT hash with a DA account).

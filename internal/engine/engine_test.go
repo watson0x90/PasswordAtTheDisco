@@ -189,7 +189,7 @@ func TestUnknownEnabledTreatedAsEnabled(t *testing.T) {
 	}
 	a := eng.scoreCracked("CORP",
 		secretsdump.ParsedAccount{Username: "x", Hash: "ABC", Password: "Passw0rd!", Cracked: true},
-		0, nil, map[string]*pwanalysis.Analysis{}, map[string]float64{}, time.Now(), nil)
+		0, nil, nil, map[string]*pwanalysis.Analysis{}, map[string]float64{}, map[string][]model.SimilarPeer{}, time.Now(), nil)
 	if !a.Enabled {
 		t.Fatalf("unknown BHE enabled-status should default to Enabled=true, got false")
 	}
@@ -208,7 +208,7 @@ func TestScoreCrackedStoresMatchedWords(t *testing.T) {
 	}
 	a := eng.scoreCracked("CORP",
 		secretsdump.ParsedAccount{Username: "alice", Hash: "ABC", Password: "Summerqwerty1", Cracked: true},
-		0, nil, map[string]*pwanalysis.Analysis{}, map[string]float64{}, time.Now(), nil)
+		0, nil, nil, map[string]*pwanalysis.Analysis{}, map[string]float64{}, map[string][]model.SimilarPeer{}, time.Now(), nil)
 	if len(a.BannedWords) == 0 || a.BannedWords[0] != "summer" {
 		t.Fatalf("BannedWords not stored: %+v", a.BannedWords)
 	}
@@ -231,5 +231,37 @@ func TestSwapForbiddenWords(t *testing.T) {
 	}
 	if _, ok := eng.ForbiddenWords()["summer"]; !ok {
 		t.Error("swapped set missing 'summer'")
+	}
+}
+
+func TestSimilarPeers(t *testing.T) {
+	e := newEngine()
+	cracked := []secretsdump.ParsedAccount{
+		{Username: "alice", Domain: "CORP", Hash: "H1", Password: "Summer2024!", Cracked: true},
+		{Username: "bob", Domain: "CORP", Hash: "H2", Password: "Summer2023!", Cracked: true},
+		{Username: "carol", Domain: "CORP", Hash: "H3", Password: "totally-different-xyz", Cracked: true},
+		{Username: "dave", Domain: "CORP", Hash: "H4", Password: "Summer2024!", Cracked: true},
+	}
+	out := e.ProcessDomainNoEnrich("CORP", cracked, nil)
+	by := map[string]model.Account{}
+	for _, a := range out {
+		by[a.Username] = a
+	}
+	peers := by["alice"].SimilarPeers
+	if len(peers) != 1 || peers[0].Username != "bob" {
+		t.Fatalf("alice.SimilarPeers = %+v, want [bob]", peers)
+	}
+	if peers[0].Score < 0.7 {
+		t.Errorf("alice->bob score = %v, want >= 0.7", peers[0].Score)
+	}
+	if peers[0].Domain != "CORP" {
+		t.Errorf("peer domain = %q, want CORP", peers[0].Domain)
+	}
+	if len(by["carol"].SimilarPeers) != 0 {
+		t.Errorf("carol.SimilarPeers = %+v, want empty", by["carol"].SimilarPeers)
+	}
+	red := by["alice"].Redacted()
+	if len(red.SimilarPeers) != 1 || red.Password != "" {
+		t.Errorf("redacted alice = %+v (peers should survive, password cleared)", red)
 	}
 }

@@ -176,19 +176,22 @@ func (e *Engine) processDomainWith(domain string, cracked, uncracked []secretsdu
 	// the per-account comparison) so a large domain doesn't blow up wall-clock.
 	const similarityCap = 5000
 	var allPasswords []string
+	pwAccounts := map[string][]model.SimilarPeer{} // password -> accounts using it (username/domain)
 	if len(cracked) <= similarityCap {
 		allPasswords = make([]string, 0, len(cracked))
 		for _, a := range cracked {
 			allPasswords = append(allPasswords, a.Password)
+			pwAccounts[a.Password] = append(pwAccounts[a.Password], model.SimilarPeer{Username: a.Username, Domain: domain})
 		}
 	}
 
 	analysisCache := map[string]*pwanalysis.Analysis{}
 	simCache := map[string]float64{}
+	peersCache := map[string][]model.SimilarPeer{}
 
 	out := make([]model.Account, 0, len(cracked)+len(uncracked))
 	for _, a := range cracked {
-		out = append(out, e.scoreCracked(domain, a, pwUsers[a.Password]-1, allPasswords, analysisCache, simCache, now, enr))
+		out = append(out, e.scoreCracked(domain, a, pwUsers[a.Password]-1, allPasswords, pwAccounts, analysisCache, simCache, peersCache, now, enr))
 	}
 	for _, a := range uncracked {
 		out = append(out, e.scoreUncracked(domain, a, hashUsers[a.Hash]-1, now, enr))
@@ -239,7 +242,7 @@ func (e *Engine) rescoreWith(accts []model.Account, enr Enricher) []model.Accoun
 	return out
 }
 
-func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, sharedWith int, allPasswords []string, analysisCache map[string]*pwanalysis.Analysis, simCache map[string]float64, now time.Time, enr Enricher) model.Account {
+func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, sharedWith int, allPasswords []string, pwAccounts map[string][]model.SimilarPeer, analysisCache map[string]*pwanalysis.Analysis, simCache map[string]float64, peersCache map[string][]model.SimilarPeer, now time.Time, enr Enricher) model.Account {
 	pw := a.Password
 	pol := e.Policies.For(domain) // ProcessDomain is per-domain, so one policy here
 
@@ -250,10 +253,27 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 	}
 	simMax, ok := simCache[pw]
 	if !ok {
-		if sims := pwanalysis.Similar(pw, allPasswords); len(sims) > 0 {
+		sims := pwanalysis.Similar(pw, allPasswords)
+		if len(sims) > 0 {
 			simMax = sims[0].Score
 		}
 		simCache[pw] = simMax
+		// Map the similar passwords back to the accounts using them (same domain),
+		// top 5 by score. Self never appears: Similar() excludes exact matches, so
+		// s.Password != pw and pwAccounts[s.Password] cannot contain this account.
+		peers := make([]model.SimilarPeer, 0, 5)
+		for _, s := range sims {
+			for _, acct := range pwAccounts[s.Password] {
+				peers = append(peers, model.SimilarPeer{Username: acct.Username, Domain: acct.Domain, Score: s.Score})
+			}
+			if len(peers) >= 5 {
+				break
+			}
+		}
+		if len(peers) > 5 {
+			peers = peers[:5]
+		}
+		peersCache[pw] = peers
 	}
 
 	count := e.hibpCount(a.Hash)
@@ -319,6 +339,7 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 		PwdNeverExpires:     enrData.PwdNeverExpires,
 		DaysOutOfCompliance: daysOOCVal,
 		SimilarityScore:     simMax,
+		SimilarPeers:        peersCache[pw],
 		HasSPN:              enrData.HasSPN,
 		DontReqPreauth:      enrData.DontReqPreauth,
 		// Score breakdown for per-account factor visibility
