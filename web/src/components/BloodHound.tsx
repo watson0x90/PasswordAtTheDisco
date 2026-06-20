@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { api, ApiError, type BHEStatus, type BHETestResult, type BHEConfigInput } from "../api"
+import { api, ApiError, type BHEStatus, type BHETestResult, type BHEConfigInput, type IngestEvent } from "../api"
 import { useAuth } from "../auth"
 import { useAudits } from "../auditsData"
 import { useJobs } from "../jobs"
+import { fmtWhen } from "../format"
 
 export function BloodHound() {
   const { me } = useAuth()
@@ -20,6 +21,18 @@ export function BloodHound() {
   const [test, setTest] = useState<BHETestResult | null>(null)
   const [error, setError] = useState("")
   const [ok, setOk] = useState("")
+  const [lastEnrich, setLastEnrich] = useState<IngestEvent | null>(null)
+
+  // The most recent "enrich" ingest event for the active audit = the last time
+  // BloodHound enrichment ran on it (persisted, survives restart).
+  const loadLastEnrich = useCallback(async () => {
+    try {
+      const events = await api.ingests()
+      setLastEnrich([...events].reverse().find((e) => e.kind === "enrich") ?? null)
+    } catch {
+      setLastEnrich(null) // no active audit / unavailable — show "not yet enriched"
+    }
+  }, [])
 
   const load = useCallback(async () => {
     try {
@@ -37,7 +50,13 @@ export function BloodHound() {
 
   useEffect(() => {
     void load()
-  }, [load])
+    void loadLastEnrich()
+  }, [load, loadLastEnrich])
+
+  // Refresh the "last enriched" stamp when an enrichment job finishes.
+  useEffect(() => {
+    if (enrichJob?.phase === "done") void loadLastEnrich()
+  }, [enrichJob?.phase, loadLastEnrich])
 
   function cfg(): BHEConfigInput {
     return {
@@ -186,6 +205,11 @@ export function BloodHound() {
                   disabled={enrichJob?.phase === "running" || !status?.active}>
             {enrichJob?.phase === "running" ? "Enriching…" : "Run BloodHound enrichment on this audit"}
           </button>
+          <div className="field-hint">
+            {lastEnrich
+              ? `Last enriched ${fmtWhen(lastEnrich.at)}${lastEnrich.accounts_loaded ? ` · ${lastEnrich.accounts_loaded.toLocaleString()} accounts` : ""}`
+              : "Not yet enriched on this audit."}
+          </div>
           {enrichErr && <div className="error">{enrichErr}</div>}
           {enrichJob && enrichJob.phase !== "idle" && (
             <div className="hint">
@@ -240,11 +264,13 @@ function BHEUpload({ csrf }: { csrf: string }) {
   }
 
   return (
-    <div className="field">
-      <input ref={fileRef} type="file" accept=".json" />
-      <button className="btn btn-primary" onClick={upload} disabled={busy}>
-        {busy ? "Uploading…" : "Upload user data"}
-      </button>
+    <div className="field bhe-upload">
+      <div className="bhe-upload-row">
+        <input ref={fileRef} type="file" accept=".json" />
+        <button className="btn btn-primary" onClick={upload} disabled={busy}>
+          {busy ? "Uploading…" : "Upload user data"}
+        </button>
+      </div>
       {result && <div className="ingest-ok">✓ {result}</div>}
       {error && <div className="error">{error}</div>}
     </div>

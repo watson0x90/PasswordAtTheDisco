@@ -1120,6 +1120,11 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
    connection Test/Save buttons it would otherwise sit flush against. */
 .bhe-run { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--hairline); }
 
+/* Upload-user-data: file picker + button on one aligned row (the base
+   `.field input { width: 100% }` otherwise stacks the button flush below). */
+.bhe-upload-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.field.bhe-upload .bhe-upload-row input { width: auto; flex: 1 1 240px; min-width: 0; }
+
 /* ---- job pill + popover ---- */
 .jobpill-wrap { position: relative; }
 .jobpill { display: inline-flex; align-items: center; gap: 6px; background: #0e7490; color: #e0f2fe; border: none; border-radius: 14px; padding: 4px 11px; font-size: 12px; font-weight: 600; cursor: pointer; }
