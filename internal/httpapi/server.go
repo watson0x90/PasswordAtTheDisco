@@ -1293,7 +1293,8 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Password string `json:"password"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Password == "" {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16))
+	if err := dec.Decode(&body); err != nil || body.Password == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password required"})
 		return
 	}
