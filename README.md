@@ -41,65 +41,23 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
-## What's new in 2.12
+## What's new in 2.15
 
-A **dashboard-clarity pass** driven by a first-time CISO + blue-team review:
+**Global search + a password-in-use probe.**
 
-- **Posture score reads as health** — labeled "higher is better, target ≥ 75", and
-  the sub-bars relabeled so a full (green) bar always means *healthier* (e.g.
-  "Privilege exposure" → "Privilege control").
-- **Jargon defined inline** — hover **ⓘ** tooltips explain DA pathway, HIBP, shared
-  hashes, controlled objects, the weak-password categories, and the Tier 1/2 triage
-  (the glossary that was hidden on the export page, surfaced on the dashboards).
-- **Each view says what it answers** — one-line purpose subtitles, the duplicated
-  headline strip removed from Exposure, and a legend + top-N list on the
-  cross-domain bridge matrix.
-- **Actionable is now a ranked Priority Worklist** — "fix these first," with reason
-  badges (DA path · public-breach · cracked · reuse) and a recommended action per
-  account, instead of a wall of all-10.0 tables.
-- Breach-impact estimate gets a methodology note.
+- **⌘/Ctrl-K command palette** — from any view, search accounts (opens the
+  account-detail drawer) or jump to another view. Account search runs over the
+  already-loaded, redacted set, so there are no extra round-trips.
+- **Search tab** — an *Accounts* sub-tab (the full sortable, paginated accounts
+  table + drawer) and a *Password in use?* sub-tab.
+- **Password-in-use probe** — check whether any account uses a specific password,
+  **including uncracked ones**, by matching its NT hash server-side. Useful for a
+  leaked or banned credential. The candidate you type is **never stored, logged, or
+  echoed**; the server returns only redacted accounts, and every check is recorded
+  in the audit log with the operator, time, and match count — never the password.
+  (`POST /api/probe`; available to any operator, CSRF-gated.)
 
-## What's new in 2.11
-
-This release merges two complementary lines of work — **BloodHound graph
-integration + exposure analytics** (the attack-path view) and the standalone
-**Exposure dashboards + operator tooling** (the triage view).
-
-**BloodHound graph integration** plus a set of **exposure analytics dashboards**
-that turn raw cracked-credential data into attack-path context:
-
-- **BloodHound users import.** Upload a BloodHound users export (`POST
-  /api/upload/bheusers`) and AD properties — `pwdLastSet`, `pwdNeverExpires`,
-  `lastLogon`, controlled-object counts, and object SIDs — are applied to accounts
-  at upload time, so BHE is only queried for the DA-pathway graph checks that
-  actually need it.
-- **Bulk Cypher enrichment.** A Cypher client pre-fetches DA reachability and
-  controlled-object counts for every user in one pass instead of per-account
-  round-trips, cutting enrichment time substantially.
-- **Exposure analytics.** New analytics surface cross-domain credential reuse,
-  HIBP-vs-risk triage, blast-radius / controlled-object buckets, DA exposure by
-  domain, password-age distribution, never-expires counts, and a risk-factors
-  radar — see the rebuilt **Insights** and **Domains** views.
-- **Network graph.** An interactive graph visualizes cross-domain credential
-  reuse and password-similarity clusters, making shared-credential bridges
-  between domains visible at a glance.
-
-Plus the operator-console + reporting line:
-
-- **Exposure tab + Overview headline strip.** Threat-scenario triage built on the
-  *intersections* analysts reason about (redacted): cross-domain credential bridges
-  (domain×domain heatmap + ranked lateral-movement clusters), HIBP urgency triage
-  (Tier 1 cracked **&** breached vs Tier 2 breached-only), and a blast-radius
-  worklist ranked by DA-path · HIBP · cracked · shared (lead-gated reveal).
-- **Editable forbidden-words list.** Manage the analysis banned-words list from
-  **Setup → Policies** (lead-only, audit-logged with a count — never the words).
-- **Console + report polish.** Header collapses to a ☰ menu on narrow windows; a
-  fresh load no longer logs a 401 (`/api/me` returns 200 with an `authenticated`
-  flag); complexity reads as `a–z A–Z 0–9 !@#` in the UI **and** CSV/HTML exports;
-  the no-cleartext invariant was re-verified end-to-end (**zero** passwords, hashes,
-  or matched words in any of the 11 exports); a CSV formula-injection guard
-  (CWE-1236) is exercised by the synthetic data. New `tools/dev_seed.sh` stands up a
-  disposable, synthetic-data-loaded instance in one command.
+See **[CHANGELOG.md](CHANGELOG.md)** for the full release history.
 
 > Lab note: this repo ships **fictional** placeholder domains
 > (`PHANTOM.CORP` / `GHOST.CORP`) in `lists/password_policy.json`. Point it at
@@ -211,8 +169,10 @@ guide (env vars, TLS, service management, backup/recovery): **[deploy/DEPLOYMENT
   reports (DA pathways, cracked credentials, accounts sharing a *cracked* password,
   accounts sharing an *uncracked* NT hash, and HIBP-exposed accounts with breach
   counts — reuse grouped server-side by NT hash so the hash never leaves the process),
-  per-**Domain** stats, a searchable, risk-filtered accounts table with role-gated
-  reveal, and a **Reports** tab that exports redacted reports as **CSV or HTML** — a
+  per-**Domain** stats, a sortable, paginated, risk-filtered accounts table with
+  role-gated reveal, a **⌘K command palette** and a **Search** tab (account search +
+  a password-in-use NTLM probe), and a **Reports** tab that exports redacted reports
+  as **CSV or HTML** — a
   per-account summary (crack status, HIBP exposure, password reuse, Tier-0/privileged
   pathway — never a password or hash), plus focused cracked-only, HIBP-exposed, and
   password-reuse-group reports.
