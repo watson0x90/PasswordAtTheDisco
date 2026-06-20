@@ -23,10 +23,11 @@ interface Props {
   edges: GraphEdge[]
   width?: number
   height?: number
+  onNodeClick?: (id: string) => void
 }
 
 // Force-directed graph with pan/zoom controls.
-export function NetworkGraph({ nodes: initNodes, edges, width = 500, height = 400 }: Props) {
+export function NetworkGraph({ nodes: initNodes, edges, width = 500, height = 400, onNodeClick }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [nodes, setNodes] = useState<GraphNode[]>([])
   const [hovered, setHovered] = useState<string | null>(null)
@@ -188,7 +189,7 @@ export function NetworkGraph({ nodes: initNodes, edges, width = 500, height = 40
         {nodes.map((n) => {
           const r = Math.max(10, Math.min(26, n.size))
           return (
-            <g key={n.id} onMouseEnter={() => setHovered(n.id)} onMouseLeave={() => setHovered(null)}>
+            <g key={n.id} className="net-node" onMouseEnter={() => setHovered(n.id)} onMouseLeave={() => setHovered(null)} onClick={() => onNodeClick?.(n.id)}>
               <circle cx={n.x} cy={n.y} r={r} fill={n.color}
                 opacity={hovered === n.id ? 1 : 0.85}
                 stroke={hovered === n.id ? "#fff" : "none"} strokeWidth={2} />

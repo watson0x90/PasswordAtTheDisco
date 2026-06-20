@@ -1299,3 +1299,5 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
 .probe-form { display: flex; align-items: center; gap: 10px; margin-top: 12px; max-width: 520px; }
 .probe-form .search { flex: 1; }
 .probe-result { margin-top: 14px; font-size: 14px; font-weight: 500; }
+
+.net-node { cursor: pointer; }
