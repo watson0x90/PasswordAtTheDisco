@@ -3,11 +3,14 @@ import { api, ApiError, type Account, type Report, type ReportAccount, type Reus
 import { useAccountsData } from "../accountsData"
 import { useAudits } from "../auditsData"
 import { useAuth } from "../auth"
-import { RISK_CLASS, weaknessTags } from "../util"
+import { RISK_CLASS, RISK_RANK, weaknessTags } from "../util"
 import { priorityWorklist } from "../worklist"
+import { useSortablePaged, type SortColumn } from "../sortPage"
 import { AccountLink } from "./AccountLink"
 import { BarChart } from "./BarChart"
 import { InfoTip } from "./InfoTip"
+import { SortHeader } from "./SortHeader"
+import { Pager } from "./Pager"
 
 const TOP = 50
 
@@ -299,10 +302,16 @@ export function Actionable() {
 // PriorityWorklist is a single ranked remediation list at the top of Actionable:
 // fix these first, why (reason badges), and the recommended action.
 function PriorityWorklist({ accounts }: { accounts: Account[] }) {
-  const [showAllWork, setShowAllWork] = useState(false)
   const worklist = priorityWorklist(accounts)
+  const ranked = worklist.map((item, i) => ({ item, rank: i }))
+  const COLS: SortColumn<(typeof ranked)[number]>[] = [
+    { key: "priority", get: (r) => r.rank },
+    { key: "account", get: (r) => r.item.account.username },
+    { key: "domain", get: (r) => r.item.account.domain },
+    { key: "risk", get: (r) => RISK_RANK[r.item.account.risk_level] ?? 0, defaultDir: "desc" },
+  ]
+  const page = useSortablePaged(ranked, COLS, { defaultSort: { key: "priority", dir: "asc" }, pageSize: 50 })
   if (worklist.length === 0) return null
-  const shown = showAllWork ? worklist : worklist.slice(0, TOP)
   return (
     <div className="action-section">
       <div className="section-label">
@@ -313,18 +322,18 @@ function PriorityWorklist({ accounts }: { accounts: Account[] }) {
         <table className="accounts">
           <thead>
             <tr>
-              <th>Account</th>
-              <th>Domain</th>
-              <th>Risk</th>
+              <SortHeader label="Account" colKey="account" sort={page.sort} onSort={page.setSort} />
+              <SortHeader label="Domain" colKey="domain" sort={page.sort} onSort={page.setSort} />
+              <SortHeader label="Risk" colKey="risk" sort={page.sort} onSort={page.setSort} />
               <th>Why</th>
               <th>Recommended action</th>
             </tr>
           </thead>
           <tbody>
-            {shown.map((item, i) => {
+            {page.rows.map(({ item, rank }) => {
               const a = item.account
               return (
-                <tr key={`${a.domain}/${a.username}/${i}`}>
+                <tr key={`${a.domain}/${a.username}/${rank}`}>
                   <td>
                     <AccountLink username={a.username} domain={a.domain} />
                     {a.enabled === false && (
@@ -349,14 +358,7 @@ function PriorityWorklist({ accounts }: { accounts: Account[] }) {
             })}
           </tbody>
         </table>
-        {worklist.length > TOP && (
-          <div className="meta-line">
-            showing {shown.length.toLocaleString()} of {worklist.length.toLocaleString()}{" "}
-            <button className="link-btn" onClick={() => setShowAllWork((v) => !v)}>
-              {showAllWork ? "show fewer" : `show all ${worklist.length}`}
-            </button>
-          </div>
-        )}
+        <Pager page={page} />
       </div>
     </div>
   )
@@ -410,23 +412,29 @@ function AccountTable({
   metric: (a: ReportAccount) => ReactNode
   sharedCol?: boolean
 }) {
-  const [showAll, setShowAll] = useState(false)
-  const shown = showAll ? rows : rows.slice(0, TOP)
+  const COLS: SortColumn<ReportAccount>[] = [
+    { key: "username", get: (a) => a.username },
+    { key: "domain", get: (a) => a.domain },
+    { key: "risk", get: (a) => RISK_RANK[a.risk_level] ?? 0, defaultDir: "desc" },
+    { key: "score", get: (a) => a.risk_score, defaultDir: "desc" },
+    { key: "shared", get: (a) => a.shared_with, defaultDir: "desc" },
+  ]
+  const page = useSortablePaged(rows, COLS, { defaultSort: { key: "score", dir: "desc" }, pageSize: 50 })
   return (
     <div className="table-wrap action-table">
       <table className="accounts">
         <thead>
           <tr>
-            <th>Username</th>
-            <th>Domain</th>
-            <th>Risk</th>
-            <th className="num">Score</th>
-            {sharedCol && <th className="num">Shared</th>}
+            <SortHeader label="Username" colKey="username" sort={page.sort} onSort={page.setSort} />
+            <SortHeader label="Domain" colKey="domain" sort={page.sort} onSort={page.setSort} />
+            <SortHeader label="Risk" colKey="risk" sort={page.sort} onSort={page.setSort} />
+            <SortHeader label="Score" colKey="score" numeric sort={page.sort} onSort={page.setSort} />
+            {sharedCol && <SortHeader label="Shared" colKey="shared" numeric sort={page.sort} onSort={page.setSort} />}
             <th>{metricHead}</th>
           </tr>
         </thead>
         <tbody>
-          {shown.map((a, i) => (
+          {page.rows.map((a, i) => (
             <tr key={`${a.domain}/${a.username}/${i}`}>
               <td>
                 <AccountLink username={a.username} domain={a.domain} />
@@ -443,14 +451,7 @@ function AccountTable({
           ))}
         </tbody>
       </table>
-      {rows.length > TOP && (
-        <div className="meta-line">
-          showing {shown.length.toLocaleString()} of {rows.length.toLocaleString()}{" "}
-          <button className="link-btn" onClick={() => setShowAll((v) => !v)}>
-            {showAll ? "show top 50" : "show all"}
-          </button>
-        </div>
-      )}
+      <Pager page={page} />
     </div>
   )
 }
