@@ -8,7 +8,7 @@ import { JobPill } from "./JobPill"
 export type View =
   | "overview" | "actionable" | "accounts" | "domains" | "compare" | "reports"
   | "ingest" | "policies" | "integrations" | "operators" | "activity" | "audits"
-  | "audit-data" | "exposure"
+  | "audit-data" | "exposure" | "search"
 
 export const TABS: { id: View; label: string }[] = [
   { id: "overview", label: "Overview" },
@@ -18,6 +18,7 @@ export const TABS: { id: View; label: string }[] = [
   { id: "exposure", label: "Exposure" },
   { id: "compare", label: "Compare" },
   { id: "reports", label: "Reports" },
+  { id: "search", label: "Search" },
 ]
 
 // Lead-only groups, shown as Setup ▾ / Admin ▾ dropdowns.

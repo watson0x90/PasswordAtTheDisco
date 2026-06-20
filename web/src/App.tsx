@@ -17,6 +17,7 @@ import { Operators } from "./components/Operators"
 import { Activity } from "./components/Activity"
 import { ManageAudits } from "./components/ManageAudits"
 import { Reports } from "./components/Reports"
+import { Search } from "./components/Search"
 import { Unlock } from "./components/Unlock"
 import { CommandPalette } from "./components/CommandPalette"
 
@@ -56,6 +57,8 @@ function viewFor(view: View) {
       return <AuditData />
     case "exposure":
       return <Exposure />
+    case "search":
+      return <Search />
     default:
       return <Dashboard />
   }
