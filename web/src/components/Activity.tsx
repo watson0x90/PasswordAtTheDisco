@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from "react"
 import { api, ApiError, type AuditEvent } from "../api"
 import { useAuth } from "../auth"
 import { fmtWhen, resultClass } from "../format"
+import { useSortablePaged, type SortColumn } from "../sortPage"
+import { SortHeader } from "./SortHeader"
+import { Pager } from "./Pager"
 
 const ACTIONS = [
   "login", "logout", "reveal_secret", "reveal_violation_terms", "store_unlock", "store_lock", "store_passphrase_change", "store_rekey",
@@ -48,6 +51,16 @@ export function Activity() {
     return () => window.clearTimeout(id)
   }, [load])
 
+  const COLS: SortColumn<AuditEvent>[] = [
+    { key: "time", get: (e) => e.time, defaultDir: "desc" },
+    { key: "actor", get: (e) => e.actor ?? "" },
+    { key: "action", get: (e) => e.action },
+    { key: "target", get: (e) => e.target ?? "" },
+    { key: "source", get: (e) => e.source ?? "" },
+    { key: "result", get: (e) => e.result },
+  ]
+  const page = useSortablePaged(events, COLS, { defaultSort: { key: "time", dir: "desc" }, pageSize: 50 })
+
   if (me?.role !== "lead") return <div className="center-state">The activity log requires the lead role.</div>
 
   return (
@@ -93,20 +106,21 @@ export function Activity() {
         ) : events.length === 0 ? (
           <p className="ingest-note mb-0">No matching events.</p>
         ) : (
+          <>
           <div className="table-wrap">
           <table className="ops-table act-table">
             <thead>
               <tr>
-                <th>When</th>
-                <th>Operator</th>
-                <th>Action</th>
-                <th>Target</th>
-                <th>Source</th>
-                <th>Result</th>
+                <SortHeader label="When" colKey="time" sort={page.sort} onSort={page.setSort} />
+                <SortHeader label="Operator" colKey="actor" sort={page.sort} onSort={page.setSort} />
+                <SortHeader label="Action" colKey="action" sort={page.sort} onSort={page.setSort} />
+                <SortHeader label="Target" colKey="target" sort={page.sort} onSort={page.setSort} />
+                <SortHeader label="Source" colKey="source" sort={page.sort} onSort={page.setSort} />
+                <SortHeader label="Result" colKey="result" sort={page.sort} onSort={page.setSort} />
               </tr>
             </thead>
             <tbody>
-              {events.map((e, i) => (
+              {page.rows.map((e, i) => (
                 <tr key={i}>
                   <td className="ops-when">{fmtWhen(e.time)}</td>
                   <td className="ops-user">
@@ -124,6 +138,8 @@ export function Activity() {
             </tbody>
           </table>
           </div>
+          <Pager page={page} />
+          </>
         )}
       </div>
     </div>
