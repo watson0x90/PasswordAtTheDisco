@@ -18,6 +18,7 @@ import { Activity } from "./components/Activity"
 import { ManageAudits } from "./components/ManageAudits"
 import { Reports } from "./components/Reports"
 import { Unlock } from "./components/Unlock"
+import { CommandPalette } from "./components/CommandPalette"
 
 // Recharts is heavy (~180KB). Lazy-load Dashboard and Domains so the charting
 // chunk is deferred until after auth, not on the login screen. (Insights renders
@@ -81,6 +82,7 @@ function Routed() {
         <AccountsProvider>
           <AccountDrawerProvider>
             <JobsProvider>
+              <CommandPalette />
               <AppShell view={view} onNav={setView}>
                 <Suspense fallback={<div className="center-state"><div className="spinner">loading</div></div>}>
                   {viewFor(view)}

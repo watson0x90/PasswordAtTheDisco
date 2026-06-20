@@ -10,7 +10,7 @@ export type View =
   | "ingest" | "policies" | "integrations" | "operators" | "activity" | "audits"
   | "audit-data" | "exposure"
 
-const TABS: { id: View; label: string }[] = [
+export const TABS: { id: View; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "actionable", label: "Actionable" },
   { id: "accounts", label: "Accounts" },
@@ -21,13 +21,13 @@ const TABS: { id: View; label: string }[] = [
 ]
 
 // Lead-only groups, shown as Setup ▾ / Admin ▾ dropdowns.
-const SETUP_ITEMS: { id: View; label: string }[] = [
+export const SETUP_ITEMS: { id: View; label: string }[] = [
   { id: "ingest", label: "Upload" },
   { id: "audit-data", label: "Audit Data" },
   { id: "policies", label: "Policies" },
   { id: "integrations", label: "Integrations" },
 ]
-const ADMIN_ITEMS: { id: View; label: string }[] = [
+export const ADMIN_ITEMS: { id: View; label: string }[] = [
   { id: "operators", label: "Operators" },
   { id: "activity", label: "Activity" },
   { id: "audits", label: "Manage Audits" },
