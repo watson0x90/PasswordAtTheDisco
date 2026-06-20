@@ -1112,7 +1112,13 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
 .member-row td { font-size: 11px; }
 @media (max-width: 720px) { .domain-strips { grid-template-columns: 1fr; } }
-.bhe-form .search { width: 100%; }
+/* .search's base `flex: 1 1 320px` is for horizontal toolbars; in these
+   column-flex labels it would stretch inputs to 320px TALL — pin to auto height. */
+.bhe-form .search { width: 100%; flex: none; max-width: none; }
+
+/* "Run enrichment" is a distinct action (runs a job) — separate it from the
+   connection Test/Save buttons it would otherwise sit flush against. */
+.bhe-run { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--hairline); }
 
 /* ---- job pill + popover ---- */
 .jobpill-wrap { position: relative; }

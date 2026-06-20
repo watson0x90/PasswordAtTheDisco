@@ -181,7 +181,7 @@ export function BloodHound() {
             <div className="error">Connection failed: {test.error}</div>
           ))}
 
-        <div className="field">
+        <div className="field bhe-run">
           <button type="button" className="btn" onClick={runEnrich}
                   disabled={enrichJob?.phase === "running" || !status?.active}>
             {enrichJob?.phase === "running" ? "Enriching…" : "Run BloodHound enrichment on this audit"}
