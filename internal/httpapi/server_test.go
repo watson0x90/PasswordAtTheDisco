@@ -1686,4 +1686,10 @@ func TestRevealDomainAware(t *testing.T) {
 	if strings.Contains(al, "BetaPass2") || strings.Contains(al, "AlphaPass1") {
 		t.Errorf("audit leaked a password: %s", al)
 	}
+	if !strings.Contains(al, `"target":"svc@CORP"`) {
+		t.Errorf("CORP reveal not audited: %s", al)
+	}
+	if !strings.Contains(al, `"result":"denied"`) || !strings.Contains(al, `"result":"ok"`) {
+		t.Errorf("expected both ok and denied reveal results in audit: %s", al)
+	}
 }
