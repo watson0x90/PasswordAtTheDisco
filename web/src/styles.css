@@ -1187,3 +1187,48 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
 .ml-sm { margin-left: var(--space-sm); }
 .py-sm { padding: var(--space-sm) 0; }
 .row-gap-xs { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-xs); }
+
+/* Sortable headers + pager */
+.th-sort {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.th-sort:hover { color: var(--accent); }
+.th-sort.active { color: var(--accent); }
+.th-sort-ind { font-size: 9px; color: var(--faint); }
+.th-sort.active .th-sort-ind { color: var(--accent); }
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--dim);
+}
+.pager-info { display: flex; align-items: center; gap: 14px; }
+.pager-size { display: flex; align-items: center; gap: 6px; }
+.pager-size .search { width: auto; padding: 4px 8px; }
+.pager-nav { display: flex; align-items: center; gap: 4px; }
+.pager-btn,
+.pager-num {
+  background: none;
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  color: var(--dim);
+  font: inherit;
+  padding: 4px 9px;
+  cursor: pointer;
+}
+.pager-btn:disabled { opacity: 0.4; cursor: default; }
+.pager-num.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.pager-gap { padding: 0 4px; color: var(--faint); }
