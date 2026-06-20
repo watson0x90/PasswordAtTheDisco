@@ -6,6 +6,8 @@ import { useSortablePaged, type SortColumn } from "../sortPage"
 import { AccountLink } from "./AccountLink"
 import { Pager } from "./Pager"
 
+const COHORT_PAGE_COLS: SortColumn<DiffAccount>[] = [{ key: "n", get: () => 0 }]
+
 export function Compare() {
   const { audits } = useAudits()
   const [a, setA] = useState("")
@@ -145,8 +147,7 @@ function CohortCard({
   accounts: Account[]
 }) {
   const items = raw ?? []
-  const PAGE_COLS: SortColumn<DiffAccount>[] = [{ key: "n", get: () => 0 }]
-  const page = useSortablePaged(items, PAGE_COLS, { defaultSort: { key: "n", dir: "asc" }, pageSize: 50 })
+  const page = useSortablePaged(items, COHORT_PAGE_COLS, { defaultSort: { key: "n", dir: "asc" }, pageSize: 50 })
   return (
     <div className="panel chart-card">
       <div className="chart-title">

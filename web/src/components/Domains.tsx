@@ -110,8 +110,11 @@ function DomainDetail({ domain, accounts, report, reportErr, onBack }: { domain:
   const p = posture(accounts)
   const pol = domainPolicy(accounts)
   const wl = domainWordlist(accounts)
-  const quick = domainQuickWins(accounts, QUICK_WINS_N)
-  const clusters = report ? domainReuseClusters(report, domain) : { cracked: [], uncracked: [] }
+  const quick = useMemo(() => domainQuickWins(accounts, QUICK_WINS_N), [accounts])
+  const clusters = useMemo(
+    () => (report ? domainReuseClusters(report, domain) : { cracked: [], uncracked: [] }),
+    [report, domain],
+  )
   const daPaths = useMemo(() => (report ? domainDAPaths(report, domain) : []), [report, domain])
 
   const daCols: SortColumn<ReportAccount>[] = [

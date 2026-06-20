@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { api, ApiError, type Account, type Report, type ReportAccount, type ReuseGroup, type Terms } from "../api"
 import { useAccountsData } from "../accountsData"
 import { useAudits } from "../auditsData"
@@ -11,6 +11,8 @@ import { BarChart } from "./BarChart"
 import { InfoTip } from "./InfoTip"
 import { SortHeader } from "./SortHeader"
 import { Pager } from "./Pager"
+
+const REUSE_PAGE_COLS: SortColumn<ReuseGroup>[] = [{ key: "n", get: () => 0 }]
 
 export function Actionable() {
   const { activeId, dataVersion } = useAudits()
@@ -300,8 +302,8 @@ export function Actionable() {
 // PriorityWorklist is a single ranked remediation list at the top of Actionable:
 // fix these first, why (reason badges), and the recommended action.
 function PriorityWorklist({ accounts }: { accounts: Account[] }) {
-  const worklist = priorityWorklist(accounts)
-  const ranked = worklist.map((item, i) => ({ item, rank: i }))
+  const worklist = useMemo(() => priorityWorklist(accounts), [accounts])
+  const ranked = useMemo(() => worklist.map((item, i) => ({ item, rank: i })), [worklist])
   const COLS: SortColumn<(typeof ranked)[number]>[] = [
     { key: "priority", get: (r) => r.rank },
     { key: "account", get: (r) => r.item.account.username },
@@ -455,8 +457,7 @@ function AccountTable({
 }
 
 function ReuseGroups({ groups, cracked }: { groups: ReuseGroup[]; cracked?: boolean }) {
-  const PAGE_COLS: SortColumn<ReuseGroup>[] = [{ key: "n", get: () => 0 }]
-  const page = useSortablePaged(groups, PAGE_COLS, { defaultSort: { key: "n", dir: "asc" }, pageSize: 50 })
+  const page = useSortablePaged(groups, REUSE_PAGE_COLS, { defaultSort: { key: "n", dir: "asc" }, pageSize: 50 })
   return (
     <div className="reuse-list">
       {page.rows.map((g) => (
