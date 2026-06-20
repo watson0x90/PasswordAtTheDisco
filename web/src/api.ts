@@ -341,8 +341,10 @@ export const api = {
   report: () => request<Report>("/report"),
   reportTerms: () => request<Terms>("/report/terms"),
 
-  revealSecret: (username: string) =>
-    request<{ username: string; password: string }>(`/accounts/${encodeURIComponent(username)}/secret`),
+  revealSecret: (username: string, domain?: string) =>
+    request<{ username: string; password: string }>(
+      `/accounts/${encodeURIComponent(username)}/secret${domain ? `?domain=${encodeURIComponent(domain)}` : ""}`,
+    ),
 
   probe: (password: string, csrf: string) =>
     request<ProbeResult>("/probe", {

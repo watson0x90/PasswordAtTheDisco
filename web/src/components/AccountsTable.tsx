@@ -42,13 +42,14 @@ export function AccountsTable({ accounts }: { accounts: Account[] }) {
     }
   }
 
-  async function reveal(username: string) {
-    setRevealing(username)
+  async function reveal(username: string, domain: string) {
+    const key = `${domain}/${username}`
+    setRevealing(key)
     setRevealError("")
     try {
-      const r = await api.revealSecret(username)
-      setRevealed((prev) => ({ ...prev, [username]: r.password }))
-      timers.current.push(window.setTimeout(() => hide(username), 45000)) // auto-hide after 45s
+      const r = await api.revealSecret(username, domain)
+      setRevealed((prev) => ({ ...prev, [key]: r.password }))
+      timers.current.push(window.setTimeout(() => hide(key), 45000)) // auto-hide after 45s
     } catch (e) {
       setRevealError(e instanceof ApiError ? `reveal failed: ${e.message}` : "reveal failed")
     } finally {
@@ -56,10 +57,10 @@ export function AccountsTable({ accounts }: { accounts: Account[] }) {
     }
   }
 
-  function hide(username: string) {
+  function hide(key: string) {
     setRevealed((prev) => {
       const next = { ...prev }
-      delete next[username]
+      delete next[key]
       return next
     })
   }
@@ -113,23 +114,24 @@ export function AccountsTable({ accounts }: { accounts: Account[] }) {
                 <td>{hasDA(a.da_domains) ? <span className="badge crit">{a.da_domains}</span> : <span className="muted">—</span>}</td>
                 {isLead && (
                   <td>
-                    {!a.cracked ? (
-                      <span className="muted">uncracked</span>
-                    ) : a.username in revealed ? (
-                      <span className="secret">
-                        <span className="mono-pw">{revealed[a.username]}</span>
-                        <button className="link-btn" onClick={() => copy(revealed[a.username])} title="Copy">
-                          copy
+                    {(() => {
+                      const key = `${a.domain}/${a.username}`
+                      if (!a.cracked) return <span className="muted">uncracked</span>
+                      if (key in revealed) {
+                        return (
+                          <span className="secret">
+                            <span className="mono-pw">{revealed[key]}</span>
+                            <button className="link-btn" onClick={() => copy(revealed[key])} title="Copy">copy</button>
+                            <button className="link-btn" onClick={() => hide(key)}>hide</button>
+                          </span>
+                        )
+                      }
+                      return (
+                        <button className="reveal-btn" disabled={revealing === key} onClick={() => reveal(a.username, a.domain)}>
+                          {revealing === key ? "…" : "reveal"}
                         </button>
-                        <button className="link-btn" onClick={() => hide(a.username)}>
-                          hide
-                        </button>
-                      </span>
-                    ) : (
-                      <button className="reveal-btn" disabled={revealing === a.username} onClick={() => reveal(a.username)}>
-                        {revealing === a.username ? "…" : "reveal"}
-                      </button>
-                    )}
+                      )
+                    })()}
                   </td>
                 )}
               </tr>
