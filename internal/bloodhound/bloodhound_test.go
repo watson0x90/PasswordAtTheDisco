@@ -1,6 +1,7 @@
 package bloodhound
 
 import (
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
@@ -128,6 +129,74 @@ func TestExtractHelpers(t *testing.T) {
 	}
 }
 
+func TestExtractControllableCountUsesTotal(t *testing.T) {
+	// True total from env.Count is 5000 even though only a small label sample
+	// (10 items) was paged in. ExtractControllableCount must return 5000.
+	ud := &UserData{
+		ControllableTotal: 5000,
+		Controllables: []DomainControllables{
+			{Domain: "CORP.INT", Labels: map[string]int{"User": 7, "Group": 3}},
+		},
+	}
+	if got := ExtractControllableCount(ud); got != 5000 {
+		t.Errorf("count = %d, want 5000 (true total, not the 10-item sample)", got)
+	}
+	// Fallback: when the total is absent (0), sum the sampled label map.
+	udNoTotal := &UserData{
+		Controllables: []DomainControllables{
+			{Domain: "A.INT", Labels: map[string]int{"User": 3, "Computer": 2}},
+			{Domain: "B.INT", Labels: map[string]int{"Group": 1}},
+		},
+	}
+	if got := ExtractControllableCount(udNoTotal); got != 6 {
+		t.Errorf("fallback count = %d, want 6", got)
+	}
+	if ExtractControllableCount(nil) != 0 {
+		t.Error("nil UserData should yield 0")
+	}
+}
+
+func TestGetUserDataCountFromEnvelope(t *testing.T) {
+	// Mock returns count:5000 but only a 2-item data page. The true total (5000)
+	// must survive — proving the >10 cap is gone.
+	c, srv := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		verifySig(t, r)
+		q := r.URL.Query()
+		switch {
+		case r.URL.Path == "/api/v2/available-domains":
+			_, _ = io.WriteString(w, `{"data":[{"name":"CORP.INT","id":"D1","collected":true,"type":"Domain"}]}`)
+		case r.URL.Path == "/api/v2/search" && q.Get("type") == "User":
+			_, _ = io.WriteString(w, `{"data":[{"name":"alice@CORP.INT","objectid":"S-1-5-USER"}]}`)
+		case r.URL.Path == "/api/v2/search" && q.Get("type") == "Group":
+			_, _ = io.WriteString(w, `{"data":[{"name":"DOMAIN ADMINS@CORP.INT","objectid":"S-1-5-DA"}]}`)
+		case len(r.URL.Path) > len("/controllables") && r.URL.Path[len(r.URL.Path)-len("/controllables"):] == "/controllables":
+			_, _ = io.WriteString(w, `{"count":5000,"data":[{"label":"User","name":"bob@CORP.INT"},{"label":"User","name":"carol@CORP.INT"}]}`)
+		case r.URL.Path == "/api/v2/users/S-1-5-USER":
+			_, _ = io.WriteString(w, `{"data":{"props":{"enabled":true,"pwdneverexpires":false,"pwdlastset":133000000000000000}}}`)
+		case r.URL.Path == "/api/v2/graphs/shortest-path":
+			w.WriteHeader(http.StatusNotFound) // no DA path needed for this test
+		default:
+			t.Errorf("unexpected request: %s", r.URL.RequestURI())
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	defer srv.Close()
+
+	ud, err := c.GetUserData("alice@CORP.INT")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ud == nil {
+		t.Fatal("GetUserData returned nil")
+	}
+	if ud.ControllableTotal != 5000 {
+		t.Errorf("ControllableTotal = %d, want 5000", ud.ControllableTotal)
+	}
+	if got := ExtractControllableCount(ud); got != 5000 {
+		t.Errorf("ExtractControllableCount = %d, want 5000 (not the 2-item sample)", got)
+	}
+}
+
 func TestDomainFromName(t *testing.T) {
 	cases := map[string]string{
 		"alice@CORP.INT": "CORP.INT",
@@ -231,4 +300,91 @@ func splitHostPort(t *testing.T, raw string) (string, int) {
 		t.Fatal(err)
 	}
 	return u.Hostname(), p
+}
+
+func TestExtractControlsTier0(t *testing.T) {
+	// Controlling the Domain Admins group is DA-equivalent.
+	udTier0 := &UserData{Controllables: []DomainControllables{
+		{Domain: "CORP.LOCAL", Items: []ControllableItem{
+			{Label: "Group", Name: "DOMAIN ADMINS@CORP.LOCAL"},
+			{Label: "User", Name: "bob@CORP.LOCAL"},
+		}},
+	}}
+	if !ExtractControlsTier0(udTier0) {
+		t.Error("control of DOMAIN ADMINS group must be Tier-0")
+	}
+	// Controlling only ordinary users is NOT Tier-0.
+	udOrdinary := &UserData{Controllables: []DomainControllables{
+		{Domain: "CORP.LOCAL", Items: []ControllableItem{
+			{Label: "User", Name: "carol@CORP.LOCAL"},
+			{Label: "User", Name: "dave@CORP.LOCAL"},
+		}},
+	}}
+	if ExtractControlsTier0(udOrdinary) {
+		t.Error("control of ordinary users must not be Tier-0")
+	}
+	// Case-insensitive + other sensitive names.
+	for _, name := range []string{"krbtgt@corp.local", "Enterprise Admins@CORP.LOCAL", "AdminSDHolder@CORP.LOCAL", "DOMAIN CONTROLLERS@CORP.LOCAL"} {
+		ud := &UserData{Controllables: []DomainControllables{
+			{Domain: "CORP.LOCAL", Items: []ControllableItem{{Label: "Group", Name: name}}},
+		}}
+		if !ExtractControlsTier0(ud) {
+			t.Errorf("name %q should be Tier-0", name)
+		}
+	}
+	// The built-in Administrators group (exact local part) is Tier-0.
+	udAdministrators := &UserData{Controllables: []DomainControllables{
+		{Domain: "CORP.LOCAL", Items: []ControllableItem{
+			{Label: "Group", Name: "Administrators@CORP.LOCAL"},
+		}},
+	}}
+	if !ExtractControlsTier0(udAdministrators) {
+		t.Error("control of the built-in Administrators group must be Tier-0")
+	}
+	// Delegated "* Administrators" groups must NOT over-match as Tier-0.
+	udBackupAdmins := &UserData{Controllables: []DomainControllables{
+		{Domain: "CORP.LOCAL", Items: []ControllableItem{
+			{Label: "Group", Name: "Backup Administrators@CORP.LOCAL"},
+		}},
+	}}
+	if ExtractControlsTier0(udBackupAdmins) {
+		t.Error("control of a delegated 'Backup Administrators' group must NOT be Tier-0")
+	}
+	// Control of the Domain object itself is DCSync (DA-equivalent) — matched
+	// purely by Label, with no Tier-0 name.
+	udDomain := &UserData{Controllables: []DomainControllables{
+		{Domain: "CORP.LOCAL", Items: []ControllableItem{
+			{Label: "Domain", Name: "CORP.LOCAL"},
+		}},
+	}}
+	if !ExtractControlsTier0(udDomain) {
+		t.Error("control of the Domain object (DCSync) must be Tier-0")
+	}
+	if ExtractControlsTier0(nil) {
+		t.Error("nil UserData must not be Tier-0")
+	}
+}
+
+func TestControllablesLimitDefault(t *testing.T) {
+	// An unset ControllablesLimit defaults to 100 so the Tier-0/sensitivity sample
+	// is wide enough in a single call (env.Count still gives the true magnitude).
+	c := New(Config{Scheme: "http", Host: "h", Port: 1, TokenID: "t", TokenKey: "k"})
+	if c.controllablesLimit != 100 {
+		t.Errorf("default controllablesLimit = %d, want 100", c.controllablesLimit)
+	}
+	// An explicit value is honored.
+	c2 := New(Config{ControllablesLimit: 25})
+	if c2.controllablesLimit != 25 {
+		t.Errorf("explicit controllablesLimit = %d, want 25", c2.controllablesLimit)
+	}
+}
+
+func TestUserPropsRoastableDecode(t *testing.T) {
+	var p UserProps
+	if err := json.Unmarshal([]byte(`{"hasspn":true,"dontreqpreauth":true,"enabled":true}`), &p); err != nil {
+		t.Fatal(err)
+	}
+	if !p.HasSPN || !p.DontReqPreauth {
+		t.Errorf("roastable flags not decoded: hasspn=%v dontreqpreauth=%v", p.HasSPN, p.DontReqPreauth)
+	}
 }

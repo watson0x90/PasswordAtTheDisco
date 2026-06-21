@@ -40,6 +40,10 @@ type Enrichment struct {
 	Enabled           *bool
 	HasSPN            *bool // Kerberoastable
 	DontReqPreauth    *bool // AS-REP roastable
+	// Enriched is true when the enricher actually returned BloodHound data for the
+	// user (per-account coverage). False on the zero Enrichment{} (user not found,
+	// BHE off, or an error) — drives model.Account.Coverage and the Unknown Impact.
+	Enriched bool
 }
 
 // Enricher supplies BloodHound enrichment for a normalized username.
@@ -331,6 +335,7 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 		Controlled:      derefInt(enrData.ControlledObjects),
 		SharedWith:      sharedWith,
 		Enabled:         enabledOrUnknown(enrData.Enabled),
+		Coverage:        coverageState(enrData.Enriched),
 		MeetsPolicy:     an.MeetsPolicy,
 		Complexity:      an.ComplexityLabel,
 		// wordlist weakness signals (counts/booleans + matched substrings; see Redacted())
@@ -396,6 +401,7 @@ func (e *Engine) scoreUncracked(domain string, a secretsdump.ParsedAccount, shar
 		Controlled:      derefInt(enrData.ControlledObjects),
 		SharedWith:      sharedWith,
 		Enabled:         enabledOrUnknown(enrData.Enabled),
+		Coverage:        coverageState(enrData.Enriched),
 		PwdLastSet:      pwdLastSet,
 		PwdNeverExpires: enrData.PwdNeverExpires,
 		HasSPN:          enrData.HasSPN,
@@ -540,6 +546,14 @@ func derefInt(p *int) int {
 // so a "disabled" flag fires only on an explicit disabled signal -- not on absent data.
 func enabledOrUnknown(p *bool) bool { return p == nil || *p }
 
+// coverageState maps the per-account Enriched bit to the model coverage string.
+func coverageState(enriched bool) string {
+	if enriched {
+		return "full"
+	}
+	return "none"
+}
+
 // BloodhoundEnricher adapts a *bloodhound.Client to the Enricher interface.
 // This is the per-user REST version (slow, used for single-user lookups).
 type BloodhoundEnricher struct {
@@ -555,11 +569,16 @@ func (b BloodhoundEnricher) Enrich(username string) Enrichment {
 	count := bloodhound.ExtractControllableCount(ud)
 	enabled := ud.Props.Enabled
 	never := ud.Props.PwdNeverExpires
+	hasSPN := ud.Props.HasSPN
+	dontReqPreauth := ud.Props.DontReqPreauth
 	enr := Enrichment{
 		DADomains:         bloodhound.ExtractDADomains(ud),
 		ControlledObjects: &count,
 		PwdNeverExpires:   &never,
 		Enabled:           &enabled,
+		HasSPN:            &hasSPN,
+		DontReqPreauth:    &dontReqPreauth,
+		Enriched:          true,
 	}
 	if v, err := ud.Props.PwdLastSet.Int64(); err == nil && v > 0 {
 		enr.PwdLastSet = &v
@@ -594,5 +613,14 @@ func (b BulkBloodhoundEnricher) Enrich(username string) Enrichment {
 		PwdLastSet:        pwdLastSet,
 		HasSPN:            &hasSPN,
 		DontReqPreauth:    &dontReqPreauth,
+		// Enriched is the "was this account found in BloodHound" signal. A bulk
+		// MISS returns the zero BulkUserProps{} (empty ObjectID). A HIT is a parsed
+		// Cypher row: the parsers in internal/bloodhound/cypher.go only emit a row
+		// when sam != "", and for every such user node BloodHound always populates
+		// a SID into objectid -> ObjectID. So ObjectID != "" reliably distinguishes
+		// a hit from a miss. We key off ObjectID (not sam) deliberately: sam is the
+		// bulk-map lookup key, not a stored field, so ObjectID is the populated
+		// field that proves the row was actually parsed and present.
+		Enriched: props.ObjectID != "",
 	}
 }

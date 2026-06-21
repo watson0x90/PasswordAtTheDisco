@@ -106,7 +106,7 @@ func New(cfg Config) *Client {
 	}
 	controllablesLimit := cfg.ControllablesLimit
 	if controllablesLimit == 0 {
-		controllablesLimit = 10
+		controllablesLimit = 100 // wider sample for Tier-0/sensitivity; env.Count gives true magnitude
 	}
 	concurrency := cfg.EnrichConcurrency
 	if concurrency <= 0 {
@@ -345,6 +345,8 @@ type UserProps struct {
 	LastLogon          json.Number `json:"lastlogon"`
 	LastLogonTimestamp json.Number `json:"lastlogontimestamp"`
 	PasswordCantChange bool        `json:"passwordcantchange"`
+	HasSPN             bool        `json:"hasspn"`         // Kerberoastable — SPN set
+	DontReqPreauth     bool        `json:"dontreqpreauth"` // AS-REP roastable
 }
 
 // GetUserFull returns the detailed user properties for an object ID.
@@ -383,27 +385,31 @@ func (c *Client) computerDomain(objectID string) string {
 }
 
 // GetUserControllables returns the objects controllable by a user, grouped as
-// domain -> (controllable label -> count).
-func (c *Client) GetUserControllables(objectID string) (map[string]map[string]int, error) {
+// domain -> (controllable label -> count) plus domain -> sampled items, plus the
+// API's TRUE total (env.Count). The label/item sample is bounded by
+// controllablesLimit; total is the real magnitude and is not capped.
+func (c *Client) GetUserControllables(objectID string) (byDomain map[string]map[string]int, items map[string][]ControllableItem, total int, err error) {
 	out := map[string]map[string]int{}
+	itemsOut := map[string][]ControllableItem{}
 
-	// Single call with the configured limit (avoids double round-trip).
+	// Single call with the configured limit (avoids double round-trip). limit now
+	// bounds only the display/label sample; env.Count carries the true total.
 	env, status, err := c.get(fmt.Sprintf("/api/v2/base/%s/controllables?skip=0&limit=%d&type=list", objectID, c.controllablesLimit))
 	if err != nil {
-		return nil, err
+		return nil, nil, 0, err
 	}
 	if status != http.StatusOK || env.Count == 0 {
-		return out, nil
+		return out, itemsOut, 0, nil
 	}
 
-	var items []struct {
+	var rawItems []struct {
 		Label string `json:"label"`
 		Name  string `json:"name"`
 	}
-	if err := json.Unmarshal(env.Data, &items); err != nil {
-		return nil, err
+	if err := json.Unmarshal(env.Data, &rawItems); err != nil {
+		return nil, nil, 0, err
 	}
-	for _, it := range items {
+	for _, it := range rawItems {
 		domain := domainFromName(it.Name)
 		if domain == "LOCALDOMAIN" || domain == "Unknown" || domain == "INT" {
 			if comp, ok, _ := c.GetComputer(it.Name); ok {
@@ -420,8 +426,9 @@ func (c *Client) GetUserControllables(objectID string) (map[string]map[string]in
 			label = "Unknown"
 		}
 		out[domain][label]++
+		itemsOut[domain] = append(itemsOut[domain], ControllableItem{Label: label, Name: it.Name})
 	}
-	return out, nil
+	return out, itemsOut, env.Count, nil
 }
 
 // domainFromName extracts a domain from an object name: "user@DOMAIN" -> DOMAIN,
@@ -499,12 +506,21 @@ func (c *Client) setDAGroup(domain, sid string) {
 	c.daGroups[domain] = sid
 }
 
+// ControllableItem is one sampled controllable object (label + name). Retained so
+// Tier-0 / DA-equivalent control can be detected by name heuristic. The sample is
+// bounded by controllablesLimit; env.Count (ControllableTotal) gives the true count.
+type ControllableItem struct {
+	Label string
+	Name  string
+}
+
 // DomainControllables holds, for one domain, the user's controllable-object
 // label counts and whether they have a Domain Admin pathway there.
 type DomainControllables struct {
 	Domain    string
 	Labels    map[string]int
-	HasDAPath *bool // nil = unknown
+	Items     []ControllableItem // the sampled controllable objects (bounded by controllablesLimit)
+	HasDAPath *bool              // nil = unknown
 }
 
 // UserData is the aggregated BHE enrichment for a single user.
@@ -513,6 +529,9 @@ type UserData struct {
 	ObjectID      string
 	Props         UserProps
 	Controllables []DomainControllables
+	// ControllableTotal is the API's TRUE count of controlled objects (env.Count),
+	// independent of the sampled label map. 0 means absent/unknown.
+	ControllableTotal int
 }
 
 // GetUserData fetches and aggregates a user's BHE enrichment: properties,
@@ -539,7 +558,7 @@ func (c *Client) GetUserData(username string) (*UserData, error) {
 	}
 	sid := user.ObjectID
 
-	byCount, err := c.GetUserControllables(sid)
+	byCount, ctrlItems, total, err := c.GetUserControllables(sid)
 	if err != nil {
 		return nil, err
 	}
@@ -552,6 +571,7 @@ func (c *Client) GetUserData(username string) (*UserData, error) {
 	}
 
 	ud := &UserData{Username: user.Name, ObjectID: sid, Props: props}
+	ud.ControllableTotal = total
 
 	// Controllables, in deterministic (sorted) domain order.
 	domainsSorted := make([]string, 0, len(byCount))
@@ -562,7 +582,7 @@ func (c *Client) GetUserData(username string) (*UserData, error) {
 	idx := map[string]int{}
 	for _, d := range domainsSorted {
 		idx[d] = len(ud.Controllables)
-		ud.Controllables = append(ud.Controllables, DomainControllables{Domain: d, Labels: byCount[d]})
+		ud.Controllables = append(ud.Controllables, DomainControllables{Domain: d, Labels: byCount[d], Items: ctrlItems[d]})
 	}
 
 	// DA pathways per collected domain (attach to existing entry or append).
@@ -592,10 +612,77 @@ func ExtractDADomains(ud *UserData) []string {
 	return out
 }
 
-// ExtractControllableCount returns the total number of controlled objects.
+// tier0Names are case-insensitive name fragments whose control is DA-equivalent.
+// Substring matching is intentional here: each fragment is a unique, well-known
+// AD token, so substring favors recall and this is only an additive Impact signal
+// (never a gate). NOTE: "ADMINISTRATORS" is deliberately NOT in this slice —
+// substring-matching it over-matches benign delegated groups (e.g. "Backup
+// Administrators", "SQL Administrators"), so isTier0Name handles the built-in
+// Administrators group as an exact local-part match instead.
+var tier0Names = []string{
+	"DOMAIN ADMINS",
+	"ENTERPRISE ADMINS",
+	"DOMAIN CONTROLLERS",
+	"KRBTGT",
+	"ADMINSDHOLDER",
+}
+
+// isTier0Name reports whether an object name matches a Tier-0 / DA-equivalent
+// object. The tier0Names fragments are matched as case-insensitive substrings
+// (unique tokens, recall-favoring). The built-in "Administrators" group is
+// matched as an EXACT local part (the portion before '@', or the whole name when
+// there is no '@') to avoid over-matching delegated "* Administrators" groups.
+func isTier0Name(name string) bool {
+	// Built-in Administrators: exact local-part match only.
+	localPart := name
+	if i := strings.IndexByte(name, '@'); i >= 0 {
+		localPart = name[:i]
+	}
+	if strings.EqualFold(strings.TrimSpace(localPart), "Administrators") {
+		return true
+	}
+	u := strings.ToUpper(name)
+	for _, t := range tier0Names {
+		if strings.Contains(u, t) {
+			return true
+		}
+	}
+	return false
+}
+
+// ExtractControlsTier0 reports whether the user controls a Tier-0 / DA-equivalent
+// object (Domain Admins, Enterprise Admins, Administrators, Domain Controllers,
+// KRBTGT, AdminSDHolder, or the domain object — DCSync). Best-effort over the
+// SAMPLED controllables page (bounded by controllablesLimit); a true magnitude
+// still comes from ExtractControllableCount and the literal DA path from
+// ExtractDADomains. Never a gate — an additive Impact signal.
+func ExtractControlsTier0(ud *UserData) bool {
+	if ud == nil {
+		return false
+	}
+	for _, dc := range ud.Controllables {
+		for _, it := range dc.Items {
+			if isTier0Name(it.Name) {
+				return true
+			}
+			// Control of the domain object itself implies DCSync (DA-equivalent).
+			if it.Label == "Domain" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ExtractControllableCount returns the TRUE number of controlled objects: the
+// API's env.Count (ControllableTotal) when present, falling back to the summed
+// sampled label map only when the total is 0/absent.
 func ExtractControllableCount(ud *UserData) int {
 	if ud == nil {
 		return 0
+	}
+	if ud.ControllableTotal > 0 {
+		return ud.ControllableTotal
 	}
 	total := 0
 	for _, dc := range ud.Controllables {
