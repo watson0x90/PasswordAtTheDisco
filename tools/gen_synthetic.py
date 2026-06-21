@@ -95,6 +95,17 @@ MODERATE = ["Hannah2021!", "BlueOcean77", "Maple$yrup9", "Th1stle#Down", "Gr4nit
 # Deliberately reused across many accounts / domains (lateral movement):
 REUSED_CRACKED = "Autumn#Service24"     # appears cracked in several domains
 REUSED_UNCRACKED = "Q9x!Lateral$Move7"  # appears UNCRACKED in several domains (shared NT, no cleartext)
+# Near-duplicate families: each member goes to a distinct CRACKED account in the
+# SAME domain (similarity is computed per-domain), forming a tight cluster whose
+# reveal makes the shared pattern obvious. Overlap with PWNED is intentional.
+SIMILAR_FAMILIES = {
+    "CORP.LOCAL":    ["Summer2024!", "Summer2023!", "Summer2025!", "Summer2022!"],
+    "EU.CORP.LOCAL": ["Welcome1", "Welcome2", "Welcome3"],
+    "LAB.LOCAL":     ["CompanyName1", "CompanyName2", "CompanyName2024"],
+}
+# A known-leaked password in use but NOT cracked: kept OUT of cracks.txt, so the
+# probe finds the accounts by NT hash even though they never cracked.
+BANNED_IN_USE = "Br3ach3d!2024"
 
 FIRST = ["alice", "bob", "carol", "dave", "erin", "frank", "grace", "heidi",
          "ivan", "judy", "mallory", "olivia", "peggy", "trent", "victor", "wendy",
@@ -118,7 +129,7 @@ def main():
     # crack map: NT hash -> cleartext (deduped; NTLM is unsalted so one line/hash flips all)
     cracks = {}
     counts = {"accounts": 0, "cracked": 0, "uncracked": 0, "reused_cracked": 0,
-              "reused_uncracked": 0, "pwned": 0}
+              "reused_uncracked": 0, "pwned": 0, "similar": 0, "banned_uncracked": 0}
 
     def uname(dom):
         while True:
@@ -129,6 +140,8 @@ def main():
 
     for dom in DOMAINS:
         n = PER_DOMAIN[dom]
+        fam = SIMILAR_FAMILIES[dom]
+        fam_end = 5 + len(fam)  # family members occupy indices [5, fam_end)
         lines = []
         for i in range(n):
             upn = uname(dom)
@@ -144,6 +157,15 @@ def main():
                 pw = REUSED_UNCRACKED
                 cracked = False
                 counts["reused_uncracked"] += 1
+            elif i < fam_end:
+                # near-duplicate family member -> per-domain similarity cluster (cracked)
+                pw = fam[i - 5]
+                counts["similar"] += 1
+            elif i == fam_end:
+                # a known-leaked password in use but never cracked -> probe finds it by NT hash
+                pw = BANNED_IN_USE
+                cracked = False
+                counts["banned_uncracked"] += 1
             elif roll < 0.32:
                 pw = random.choice(PWNED)
                 counts["pwned"] += 1
@@ -191,6 +213,8 @@ Accounts: {counts['accounts']} across {len(DOMAINS)} domains
   cracked (in cracks.txt): {counts['cracked']}   uncracked: {counts['uncracked']}
   reused-cracked cluster:  {counts['reused_cracked']} accounts share "{REUSED_CRACKED}"
   reused-UNCRACKED cluster:{counts['reused_uncracked']} accounts share one NT hash (no cleartext)
+  similarity families:     {counts['similar']} accounts on per-domain near-duplicate families
+  banned-in-use (uncracked):{counts['banned_uncracked']} accounts use "{BANNED_IN_USE}" (NOT in cracks.txt)
   likely HIBP hits:        ~{counts['pwned']} accounts use commonly-pwned passwords
 
 HOW TO USE (in the console, as a lead):
@@ -200,6 +224,18 @@ HOW TO USE (in the console, as a lead):
      hash across every domain, so the reused passwords flip everywhere at once.
   3. Watch the BloodHound enrichment job auto-start (Upload page status line);
      re-run it any time from Setup -> Integrations -> BloodHound.
+
+EXERCISE THE NEW FEATURES:
+  - Similarity clusters + reveal: Overview -> "Password Similarity Clusters".
+    CORP has {len(SIMILAR_FAMILIES['CORP.LOCAL'])} accounts on the Summer####! family, EU has
+    {len(SIMILAR_FAMILIES['EU.CORP.LOCAL'])} on Welcome#, LAB has {len(SIMILAR_FAMILIES['LAB.LOCAL'])} on CompanyName#.
+    Click a node to see its closest matches; as a lead, reveal it and a peer to
+    see the shared pattern. Use Expand for the full-screen graph.
+  - Password-in-use probe: Search -> "Password in use?".
+      probe "{REUSED_CRACKED}"  -> the cracked reuse cluster
+      probe "{BANNED_IN_USE}"   -> accounts still using a leaked password, found by
+                                   NT hash even though they were NEVER cracked
+      probe "{REUSED_UNCRACKED}" -> the uncracked-reuse cluster
 
 Distinct cracked NT hashes in cracks.txt: {len(cracks)}
 (Reuse means fewer distinct hashes than cracked accounts -- that's the point.)
@@ -212,6 +248,8 @@ Distinct cracked NT hashes in cracks.txt: {len(cracks)}
           f"distinct-cracked-hashes={len(cracks)}")
     print(f"  reuse: {counts['reused_cracked']} share a cracked pw, "
           f"{counts['reused_uncracked']} share an uncracked hash; ~{counts['pwned']} pwned")
+    print(f"  similarity-family accounts={counts['similar']} "
+          f"banned-in-use(uncracked)={counts['banned_uncracked']}")
 
 
 if __name__ == "__main__":

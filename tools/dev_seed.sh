@@ -55,7 +55,10 @@ if [ "${1:-}" = "--stop" ]; then stop; exit 0; fi
 stop >/dev/null 2>&1 || true
 
 echo "==> 1/6 synthetic data"
-if [ ! -f "$SYN/cracks.txt" ]; then "$PY" tools/gen_synthetic.py; else echo "    present ($SYN)"; fi
+# Always regenerate: the generator is deterministic (seeded) and fast, so this
+# refreshes a dev's local data whenever gen_synthetic.py changes instead of
+# skipping when stale files happen to exist.
+"$PY" tools/gen_synthetic.py
 
 echo "==> 2/6 throwaway operator ($DEV_USER, lead)"
 DEVHASH="$(printf '%s\n' "$DEV_PASS" | go run ./cmd/patd hashpw 2>/dev/null | grep -E '^\$argon2' | head -1)"
