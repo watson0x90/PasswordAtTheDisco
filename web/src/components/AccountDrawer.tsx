@@ -1,7 +1,8 @@
 import { useEffect, type ReactNode } from "react"
 import type { Account, ScoreBreakdown } from "../api"
 import { RISK_CLASS, hasDA, weaknessTags } from "../util"
-import { impactIsKnown, coverageState } from "../matrix"
+import { impactIsKnown, isProvisional, coverageState } from "../matrix"
+import { GLOSSARY } from "../glossary"
 
 // WeakCell shows wordlist-weakness badges (common / dictionary / forbidden /
 // keyboard). The matched word itself is never shown — only the category.
@@ -45,11 +46,11 @@ export function AccountDrawer({ account: a, onClose }: { account: Account; onClo
       impactIsKnown(a) ? (
         (a.impact_score as number).toFixed(1)
       ) : (
-        <span className="badge-provisional" title="no BloodHound coverage">Unknown</span>
+        <span className="badge-provisional" title={GLOSSARY.impact_unknown}>Unknown</span>
       ),
     ],
     ["Coverage", coverageState(a) === "full" ? "BloodHound-enriched" : "Not enriched"],
-    ...(a.percentile != null ? ([["Triage percentile", `${Math.round((a.percentile ?? 0) * 100)}th`]] as [string, ReactNode][]) : []),
+    ...(a.percentile != null ? ([["Triage percentile", `${Math.round(a.percentile * 100)}th`]] as [string, ReactNode][]) : []),
     ["Risk score", a.risk_score.toFixed(1)],
     ["Risk vector", <code className="vector">{a.risk_vector || "—"}</code>],
     ["HIBP breaches", a.hibp_breached ? a.hibp_breach_count.toLocaleString() : "—"],
@@ -100,36 +101,45 @@ export function AccountDrawer({ account: a, onClose }: { account: Account; onClo
             </div>
           ))}
         </dl>
-        {bd && (
+        {(bd || isProvisional(a)) && (
           <div className="drawer-breakdown">
             <div className="drawer-section-title">Score breakdown (v2)</div>
             <div className="breakdown-grid">
-              <BreakdownCard
-                title="Exposure"
-                score={a.exposure_score.toFixed(1)}
-                factors={[
-                  ["Weakness", v("weakness_score")],
-                  ["HIBP floor", v("hibp_floor")],
-                  ["Cracked floor", v("cracked_floor")],
-                  ["Reuse", v("reuse_bump")],
-                  ["Roastable", v("roastable_bump")],
-                ]}
-              />
-              {impactIsKnown(a) ? (
+              {/* Per-factor cards exist only for cracked accounts (the Go scoreUncracked
+                  path emits no score_breakdown), so they stay gated on bd. */}
+              {bd && (
                 <BreakdownCard
-                  title="Impact"
-                  score={(a.impact_score as number).toFixed(1)}
+                  title="Exposure"
+                  score={a.exposure_score.toFixed(1)}
                   factors={[
-                    ["Privilege", v("privilege_sub_score")],
-                    ["DA path", v("da_component")],
-                    ["Domain", v("domain_modifier")],
+                    ["Weakness", v("weakness_score")],
+                    ["HIBP floor", v("hibp_floor")],
+                    ["Cracked floor", v("cracked_floor")],
+                    ["Reuse", v("reuse_bump")],
+                    ["Roastable", v("roastable_bump")],
                   ]}
                 />
+              )}
+              {/* Impact: a known impact with a breakdown gets the factor card; an Unknown
+                  impact gets the Impact-Unknown panel regardless of whether bd exists, so
+                  uncracked+unenriched accounts (no bd) still get the "run enrichment" call. */}
+              {impactIsKnown(a) ? (
+                bd && (
+                  <BreakdownCard
+                    title="Impact"
+                    score={(a.impact_score as number).toFixed(1)}
+                    factors={[
+                      ["Privilege", v("privilege_sub_score")],
+                      ["DA path", v("da_component")],
+                      ["Domain", v("domain_modifier")],
+                    ]}
+                  />
+                )
               ) : (
                 <div className="bd-card impact-unknown-card">
                   <div className="bd-card-head">
                     <span className="bd-card-title">Impact</span>
-                    <span className="badge-provisional">Unknown</span>
+                    <span className="badge-provisional" title={GLOSSARY.impact_unknown}>Unknown</span>
                   </div>
                   <p className="impact-unknown-note">
                     Impact Unknown — this account was not BloodHound-enriched, so its blast
@@ -138,7 +148,7 @@ export function AccountDrawer({ account: a, onClose }: { account: Account; onClo
                 </div>
               )}
             </div>
-            {bd.enabled_gated && (
+            {bd?.enabled_gated && (
               <p className="bd-note">Impact was gated because the account is disabled in AD.</p>
             )}
           </div>

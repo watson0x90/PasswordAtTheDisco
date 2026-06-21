@@ -27,9 +27,10 @@ export function AccountsTable({ accounts }: { accounts: Account[] }) {
     { key: "domain", get: (a) => a.domain },
     { key: "risk", get: (a) => RISK_RANK[a.risk_level] ?? 0, defaultDir: "desc" },
     { key: "exposure", get: (a) => a.exposure_score, defaultDir: "desc" },
-    // Impact sorts known-desc; Unknown rows use a -1 sentinel so they group last on
-    // desc (never interleaved as if low-impact). impact_score is never coalesced to 0.
-    { key: "impact", get: (a) => (impactIsKnown(a) ? (a.impact_score as number) : -1), defaultDir: "desc" },
+    // Impact sorts known-desc; Unknown rows return null so sortRows groups them LAST in
+    // BOTH directions (never interleaved as if low-impact), matching the sibling policy
+    // column's null-last idiom. impact_score is never coalesced to 0.
+    { key: "impact", get: (a) => (impactIsKnown(a) ? (a.impact_score as number) : null), defaultDir: "desc" },
     { key: "score", get: (a) => a.risk_score, defaultDir: "desc" },
     { key: "hibp", get: (a) => a.hibp_breach_count, defaultDir: "desc" },
     { key: "policy", get: (a) => (!a.cracked ? null : a.meets_policy ? 1 : 0) },
