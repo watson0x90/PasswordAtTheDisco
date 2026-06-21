@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react"
 import { api, type Me } from "./api"
 
 type Status = "loading" | "authenticated" | "anonymous"
@@ -19,6 +19,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null)
   const [autoLocked, setAutoLocked] = useState(false)
 
+  // Track the latest status for event handlers (registered once) without re-binding.
+  const statusRef = useRef(status)
+  statusRef.current = status
+
   // The API layer broadcasts patd:locked on any 423 (idle auto-lock). Reflect it
   // so the app returns to the unlock screen instead of stranding a raw error.
   useEffect(() => {
@@ -28,6 +32,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     window.addEventListener("patd:locked", onLocked)
     return () => window.removeEventListener("patd:locked", onLocked)
+  }, [])
+
+  // The API layer broadcasts patd:unauthorized on any 401 (the session is gone:
+  // server restart wiped the in-memory session store, or it hit idle/absolute
+  // expiry). Return to the login screen so the SPA doesn't sit in a stale
+  // "authenticated" state where mounted pollers keep 401-ing. Guarded to only act
+  // when we currently think we're authenticated, so a failed-login 401 (already
+  // anonymous) doesn't interfere with the login form's own error handling.
+  useEffect(() => {
+    const onUnauthorized = () => {
+      if (statusRef.current !== "authenticated") return
+      setMe(null)
+      setStatus("anonymous")
+      setAutoLocked(false)
+    }
+    window.addEventListener("patd:unauthorized", onUnauthorized)
+    return () => window.removeEventListener("patd:unauthorized", onUnauthorized)
   }, [])
 
   // Bootstrap: ask the server who we are (valid session cookie?).

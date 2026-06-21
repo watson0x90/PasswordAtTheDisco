@@ -285,6 +285,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     if (res.status === 423) {
       window.dispatchEvent(new CustomEvent("patd:locked"))
     }
+    // 401 = the session is gone (server restart wiped the in-memory session store,
+    // or the session hit idle/absolute expiry). Broadcast so AuthProvider returns to
+    // the login screen instead of leaving the SPA in a stale "authenticated" state
+    // where mounted pollers (JobsProvider) keep hitting lead-only endpoints and the
+    // browser logs a recurring console 401 every few seconds.
+    if (res.status === 401) {
+      window.dispatchEvent(new CustomEvent("patd:unauthorized"))
+    }
     let msg = `request failed (${res.status})`
     if (body && typeof body === "object" && "error" in body) {
       const e = (body as { error?: unknown }).error
@@ -326,6 +334,7 @@ export function uploadForm<T>(
         return
       }
       if (xhr.status === 423) window.dispatchEvent(new CustomEvent("patd:locked"))
+      if (xhr.status === 401) window.dispatchEvent(new CustomEvent("patd:unauthorized"))
       let msg = `request failed (${xhr.status})`
       if (body && typeof body === "object" && "error" in body) {
         const e = (body as { error?: unknown }).error
