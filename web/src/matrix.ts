@@ -5,9 +5,11 @@
 // always) and impact_score (0–10 or null when Impact is Unknown — no BloodHound
 // coverage). This module maps those scores to tiers, classifies coverage, counts
 // accounts into the Exposure × Impact grid, and flags provisional (Unknown-impact)
-// accounts. See decisions D2 (omitempty ⇒ 0; impact_score null = Unknown), D3
-// (coverage absent ⇒ "none"), D6 (tier cutoffs mirror B exactly; Unknown is an
-// explicit column).
+// accounts. The design decisions referenced below are recorded in
+// docs/superpowers/specs/2026-06-20-scoring-engine-v2-design.md:
+//   D2 — impact_score null (or impact_known=false) ⇒ Impact Unknown;
+//   D3 — coverage absent ⇒ "none";
+//   D6 — tier cutoffs (≥8/≥6/≥4) mirror the Go engine exactly; Unknown is its own column.
 import type { Account } from "./api"
 
 export type Tier = "Critical" | "High" | "Medium" | "Low"

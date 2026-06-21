@@ -6,7 +6,7 @@ const acct = (o: Partial<Account>): Account => ({
   username: "u", domain: "A", cracked: false, password_length: 0, risk_level: "Low",
   risk_score: 0, risk_vector: "", hibp_breached: false, hibp_breach_count: 0,
   da_domains: "None", controlled_object_count: 0, shared_with: 0, enabled: true,
-  meets_policy: true, complexity: "", exposure_score: 0, impact_score: null, impact_known: false, ...o,
+  meets_policy: true, complexity: "", exposure_score: 0, impact_score: null, impact_known: false, percentile: 0, ...o,
 })
 const ev = (o: Partial<IngestEvent>): IngestEvent => ({ filename: "f", kind: "dump", at: "2026-06-17T00:00:00Z", by: "x", ...o })
 

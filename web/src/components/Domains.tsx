@@ -123,7 +123,7 @@ function DomainDetail({ domain, accounts, report, reportErr, onBack }: { domain:
     { key: "score", get: (a) => a.risk_score, defaultDir: "desc" },
     { key: "hibp", get: (a) => a.hibp_breach_count, defaultDir: "desc" },
     { key: "da", get: (a) => a.da_domains ?? "" },
-    { key: "controlled", get: (a) => (a as Account).controlled_object_count ?? 0, defaultDir: "desc" },
+    { key: "controlled", get: (a) => a.controlled_object_count, defaultDir: "desc" },
   ]
   const detailCols: SortColumn<Account>[] = [
     { key: "username", get: (a) => a.username },
@@ -234,7 +234,7 @@ function DomainDetail({ domain, accounts, report, reportErr, onBack }: { domain:
                   <SortHeader label="DA domains" colKey="da" sort={daPage.sort} onSort={daPage.setSort} />
                   <SortHeader label="Controlled" colKey="controlled" numeric sort={daPage.sort} onSort={daPage.setSort} />
                 </tr></thead>
-                  <tbody>{daPage.rows.map((a) => (<tr key={a.username}><td><AccountLink username={a.username} domain={a.domain} /></td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td className="num">{a.hibp_breach_count || "—"}</td><td className="muted">{a.da_domains ?? "—"}</td><td className="num">{(a as any).controlled_object_count || "—"}</td></tr>))}</tbody>
+                  <tbody>{daPage.rows.map((a) => (<tr key={a.username}><td><AccountLink username={a.username} domain={a.domain} /></td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td className="num">{a.hibp_breach_count || "—"}</td><td className="muted">{a.da_domains ?? "—"}</td><td className="num">{a.controlled_object_count || "—"}</td></tr>))}</tbody>
                 </table>
                 <Pager page={daPage} />
               </>

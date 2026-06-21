@@ -6,11 +6,11 @@ const acct = (o: Partial<Account>): Account => ({
   username: "u", domain: "A", cracked: false, password_length: 0, risk_level: "Low",
   risk_score: 0, risk_vector: "", hibp_breached: false, hibp_breach_count: 0,
   da_domains: "None", controlled_object_count: 0, shared_with: 0, enabled: true,
-  meets_policy: true, complexity: "", exposure_score: 0, impact_score: null, impact_known: false, ...o,
+  meets_policy: true, complexity: "", exposure_score: 0, impact_score: null, impact_known: false, percentile: 0, ...o,
 })
 const ra = (o: Partial<ReportAccount>): ReportAccount => ({
   username: "u", domain: "A", cracked: false, risk_level: "Low", risk_score: 0,
-  hibp_breach_count: 0, shared_with: 0, ...o,
+  hibp_breach_count: 0, shared_with: 0, controlled_object_count: 0, enabled: true, ...o,
 })
 const grp = (o: Partial<ReuseGroup>): ReuseGroup => ({
   group_id: 1, size: 2, cracked: false, hibp_breach_count: 0, has_da_pathway: false,

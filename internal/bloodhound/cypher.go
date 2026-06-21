@@ -193,6 +193,13 @@ func parseUserPropsRows(rows [][]interface{}) map[string]BulkUserProps {
 		enabled := toBool(row[3])
 		pwdLastSet := toInt64(row[4])
 		pwdNeverExpires := toBool(row[5])
+		// hasspn / dontreqpreauth are the roastable signals (cols 6,7). Guarded so a
+		// short (legacy 6-col) row still parses the core fields rather than being dropped.
+		var hasSPN, dontReqPreauth bool
+		if len(row) >= 8 {
+			hasSPN = toBool(row[6])
+			dontReqPreauth = toBool(row[7])
+		}
 		if sam == "" {
 			continue
 		}
@@ -202,6 +209,8 @@ func parseUserPropsRows(rows [][]interface{}) map[string]BulkUserProps {
 			Enabled:         enabled,
 			PwdLastSet:      windowsEpochToUnix(pwdLastSet),
 			PwdNeverExpires: pwdNeverExpires,
+			HasSPN:          hasSPN,
+			DontReqPreauth:  dontReqPreauth,
 		}
 	}
 	return out
@@ -222,6 +231,11 @@ func parseUserPropsFromResults(columns []string, data []json.RawMessage) map[str
 		enabled := toBool(item.Row[3])
 		pwdLastSet := toInt64(item.Row[4])
 		pwdNeverExpires := toBool(item.Row[5])
+		var hasSPN, dontReqPreauth bool
+		if len(item.Row) >= 8 {
+			hasSPN = toBool(item.Row[6])
+			dontReqPreauth = toBool(item.Row[7])
+		}
 		if sam == "" {
 			continue
 		}
@@ -231,6 +245,8 @@ func parseUserPropsFromResults(columns []string, data []json.RawMessage) map[str
 			Enabled:         enabled,
 			PwdLastSet:      windowsEpochToUnix(pwdLastSet),
 			PwdNeverExpires: pwdNeverExpires,
+			HasSPN:          hasSPN,
+			DontReqPreauth:  dontReqPreauth,
 		}
 	}
 	return out
@@ -247,6 +263,8 @@ func parseUserPropsFromNodes(nodes map[string]struct {
 		enabled := toBool(n.Properties["enabled"])
 		pwdLastSet := toInt64(n.Properties["pwdlastset"])
 		pwdNeverExpires := toBool(n.Properties["pwdneverexpires"])
+		hasSPN := toBool(n.Properties["hasspn"])
+		dontReqPreauth := toBool(n.Properties["dontreqpreauth"])
 		if sam == "" {
 			continue
 		}
@@ -256,6 +274,8 @@ func parseUserPropsFromNodes(nodes map[string]struct {
 			Enabled:         enabled,
 			PwdLastSet:      windowsEpochToUnix(pwdLastSet),
 			PwdNeverExpires: pwdNeverExpires,
+			HasSPN:          hasSPN,
+			DontReqPreauth:  dontReqPreauth,
 		}
 	}
 	return out

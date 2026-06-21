@@ -316,6 +316,14 @@ func EscalateSharedWithDA(accts []Account) {
 		if k == "" || !daHashes[k] {
 			continue
 		}
+		// Skip accounts that already have their own DA pathway: a DA-reachable
+		// account seeded its hash into daHashes, so it matches itself here. The
+		// shared-DA signal means "inherited Critical by reusing a DA's password",
+		// which doesn't apply to the DA account itself -- flagging it would inflate
+		// the lateral-movement report with false positives.
+		if a.HasDAPathway() {
+			continue
+		}
 		if a.RiskLevel != "Critical" {
 			a.RiskLevel = "Critical"
 		}

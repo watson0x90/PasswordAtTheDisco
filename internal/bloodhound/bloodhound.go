@@ -204,7 +204,11 @@ func (c *Client) get(uri string) (envelope, int, error) {
 		}
 		return env, status, nil
 	}
-	return envelope{}, lastStatus, nil
+	// Exhausted all retries on transient (429/5xx) failures. Return an error so the
+	// outage is distinguishable from a genuine 200-not-found; callers degrade to
+	// "no enrichment / Impact Unknown" rather than treating the account as low-impact.
+	log.Printf("bloodhound: %s -> %d, gave up after %d attempts", uri, lastStatus, getRetries)
+	return envelope{}, lastStatus, fmt.Errorf("bloodhound: %s: transient status %d after %d attempts", uri, lastStatus, getRetries)
 }
 
 // getOnce issues a single GET and returns the decoded envelope and status code.

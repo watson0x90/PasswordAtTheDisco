@@ -112,8 +112,8 @@ export interface Account {
   // Absent (omitempty) means no enrichment record at all → treat as "none".
   coverage?: "full" | "none"
   // percentile: within-audit triage rank [0,1] (sort key, not a displayed score).
-  // Absent (omitempty) means 0th percentile → treat as 0.
-  percentile?: number
+  // Always serialized by the Go side (no omitempty: 0.0 is a valid lowest rank).
+  percentile: number
   risk_vector: string
   hibp_breached: boolean
   hibp_breach_count: number
@@ -188,7 +188,8 @@ export interface ReportAccount {
   hibp_breach_count: number
   shared_with: number
   da_domains?: string
-  enabled?: boolean
+  controlled_object_count: number
+  enabled: boolean
   is_common?: boolean
   is_dictionary_word?: boolean
   banned_word_count?: number

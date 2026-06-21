@@ -388,3 +388,36 @@ func TestUserPropsRoastableDecode(t *testing.T) {
 		t.Errorf("roastable flags not decoded: hasspn=%v dontreqpreauth=%v", p.HasSPN, p.DontReqPreauth)
 	}
 }
+
+// The bulk-Cypher fallback parsers must also capture the roastable columns (6,7),
+// not just the BHE CE "literals" path -- otherwise HasSPN/DontReqPreauth are
+// silently dropped on tabular/node-format deployments.
+func TestBulkParsersCaptureRoastable(t *testing.T) {
+	const key = "svc@CORP"
+
+	rows := parseUserPropsRows([][]interface{}{
+		{"svc", "CORP", "S-1-5-21-1", true, "0", false, true, true},
+	})
+	if p := rows[key]; !p.HasSPN || !p.DontReqPreauth {
+		t.Errorf("parseUserPropsRows dropped roastable: %+v", p)
+	}
+
+	results := parseUserPropsFromResults(nil, []json.RawMessage{
+		json.RawMessage(`{"row":["svc","CORP","S-1-5-21-1",true,"0",false,true,true]}`),
+	})
+	if p := results[key]; !p.HasSPN || !p.DontReqPreauth {
+		t.Errorf("parseUserPropsFromResults dropped roastable: %+v", p)
+	}
+
+	nodes := parseUserPropsFromNodes(map[string]struct {
+		Properties map[string]interface{} `json:"properties"`
+	}{
+		"n1": {Properties: map[string]interface{}{
+			"samaccountname": "svc", "domain": "CORP", "objectid": "S-1-5-21-1",
+			"enabled": true, "hasspn": true, "dontreqpreauth": true,
+		}},
+	})
+	if p := nodes[key]; !p.HasSPN || !p.DontReqPreauth {
+		t.Errorf("parseUserPropsFromNodes dropped roastable: %+v", p)
+	}
+}

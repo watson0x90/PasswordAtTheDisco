@@ -152,6 +152,15 @@ func TestProcessDomainUncracked(t *testing.T) {
 	if a.RiskVector != want {
 		t.Errorf("uncracked vector = %q, want %q", a.RiskVector, want)
 	}
+	// v2 fix: uncracked accounts now carry the axis breakdown too, so they show up
+	// in the axis-factor dashboard (their Exposure floor is real signal), not just
+	// cracked accounts. Previously scoreUncracked left ScoreBreakdown nil.
+	if a.ScoreBreakdown == nil {
+		t.Fatal("uncracked account must carry a ScoreBreakdown (axis sub-scores)")
+	}
+	if a.ScoreBreakdown.ExposureScore != a.ExposureScore {
+		t.Errorf("uncracked breakdown ExposureScore = %v, want %v", a.ScoreBreakdown.ExposureScore, a.ExposureScore)
+	}
 }
 
 func TestPasswordExpiresAndDays(t *testing.T) {

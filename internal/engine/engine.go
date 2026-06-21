@@ -444,6 +444,27 @@ func (e *Engine) scoreUncracked(domain string, a secretsdump.ParsedAccount, shar
 		PwdNeverExpires: enrData.PwdNeverExpires,
 		HasSPN:          enrData.HasSPN,
 		DontReqPreauth:  enrData.DontReqPreauth,
+		// Uncracked accounts still carry the full axis breakdown: their Exposure
+		// (HIBP/reuse/roastable floors) and Impact sub-scores are meaningful even
+		// without weakness penalties, so they appear in the axis-factor dashboard.
+		// Weakness sub-scores are zero here (password unknown) and omitempty out.
+		ScoreBreakdown: &model.ScoreBreakdown{
+			ExposureScore:     res.Breakdown.ExposureScore,
+			WeaknessScore:     res.Breakdown.WeaknessScore,
+			LengthPenalty:     res.Breakdown.LengthPenalty,
+			ComplexityPenalty: res.Breakdown.ComplexityPenalty,
+			DictPenalty:       res.Breakdown.DictPenalty,
+			SimPenalty:        res.Breakdown.SimPenalty,
+			HIBPFloor:         res.Breakdown.HIBPFloor,
+			CrackedFloor:      res.Breakdown.CrackedFloor,
+			ReuseBump:         res.Breakdown.ReuseBump,
+			RoastableBump:     res.Breakdown.RoastableBump,
+			ImpactScore:       res.Breakdown.ImpactScore,
+			PrivilegeSubScore: res.Breakdown.PrivilegeSubScore,
+			DAComponent:       res.Breakdown.DAComponent,
+			DomainModifier:    res.Breakdown.DomainModifier,
+			EnabledGated:      res.Breakdown.EnabledGated,
+		},
 	}
 }
 
@@ -584,9 +605,16 @@ func (b BulkBloodhoundEnricher) Enrich(username string) Enrichment {
 		v := props.PwdLastSet
 		pwdLastSet = &v
 	}
+	// The bulk controllables map only holds users with a non-zero count, so ctrl==0
+	// means "not in the map" = unknown, not a known zero. Leave the pointer nil so
+	// the vector encodes CO:U (unknown) rather than CO:L (known-low).
+	var controlled *int
+	if ctrl > 0 {
+		controlled = &ctrl
+	}
 	return Enrichment{
 		DADomains:         daDomains,
-		ControlledObjects: &ctrl,
+		ControlledObjects: controlled,
 		PwdNeverExpires:   &never,
 		Enabled:           &enabled,
 		PwdLastSet:        pwdLastSet,

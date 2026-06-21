@@ -22,6 +22,7 @@ function acct(p: Partial<Account>): Account {
     exposure_score: 0,
     impact_score: null,
     impact_known: false,
+    percentile: 0,
     ...p,
   }
 }
@@ -147,5 +148,22 @@ describe("axisFactorBars", () => {
   it("omits empty tiers", () => {
     const bars = axisFactorBars([bdAcct("Critical", true, { weakness_score: 5 })])
     expect(bars.some((b) => b.tier === "Low")).toBe(false)
+  })
+
+  it("treats a known-but-null impact as not-enriched (shared predicate, no drift)", () => {
+    // A malformed payload the backend should never emit, but the shared impactIsKnown
+    // predicate (impact_known AND impact_score !== null) guards it: this must NOT be
+    // averaged into the Impact group as an enriched account.
+    const bars = axisFactorBars([
+      acct({
+        risk_level: "High",
+        impact_known: true,
+        impact_score: null,
+        exposure_score: 5,
+        score_breakdown: { weakness_score: 6, privilege_sub_score: 9 },
+      }),
+    ])
+    const high = bars.find((b) => b.tier === "High")!
+    expect(high.impactKnown).toBe(false)
   })
 })

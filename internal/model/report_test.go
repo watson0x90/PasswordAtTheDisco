@@ -153,3 +153,21 @@ func TestReportAccountCarriesEnabled(t *testing.T) {
 		t.Fatalf("Enabled not propagated to ReportAccount: %+v", byName)
 	}
 }
+
+func TestReportAccountCarriesControlled(t *testing.T) {
+	rep := BuildReport([]Account{
+		{Username: "admin", Domain: "C", Cracked: true, Controlled: 42, RiskScore: 5},
+	})
+	found := false
+	for _, a := range rep.Cracked {
+		if a.Username == "admin" {
+			found = true
+			if a.Controlled != 42 {
+				t.Fatalf("Controlled not propagated to ReportAccount: got %d, want 42", a.Controlled)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("admin account missing from report")
+	}
+}

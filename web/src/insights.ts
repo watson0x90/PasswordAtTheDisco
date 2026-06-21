@@ -2,6 +2,7 @@
 // All inputs come from /api/accounts (no cleartext) so everything is safe to chart.
 import type { Account } from "./api"
 import { hasDA } from "./util"
+import { impactIsKnown } from "./matrix"
 
 export type Rating = "Strong" | "Fair" | "Weak" | "No Data"
 
@@ -309,7 +310,10 @@ export function axisFactorBars(accts: Account[]): TierFactorBars[] {
   for (const [tier, color] of tiers) {
     const group = accts.filter((a) => a.risk_level === tier && a.score_breakdown)
     if (group.length === 0) continue
-    const enriched = group.filter((a) => a.impact_known)
+    // Use the shared predicate (impact_known AND impact_score !== null) so this
+    // surface can't drift from the matrix/table; a malformed known-but-null payload
+    // is correctly treated as not-enriched rather than averaged in as a zero.
+    const enriched = group.filter((a) => impactIsKnown(a))
     const avg = (rows: Account[], k: keyof NonNullable<Account["score_breakdown"]>) =>
       rows.length ? Math.round((rows.reduce((s, a) => s + bdv(a, k), 0) / rows.length) * 100) / 100 : 0
     out.push({

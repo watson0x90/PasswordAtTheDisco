@@ -148,6 +148,12 @@ func TestEscalateSharedWithDAImpact(t *testing.T) {
 	if !hd.EscalatedBySharedDA {
 		t.Fatal("EscalatedBySharedDA flag not set")
 	}
+	// The DA account that seeded its own hash must NOT be flagged as escalated-by-
+	// shared-DA -- it has its own DA pathway; flagging it inflates the lateral-
+	// movement report with false positives.
+	if accts[0].EscalatedBySharedDA {
+		t.Fatal("the DA account itself must not be flagged EscalatedBySharedDA")
+	}
 }
 
 func TestComputePercentiles(t *testing.T) {
