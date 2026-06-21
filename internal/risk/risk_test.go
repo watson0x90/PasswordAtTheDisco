@@ -286,3 +286,57 @@ func TestShareCode(t *testing.T) {
 		}
 	}
 }
+
+func TestImpactPrivilege(t *testing.T) {
+	for _, tc := range []struct {
+		n    int
+		want float64
+	}{{0, 0}, {5, 3}, {11, 5}, {51, 6}, {101, 7}, {501, 8}, {1001, 9}} {
+		got, known := impactScore(Context{Coverage: "full", Enabled: true, ControlledObjects: ip(tc.n)})
+		if !known || !almost(got, tc.want) {
+			t.Errorf("controlled=%d -> impact %v (known=%v), want %v", tc.n, got, known, tc.want)
+		}
+	}
+}
+
+func TestImpactDAandTier0(t *testing.T) {
+	// Own DA path -> 10.
+	got, _ := impactScore(Context{Coverage: "full", Enabled: true, DADomains: []string{"CORP"}})
+	if !almost(got, 10.0) {
+		t.Fatalf("own DA path impact = %v, want 10", got)
+	}
+	// ControlsTier0 (DA-equivalent) -> privilege 10 even with a tiny controlled count.
+	got, _ = impactScore(Context{Coverage: "full", Enabled: true, ControlsTier0: true, ControlledObjects: ip(1)})
+	if !almost(got, 10.0) {
+		t.Fatalf("Tier-0 control impact = %v, want 10", got)
+	}
+}
+
+func TestImpactDisabledGate(t *testing.T) {
+	// A DA-pathed but DISABLED account cannot authenticate -> Impact capped at 2.0.
+	got, known := impactScore(Context{Coverage: "full", Enabled: false, DADomains: []string{"CORP"}})
+	if !known || !almost(got, 2.0) {
+		t.Fatalf("disabled DA impact = %v (known=%v), want 2.0", got, known)
+	}
+}
+
+func TestImpactUnknown(t *testing.T) {
+	// coverage "none" -> Impact Unknown (number is meaningless; known=false).
+	_, known := impactScore(Context{Coverage: "none", Enabled: true, ControlledObjects: ip(500)})
+	if known {
+		t.Fatalf("coverage none must yield Unknown impact (known=false)")
+	}
+}
+
+func TestImpactDomainModifier(t *testing.T) {
+	// privilege 5 (count 11..50) + Critical domain (+1.0) = 6.0.
+	got, _ := impactScore(Context{Coverage: "full", Enabled: true, ControlledObjects: ip(20), DomainRiskLevel: "Critical"})
+	if !almost(got, 6.0) {
+		t.Fatalf("priv5 + Critical domain = %v, want 6.0", got)
+	}
+	// DA path 10 + Critical modifier clamps at 10 (not 11).
+	got, _ = impactScore(Context{Coverage: "full", Enabled: true, DADomains: []string{"CORP"}, DomainRiskLevel: "Critical"})
+	if !almost(got, 10.0) {
+		t.Fatalf("DA + domain clamp = %v, want 10", got)
+	}
+}

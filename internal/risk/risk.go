@@ -329,6 +329,73 @@ func clamp01(x float64) float64 {
 	return x
 }
 
+// --- Impact axis (v2): "blast radius if this credential is compromised?" ---
+
+// privilegeSubScore maps the TRUE controlled-objects count to [0,10]. Control of a
+// Tier-0/DA-equivalent object is the maximum regardless of count.
+func privilegeSubScore(controlled *int, controlsTier0 bool) float64 {
+	if controlsTier0 {
+		return 10
+	}
+	if controlled == nil {
+		return 0
+	}
+	switch oc := *controlled; {
+	case oc > 1000:
+		return 9
+	case oc > 500:
+		return 8
+	case oc > 100:
+		return 7
+	case oc > 50:
+		return 6
+	case oc > 10:
+		return 5
+	case oc > 0:
+		return 3
+	default:
+		return 0
+	}
+}
+
+// daComponent is 10 when THIS account has its own confirmed DA path, else 0.
+// (Shared-hash-to-DA inheritance is an audit-level pass, not here.)
+func daComponent(daDomains []string) float64 {
+	if len(daDomains) > 0 {
+		return 10
+	}
+	return 0
+}
+
+func domainModifier(level string) float64 {
+	switch level {
+	case "Critical":
+		return 1.0
+	case "High":
+		return 0.6
+	case "Medium":
+		return 0.3
+	default:
+		return 0
+	}
+}
+
+// impactScore returns the per-account Impact axis and whether it is known. When
+// coverage == "none" (not BloodHound-enriched) Impact is Unknown (known=false) and
+// the returned number is meaningless.
+func impactScore(c Context) (score float64, known bool) {
+	if c.Coverage == "none" {
+		return 0, false
+	}
+	priv := privilegeSubScore(c.ControlledObjects, c.ControlsTier0)
+	da := daComponent(c.DADomains)
+	imp := math.Min(10.0, math.Max(priv, da)+domainModifier(c.DomainRiskLevel))
+	if !c.Enabled {
+		imp = math.Min(imp, 2.0) // disabled can't authenticate
+	}
+	return imp, true
+}
+
 // floorBase applies the evidence-based cracked-password risk floor: a cracked
 // password always carries baseline risk, tiered by HIBP exposure / weakness.
 //
