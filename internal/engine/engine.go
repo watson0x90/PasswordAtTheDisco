@@ -9,14 +9,11 @@
 package engine
 
 import (
-	"fmt"
-	"math"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/bloodhound"
-	"github.com/watson0x90/PasswordAtTheDisco/internal/hibp"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/pwanalysis"
@@ -44,6 +41,9 @@ type Enrichment struct {
 	// user (per-account coverage). False on the zero Enrichment{} (user not found,
 	// BHE off, or an error) — drives model.Account.Coverage and the Unknown Impact.
 	Enriched bool
+	// ControlsTier0 is true when the user controls a Tier-0/DA-equivalent object
+	// (from bloodhound.ExtractControlsTier0). Feeds risk.Context.ControlsTier0.
+	ControlsTier0 bool
 }
 
 // Enricher supplies BloodHound enrichment for a normalized username.
@@ -294,6 +294,9 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 		Cracked:             true,
 		Coverage:            coverageState(enrData.Enriched),
 		Enabled:             enabledOrUnknown(enrData.Enabled),
+		ControlsTier0:       enrData.ControlsTier0,
+		HasSPN:              boolOrFalse(enrData.HasSPN),
+		DontReqPreauth:      boolOrFalse(enrData.DontReqPreauth),
 		SharedWith:          sharedWith,
 		DADomains:           enrData.DADomains,
 		ControlledObjects:   enrData.ControlledObjects,
@@ -312,6 +315,12 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 		SimilarMax:            simMax,
 	}
 	res := risk.Score(ran, rctx)
+
+	var impactPtr *float64
+	if res.ImpactKnown {
+		v := res.Impact
+		impactPtr = &v
+	}
 
 	var pwdLastSet int64
 	if enrData.PwdLastSet != nil {
@@ -332,6 +341,9 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 		RiskLevel:       res.Level,
 		RiskScore:       res.Score,
 		RiskVector:      res.Vector,
+		ExposureScore:   res.Exposure,
+		ImpactScore:     impactPtr,
+		ImpactKnown:     res.ImpactKnown,
 		HIBPBreached:    count > 0,
 		HIBPBreachCount: count,
 		DADomains:       joinDA(enrData.DADomains),
@@ -356,21 +368,23 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 		SimilarPeers:        peersCache[pw],
 		HasSPN:              enrData.HasSPN,
 		DontReqPreauth:      enrData.DontReqPreauth,
-		// Score breakdown for per-account factor visibility
+		// Score breakdown (v2 two-axis sub-scores + raw per-factor inputs).
 		ScoreBreakdown: &model.ScoreBreakdown{
-			BaseScore:          res.Breakdown.BaseScore,
-			ComplexityFactor:   res.Breakdown.ComplexityFactor,
-			LengthFactor:       res.Breakdown.LengthFactor,
-			DictionaryFactor:   res.Breakdown.DictionaryFactor,
-			SimilarityFactor:   res.Breakdown.SimilarityFactor,
-			TemporalScore:      res.Breakdown.TemporalScore,
-			ComplianceFactor:   res.Breakdown.ComplianceFactor,
-			ExpirationFactor:   res.Breakdown.ExpirationFactor,
-			EnvironmentalScore: res.Breakdown.EnvironmentalScore,
-			PrivilegeFactor:    res.Breakdown.PrivilegeFactor,
-			ShareFactor:        res.Breakdown.ShareFactor,
-			DomainFactor:       res.Breakdown.DomainFactor,
-			HIBPFactor:         res.Breakdown.HIBPFactor,
+			ExposureScore:     res.Breakdown.ExposureScore,
+			WeaknessScore:     res.Breakdown.WeaknessScore,
+			LengthPenalty:     res.Breakdown.LengthPenalty,
+			ComplexityPenalty: res.Breakdown.ComplexityPenalty,
+			DictPenalty:       res.Breakdown.DictPenalty,
+			SimPenalty:        res.Breakdown.SimPenalty,
+			HIBPFloor:         res.Breakdown.HIBPFloor,
+			CrackedFloor:      res.Breakdown.CrackedFloor,
+			ReuseBump:         res.Breakdown.ReuseBump,
+			RoastableBump:     res.Breakdown.RoastableBump,
+			ImpactScore:       res.Breakdown.ImpactScore,
+			PrivilegeSubScore: res.Breakdown.PrivilegeSubScore,
+			DAComponent:       res.Breakdown.DAComponent,
+			DomainModifier:    res.Breakdown.DomainModifier,
+			EnabledGated:      res.Breakdown.EnabledGated,
 		},
 	}
 }
@@ -382,22 +396,41 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 func (e *Engine) scoreUncracked(domain string, a secretsdump.ParsedAccount, sharedWith int, now time.Time, enr Enricher) model.Account {
 	count := e.hibpCount(a.Hash)
 	enrData := enrichVia(enr, a.Username, domain)
-	hasDA := len(enrData.DADomains) > 0
-	score := uncrackedScore(hasDA, sharedWith, count)
-
+	pol := e.Policies.For(domain)
+	rctx := risk.Context{
+		Cracked:           false,
+		SharedWith:        sharedWith,
+		DADomains:         enrData.DADomains,
+		ControlledObjects: enrData.ControlledObjects,
+		ControlsTier0:     enrData.ControlsTier0,
+		Enabled:           enabledOrUnknown(enrData.Enabled),
+		HasSPN:            boolOrFalse(enrData.HasSPN),
+		DontReqPreauth:    boolOrFalse(enrData.DontReqPreauth),
+		Coverage:          coverageState(enrData.Enriched),
+		DomainRiskLevel:   pol.DomainRiskLevel,
+		HIBPBreachCount:   count,
+	}
+	res := risk.Score(risk.Analysis{}, rctx)
+	var impactPtr *float64
+	if res.ImpactKnown {
+		v := res.Impact
+		impactPtr = &v
+	}
 	var pwdLastSet int64
 	if enrData.PwdLastSet != nil {
 		pwdLastSet = *enrData.PwdLastSet
 	}
-
 	return model.Account{
 		Username:        a.Username,
 		Domain:          domain,
 		NTHash:          strings.ToUpper(a.Hash),
 		Cracked:         false,
-		RiskLevel:       risk.ComputeLevel(score, hasDA),
-		RiskScore:       score,
-		RiskVector:      uncrackedVector(hasDA, enrData.ControlledObjects, sharedWith, count),
+		RiskLevel:       res.Level,
+		RiskScore:       res.Score,
+		RiskVector:      res.Vector,
+		ExposureScore:   res.Exposure,
+		ImpactScore:     impactPtr,
+		ImpactKnown:     res.ImpactKnown,
 		HIBPBreached:    count > 0,
 		HIBPBreachCount: count,
 		DADomains:       joinDA(enrData.DADomains),
@@ -457,70 +490,6 @@ func passwordExpires(neverExpires *bool) string {
 	return "Yes"
 }
 
-func uncrackedScore(hasDA bool, sharedWith, breach int) float64 {
-	priv := 1.0
-	if hasDA {
-		priv += 0.5
-	}
-	share := 1.0
-	if sharedWith > 0 {
-		switch {
-		case sharedWith >= 1000:
-			share += 0.5
-		case sharedWith >= 100:
-			share += 0.4
-		case sharedWith >= 10:
-			share += 0.3
-		default:
-			share += 0.2
-		}
-	}
-	score := 5.0 * priv * share * hibp.Factor(breach)
-	return math.Round(math.Min(10.0, score)*10) / 10
-}
-
-func uncrackedVector(hasDA bool, controlled *int, sharedWith, breach int) string {
-	da := "N"
-	if hasDA {
-		da = "Y"
-	}
-	co := "L"
-	if controlled != nil {
-		if *controlled > 50 {
-			co = "H"
-		} else if *controlled > 10 {
-			co = "M"
-		}
-	}
-	s := sharedWith
-	if s > 9 {
-		s = 9
-	}
-	if s < 0 {
-		s = 0
-	}
-	return fmt.Sprintf("UNCRACKED/DA:%s/CO:%s/S:%d/HIBP:%s", da, co, s, uncrackedHIBPLevel(breach))
-}
-
-func uncrackedHIBPLevel(n int) string {
-	switch {
-	case n >= 100000:
-		return "C"
-	case n >= 10000:
-		return "E"
-	case n >= 1000:
-		return "VH"
-	case n >= 100:
-		return "H"
-	case n >= 10:
-		return "M"
-	case n > 0:
-		return "L"
-	default:
-		return "N"
-	}
-}
-
 // NormalizeUsername returns "user@DOMAIN". If username already contains "@" it
 // is returned unchanged; otherwise domain is appended. Used to build the key
 // that BloodHound enrichers expect.
@@ -544,6 +513,10 @@ func derefInt(p *int) int {
 	}
 	return *p
 }
+
+// boolOrFalse dereferences a *bool, treating nil (unknown) as false. Used to feed
+// the roastable signals into risk.Context (absent data => no bump, conservative).
+func boolOrFalse(p *bool) bool { return p != nil && *p }
 
 // enabledOrUnknown treats a missing enabled-status (no BloodHound data) as enabled,
 // so a "disabled" flag fires only on an explicit disabled signal -- not on absent data.
@@ -581,6 +554,7 @@ func (b BloodhoundEnricher) Enrich(username string) Enrichment {
 		Enabled:           &enabled,
 		HasSPN:            &hasSPN,
 		DontReqPreauth:    &dontReqPreauth,
+		ControlsTier0:     bloodhound.ExtractControlsTier0(ud),
 		Enriched:          true,
 	}
 	if v, err := ud.Props.PwdLastSet.Int64(); err == nil && v > 0 {
@@ -616,6 +590,12 @@ func (b BulkBloodhoundEnricher) Enrich(username string) Enrichment {
 		PwdLastSet:        pwdLastSet,
 		HasSPN:            &hasSPN,
 		DontReqPreauth:    &dontReqPreauth,
+		// BulkBloodhoundEnricher: the 3-query bulk Cypher prefetch does not currently
+		// collect Tier-0 control edges, so ControlsTier0 is conservatively false here.
+		// The live BloodhoundEnricher path sets it; bulk under-reports Tier-0 by design
+		// until the bulk Cypher is extended (tracked separately). False (not true) keeps
+		// it conservative: a missed Tier-0 lowers Impact, never falsely inflates it.
+		ControlsTier0: false,
 		// Enriched is the "was this account found in BloodHound" signal. A bulk
 		// MISS returns the zero BulkUserProps{} (empty ObjectID). A HIT is a parsed
 		// Cypher row: the parsers in internal/bloodhound/cypher.go only emit a row
