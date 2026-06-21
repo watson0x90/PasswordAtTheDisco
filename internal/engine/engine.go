@@ -613,8 +613,14 @@ func (b BulkBloodhoundEnricher) Enrich(username string) Enrichment {
 		PwdLastSet:        pwdLastSet,
 		HasSPN:            &hasSPN,
 		DontReqPreauth:    &dontReqPreauth,
-		// A bulk miss returns the zero BulkUserProps{} (empty ObjectID). A hit is
-		// populated from a real Cypher row, so ObjectID is non-empty.
+		// Enriched is the "was this account found in BloodHound" signal. A bulk
+		// MISS returns the zero BulkUserProps{} (empty ObjectID). A HIT is a parsed
+		// Cypher row: the parsers in internal/bloodhound/cypher.go only emit a row
+		// when sam != "", and for every such user node BloodHound always populates
+		// a SID into objectid -> ObjectID. So ObjectID != "" reliably distinguishes
+		// a hit from a miss. We key off ObjectID (not sam) deliberately: sam is the
+		// bulk-map lookup key, not a stored field, so ObjectID is the populated
+		// field that proves the row was actually parsed and present.
 		Enriched: props.ObjectID != "",
 	}
 }

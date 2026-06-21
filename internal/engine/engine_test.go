@@ -303,9 +303,19 @@ func TestCoverageFromEnriched(t *testing.T) {
 	}
 	// Uncracked path too.
 	e.Enricher = fakeEnricher{"svc@CORP": {Enriched: true, Enabled: bp(true)}}
-	u := e.ProcessDomain("CORP", nil, []secretsdump.ParsedAccount{{Username: "svc", Domain: "CORP", Hash: "UH"}})[0]
-	if u.Coverage != "full" {
-		t.Errorf("uncracked svc coverage = %q, want full", u.Coverage)
+	uncracked := []secretsdump.ParsedAccount{
+		{Username: "svc", Domain: "CORP", Hash: "UH"},
+		{Username: "phantom", Domain: "CORP", Hash: "UH2"}, // no enrichment entry
+	}
+	byU := map[string]model.Account{}
+	for _, a := range e.ProcessDomain("CORP", nil, uncracked) {
+		byU[a.Username] = a
+	}
+	if byU["svc"].Coverage != "full" {
+		t.Errorf("uncracked svc coverage = %q, want full", byU["svc"].Coverage)
+	}
+	if byU["phantom"].Coverage != "none" {
+		t.Errorf("uncracked phantom (no enrichment) coverage = %q, want none", byU["phantom"].Coverage)
 	}
 }
 
