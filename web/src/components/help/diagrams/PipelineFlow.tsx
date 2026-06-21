@@ -14,6 +14,13 @@
 // spacing/px in .tsx is banned). Stage colour is reinforced with text, not
 // colour alone (a11y).
 
+import { wrap } from "./wrap"
+
+// Node captions are wrapped to this width (chars). The wrap() helper never drops
+// words; these captions are authored to fit in <=3 lines at PIPE_WRAP so no line
+// cap / .slice is needed (the dropped-word "clusters"/"box" defects are gone).
+const PIPE_WRAP = 24
+
 interface Stage {
   // x is the centre of the node in viewBox units.
   x: number
@@ -38,7 +45,7 @@ const TONE_STROKE: Record<Stage["tone"], string> = {
 // above/below it.
 const SPINE: Stage[] = [
   { x: 95, step: "1", title: "Dump", sub: "NTLM hashes + cracked passwords from the AD secrets dump", tone: "dim" },
-  { x: 290, step: "2", title: "Analysis", sub: "Strength, dictionary/keyboard patterns, hash reuse clusters", tone: "low" },
+  { x: 290, step: "2", title: "Analysis", sub: "Strength, dictionary & keyboard patterns, reuse clusters", tone: "low" },
   { x: 500, step: "3", title: "Enrichment", sub: "Inputs joined with the two sources above", tone: "accent" },
   { x: 710, step: "4", title: "Scoring", sub: "Exposure × Impact → Level, provisional when uncovered", tone: "high" },
   { x: 905, step: "5", title: "Dashboard", sub: "Triage worklist, coverage banner, lead-gated reveal", tone: "med" },
@@ -46,7 +53,10 @@ const SPINE: Stage[] = [
 
 // The two enrichment sources, branching off the centre (Enrichment) node.
 const HIBP_X = 500
-const HIBP_Y = 36
+// HIBP_Y is the CENTRE of the source box. NODE_H/2 = 58, so the box top is
+// HIBP_Y - 58; keep HIBP_Y >= 58 so the full box stays inside the viewBox top
+// (0). 72 → box spans 14..130, comfortably clear of the 0 edge and the spine.
+const HIBP_Y = 72
 const BH_X = 500
 const BH_Y = 300
 
@@ -134,7 +144,7 @@ export function PipelineFlow() {
             <text x={HIBP_X} y={HIBP_Y - 2} textAnchor="middle" className="pipe-flow-node-title">
               HIBP corpus
             </text>
-            {wrap("Local NTLM breach index, matched offline — no hash leaves the box").map((line, li) => (
+            {wrap("Local NTLM index, matched offline — no hash leaves the box", PIPE_WRAP).map((line, li) => (
               <text key={li} x={HIBP_X} y={HIBP_Y + 16 + li * 13} textAnchor="middle" className="pipe-flow-node-sub">
                 {line}
               </text>
@@ -158,7 +168,7 @@ export function PipelineFlow() {
             <text x={BH_X} y={BH_Y + 40} textAnchor="middle" className="pipe-flow-node-title">
               BloodHound graph
             </text>
-            {wrap("DA pathways, blast radius, Tier-0 control, roastability").map((line, li) => (
+            {wrap("DA pathways, blast radius, Tier-0 control, roastability", PIPE_WRAP).map((line, li) => (
               <text key={li} x={BH_X} y={BH_Y + 58 + li * 13} textAnchor="middle" className="pipe-flow-node-sub">
                 {line}
               </text>
@@ -186,7 +196,7 @@ export function PipelineFlow() {
                 <text x={s.x} y={NODE_Y + 56} textAnchor="middle" className="pipe-flow-node-title">
                   {s.title}
                 </text>
-                {wrap(s.sub).map((line, li) => (
+                {wrap(s.sub, PIPE_WRAP).map((line, li) => (
                   <text key={li} x={s.x} y={NODE_Y + 74 + li * 13} textAnchor="middle" className="pipe-flow-node-sub">
                     {line}
                   </text>
@@ -203,23 +213,4 @@ export function PipelineFlow() {
       </div>
     </div>
   )
-}
-
-// wrap splits a short caption into <=3 balanced lines for the fixed node width.
-// Pure string layout (no DOM measurement) — deterministic and test-friendly.
-function wrap(text: string): string[] {
-  const words = text.split(" ")
-  const lines: string[] = []
-  let cur = ""
-  const max = 24
-  for (const w of words) {
-    if ((cur + " " + w).trim().length > max && cur) {
-      lines.push(cur)
-      cur = w
-    } else {
-      cur = (cur + " " + w).trim()
-    }
-  }
-  if (cur) lines.push(cur)
-  return lines.slice(0, 3)
 }

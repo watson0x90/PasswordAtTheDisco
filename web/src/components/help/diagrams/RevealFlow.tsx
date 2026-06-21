@@ -9,6 +9,12 @@
 // COMPUTED gradient stop (allowed by the styleguard — only literal spacing/px in
 // .tsx is banned).
 
+import { wrap } from "./wrap"
+
+// Node captions wrap to this width (chars). Authored to fit in <=3 lines at
+// REVEAL_WRAP; wrap() never drops words, so no line cap / .slice is needed.
+const REVEAL_WRAP = 22
+
 interface Stage {
   // x is the centre of the node in viewBox units.
   x: number
@@ -93,7 +99,7 @@ export function RevealFlow() {
                 <text x={s.x} y={NODE_Y + 52} textAnchor="middle" className="reveal-flow-node-title">
                   {s.title}
                 </text>
-                {wrap(s.sub).map((line, li) => (
+                {wrap(s.sub, REVEAL_WRAP).map((line, li) => (
                   <text key={li} x={s.x} y={NODE_Y + 70 + li * 13} textAnchor="middle" className="reveal-flow-node-sub">
                     {line}
                   </text>
@@ -110,23 +116,4 @@ export function RevealFlow() {
       </div>
     </div>
   )
-}
-
-// wrap splits a short caption into <=3 balanced lines for the fixed node width.
-// Pure string layout (no DOM measurement) — deterministic and test-friendly.
-function wrap(text: string): string[] {
-  const words = text.split(" ")
-  const lines: string[] = []
-  let cur = ""
-  const max = 22
-  for (const w of words) {
-    if ((cur + " " + w).trim().length > max && cur) {
-      lines.push(cur)
-      cur = w
-    } else {
-      cur = (cur + " " + w).trim()
-    }
-  }
-  if (cur) lines.push(cur)
-  return lines.slice(0, 3)
 }
