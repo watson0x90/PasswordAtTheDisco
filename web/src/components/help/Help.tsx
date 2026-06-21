@@ -3,6 +3,8 @@ import { useChapterHash } from "./useChapterHash"
 import { ChapterThesis } from "./ChapterThesis"
 import { ChapterScoring } from "./ChapterScoring"
 import { ChapterPipeline } from "./ChapterPipeline"
+import { ChapterSecurity } from "./ChapterSecurity"
+import { ChapterGlossary } from "./ChapterGlossary"
 import { Logo } from "../Logo"
 
 // Help / Methodology surface — a PURE STATIC explainer of how the tool works.
@@ -44,9 +46,10 @@ export function Help({ onClose }: { onClose?: () => void }) {
           <ChapterScoring />
         ) : active.id === "pipeline" ? (
           <ChapterPipeline />
+        ) : active.id === "security" ? (
+          <ChapterSecurity />
         ) : (
-          // Placeholder — remaining chapter sections land in T5.
-          <h2>{active.label}</h2>
+          <ChapterGlossary />
         )}
       </section>
     </div>

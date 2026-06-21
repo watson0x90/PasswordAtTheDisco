@@ -2075,11 +2075,159 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
 .pipe-degrade-card p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--dim); }
 .pipe-degrade-card p strong { color: var(--text); }
 
+/* ── Chapter 4 — "Security & privacy" ────────────────────────────────────────
+   The CISO reassurance chapter: four themed groups of scannable assurance cards.
+   Each group carries an accent token; cards are a uniform glass grid. Token-based
+   spacing only. */
+.sec-groups { display: flex; flex-direction: column; gap: var(--space-2xl); }
+.sec-group { display: flex; flex-direction: column; gap: var(--space-lg); }
+.sec-group-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding-left: var(--space-md);
+  border-left: 2px solid var(--accent);
+}
+.sec-group.data .sec-group-head { border-left-color: var(--crit); }
+.sec-group.access .sec-group-head { border-left-color: var(--accent); }
+.sec-group.transport .sec-group-head { border-left-color: var(--low); }
+.sec-group.build .sec-group-head { border-left-color: var(--med); }
+.sec-group-tag {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.sec-group.data .sec-group-tag { color: var(--crit); }
+.sec-group.access .sec-group-tag { color: var(--accent); }
+.sec-group.transport .sec-group-tag { color: var(--low); }
+.sec-group.build .sec-group-tag { color: var(--med); }
+.sec-group-title {
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text);
+}
+.sec-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-lg);
+}
+.sec-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  background: var(--glass);
+  padding: var(--space-lg);
+}
+.sec-group.data .sec-card { border-top: 2px solid rgba(251, 113, 133, 0.45); }
+.sec-group.access .sec-card { border-top: 2px solid rgba(56, 189, 248, 0.45); }
+.sec-group.transport .sec-card { border-top: 2px solid rgba(34, 211, 238, 0.45); }
+.sec-group.build .sec-card { border-top: 2px solid rgba(163, 230, 53, 0.45); }
+.sec-card-k {
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+.sec-card-body { margin: 0; font-size: 13px; line-height: 1.55; color: var(--dim); }
+.sec-card-body strong { color: var(--text); font-weight: 600; }
+.sec-card-body code {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--accent);
+  background: rgba(56, 189, 248, 0.1);
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+}
+.sec-foot {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--faint);
+  font-style: italic;
+  max-width: 78ch;
+}
+
+/* ── Chapter 5 — "Glossary & FAQ" ────────────────────────────────────────────
+   A definition list (terms reused from glossary.ts, tagged) plus an FAQ of
+   Q/A cards. Token-based spacing only. */
+.gloss-dl { margin: 0; display: flex; flex-direction: column; gap: var(--space-md); }
+.gloss-item {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.32fr) minmax(0, 1fr);
+  gap: var(--space-lg);
+  align-items: start;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  background: var(--glass);
+  padding: var(--space-lg);
+}
+.gloss-term {
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  align-items: flex-start;
+}
+.gloss-src {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+}
+.gloss-src.reused { color: var(--low); background: var(--low-bg); }
+.gloss-src.local { color: var(--faint); background: rgba(86, 96, 118, 0.16); }
+.gloss-def { margin: 0; font-size: 13px; line-height: 1.6; color: var(--dim); }
+
+.faq { display: flex; flex-direction: column; gap: var(--space-lg); }
+.faq-head { display: flex; flex-direction: column; gap: var(--space-xs); }
+.faq-eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.faq-title { font-family: var(--display); font-size: 20px; font-weight: 700; margin: 0; color: var(--text); }
+.faq-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-lg);
+}
+.faq-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  border: 1px solid var(--glass-border);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--glass);
+  padding: var(--space-lg);
+}
+.faq-q { font-family: var(--display); font-size: 16px; font-weight: 700; margin: 0; color: var(--text); }
+.faq-a { margin: 0; font-size: 13px; line-height: 1.6; color: var(--dim); }
+.faq-a strong { color: var(--text); font-weight: 600; }
+
 @media (max-width: 880px) {
   .help-shell { grid-template-columns: minmax(0, 1fr); gap: var(--space-lg); }
   .help-nav { position: static; flex-direction: row; flex-wrap: wrap; }
   .help-contrast { grid-template-columns: minmax(0, 1fr); }
   .help-contrast-arrow { transform: rotate(90deg); }
+  .gloss-item { grid-template-columns: minmax(0, 1fr); gap: var(--space-sm); }
 }
 
 @media (max-width: 720px) {
