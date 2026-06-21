@@ -74,7 +74,7 @@ func runToken(args []string) {
 			fmt.Fprintln(os.Stderr, "create failed:", err)
 			os.Exit(1)
 		}
-		if *role == "lead" {
+		if auth.Role(*role) == auth.RoleLead {
 			fmt.Fprintln(os.Stderr, "WARNING: a lead token can reveal AD cleartext via the MCP reveal tool.")
 		}
 		fmt.Println(full)
@@ -83,10 +83,10 @@ func runToken(args []string) {
 		fs := flag.NewFlagSet("token list", flag.ExitOnError)
 		file := fs.String("file", defaultPath, "tokens file")
 		_ = fs.Parse(args[1:])
-		st, err := auth.OpenTokenStore(*file)
+		st, err := openOrNewTokenStore(*file)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "no tokens:", err)
-			return
+			fmt.Fprintln(os.Stderr, "cannot read tokens:", err)
+			os.Exit(1)
 		}
 		tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(tw, "ID\tROLE\tLABEL\tCREATED\tLAST USED\tSTATUS")
