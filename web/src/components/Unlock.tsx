@@ -54,7 +54,7 @@ export function Unlock({ onShowHelp }: { onShowHelp?: () => void }) {
             </button>
           </div>
           {onShowHelp && (
-            <button type="button" className="link-btn unlock-signout" onClick={onShowHelp}>
+            <button type="button" className="link-btn unlock-help" onClick={onShowHelp}>
               How it works
             </button>
           )}
@@ -109,7 +109,7 @@ export function Unlock({ onShowHelp }: { onShowHelp?: () => void }) {
           sign out
         </button>
         {onShowHelp && (
-          <button type="button" className="link-btn unlock-signout" onClick={onShowHelp}>
+          <button type="button" className="link-btn unlock-help" onClick={onShowHelp}>
             How it works
           </button>
         )}

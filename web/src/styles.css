@@ -327,6 +327,9 @@ a { color: var(--accent); text-decoration: none; }
 .unlock-actions { display: flex; gap: 10px; margin-top: 18px; }
 .unlock-actions .btn { flex: 1; }
 .unlock-signout { display: block; width: 100%; text-align: center; margin-top: 14px; }
+/* "How it works" link on the locked screen — distinct from sign-out for clarity
+   (mirrors Login's .login-help); token-based spacing, no inline gaps. */
+.unlock-help { display: block; width: 100%; text-align: center; margin-top: var(--space-md); }
 
 .error {
   font-size: 13px;

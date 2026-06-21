@@ -13,7 +13,10 @@ import { Logo } from "../Logo"
 //   - absent   → embedded inside the app shell's <main> (post-auth).
 
 export function Help({ onClose }: { onClose?: () => void }) {
-  const [chapter, setChapter] = useChapterHash("thesis")
+  // Sync the `#help/<slug>` deep-link only in STANDALONE mode (onClose present:
+  // the pre-auth/locked screens). Embedded (post-auth) Help must NOT touch the
+  // URL hash, else a later reload would re-open the standalone Help shell.
+  const [chapter, setChapter] = useChapterHash("thesis", !!onClose)
   const active = CHAPTERS.find((c) => c.id === chapter) ?? CHAPTERS[0]
 
   const body = (

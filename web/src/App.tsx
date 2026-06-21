@@ -23,6 +23,7 @@ import { CommandPalette } from "./components/CommandPalette"
 // Help is a small, pure static surface and MUST load pre-auth (login/locked
 // screens), so it is imported eagerly — never behind the recharts lazy chunk.
 import { Help } from "./components/help/Help"
+import { isHelpHash } from "./components/help/useChapterHash"
 
 // Recharts is heavy (~180KB). Lazy-load Dashboard and Domains so the charting
 // chunk is deferred until after auth, not on the login screen. (Insights renders
@@ -75,8 +76,9 @@ function Routed() {
   // Pre-auth / locked reachability for the Help surface. Seeded from the hash so
   // a cold `#help/<slug>` URL (an emailed chapter link) auto-opens Help even
   // before login. useState initializer runs once, so toggling does not re-read
-  // the (possibly stale) hash.
-  const [showHelp, setShowHelp] = useState(() => location.hash.startsWith("#help"))
+  // the (possibly stale) hash. isHelpHash agrees with parseHelpHash on the
+  // `#help` prefix (so `#helpfoo` does not false-trigger).
+  const [showHelp, setShowHelp] = useState(() => isHelpHash(location.hash))
 
   if (status === "loading") {
     return (
@@ -85,7 +87,17 @@ function Routed() {
       </div>
     )
   }
-  if (showHelp) return <Help onClose={() => setShowHelp(false)} />
+  if (showHelp)
+    return (
+      <Help
+        onClose={() => {
+          // Strip the `#help` deep-link before closing so a reload does not
+          // re-open standalone Help (the useState initializer above re-reads it).
+          if (isHelpHash(location.hash)) history.replaceState(null, "", location.pathname + location.search)
+          setShowHelp(false)
+        }}
+      />
+    )
   if (status === "anonymous") return <Login onShowHelp={() => setShowHelp(true)} />
   // Authenticated but the encrypted store is locked: gate behind the unlock screen.
   if (me && !me.store_unlocked) return <Unlock onShowHelp={() => setShowHelp(true)} />

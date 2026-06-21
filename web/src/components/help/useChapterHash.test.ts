@@ -1,6 +1,21 @@
 import { describe, it, expect } from "vitest"
-import { parseHelpHash, formatHelpHash } from "./useChapterHash"
+import { parseHelpHash, formatHelpHash, isHelpHash } from "./useChapterHash"
 import { CHAPTERS } from "./chapters"
+
+describe("isHelpHash", () => {
+  it("is true for the bare #help and any #help/<slug>", () => {
+    expect(isHelpHash("#help")).toBe(true)
+    expect(isHelpHash("#help/how-we-score")).toBe(true)
+    // looser than parseHelpHash: an unknown slug still IS a help hash
+    expect(isHelpHash("#help/bogus")).toBe(true)
+  })
+
+  it("is false for non-help hashes (and the #help prefix typosquat)", () => {
+    expect(isHelpHash("#helpfoo")).toBe(false)
+    expect(isHelpHash("#nope")).toBe(false)
+    expect(isHelpHash("")).toBe(false)
+  })
+})
 
 describe("parseHelpHash", () => {
   it("parses a known #help/<slug> hash to its chapter id", () => {
