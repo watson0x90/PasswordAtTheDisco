@@ -1958,6 +1958,123 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
 .tier-pill.low { color: var(--low); background: var(--low-bg); }
 .tier-pill.unknown { color: var(--faint); border: 1px dashed var(--faint); }
 
+/* ── Chapter 3 — the enrichment pipeline (flow diagram / sources / degradation) ─
+   Token-based spacing only; mirrors the reveal-flow + score-axis house style. */
+
+/* Pipeline-flow diagram card (mirrors .reveal-flow-*). */
+.pipe-flow-card { padding: var(--space-lg) var(--space-xl) var(--space-md); }
+.pipe-flow { width: 100%; }
+.pipe-flow-svg { width: 100%; height: auto; display: block; }
+.pipe-flow-link { stroke: var(--accent); stroke-width: 2; opacity: 0.7; }
+.pipe-flow-branch-optional { stroke: var(--dim); stroke-width: 2; stroke-dasharray: 5 4; opacity: 0.7; }
+.pipe-flow-box { fill: rgba(20, 29, 49, 0.9); stroke-width: 1.5; }
+.pipe-flow-box-optional { stroke-dasharray: 5 4; }
+.pipe-flow-step { font-family: var(--mono); font-size: 12px; font-weight: 700; fill: #0f1525; }
+.pipe-flow-node-title { font-family: var(--display); font-size: 13px; font-weight: 700; fill: var(--text); }
+.pipe-flow-node-sub { font-family: var(--sans); font-size: 9.5px; fill: var(--dim); }
+.pipe-flow-source-tag { font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.12em; fill: var(--low); }
+.pipe-flow-source-tag.optional { fill: var(--faint); }
+.pipe-flow-foot { font-family: var(--sans); font-size: 11px; font-style: italic; fill: var(--faint); }
+
+/* The two enrichment sources, side by side (mirrors .score-axes). */
+.pipe-sources {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--space-lg);
+}
+.pipe-source {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  border: 1px solid var(--glass-border);
+  border-top: 3px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  background: var(--glass);
+  padding: var(--space-xl);
+}
+.pipe-source.bloodhound { border-top-color: var(--accent-2); }
+.pipe-source.hibp { border-top-color: var(--low); }
+.pipe-source-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-sm); }
+.pipe-source-tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  width: 100%;
+}
+.pipe-source-title { font-family: var(--display); font-size: 24px; font-weight: 700; margin: 0; }
+.pipe-source.bloodhound .pipe-source-title { color: var(--accent-2); }
+.pipe-source.hibp .pipe-source-title { color: var(--low); }
+.pipe-source-range {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--faint);
+}
+.pipe-source-lede { margin: 0; font-size: 14px; line-height: 1.6; color: var(--dim); }
+.pipe-source-lede strong { color: var(--text); }
+.pipe-source-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+.pipe-source-list li {
+  position: relative;
+  padding-left: var(--space-lg);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--dim);
+}
+.pipe-source-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.pipe-source.bloodhound .pipe-source-list li::before { background: var(--accent-2); }
+.pipe-source.hibp .pipe-source-list li::before { background: var(--low); }
+.pipe-source-list li b { color: var(--text); font-weight: 600; }
+.pipe-source-list li strong { color: var(--text); }
+
+/* Graceful degradation — three honest-by-design cards. */
+.pipe-degrade { display: flex; flex-direction: column; gap: var(--space-lg); }
+.pipe-degrade-head { display: flex; flex-direction: column; gap: var(--space-xs); }
+.pipe-degrade-eyebrow {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.pipe-degrade-title { font-family: var(--display); font-size: 22px; font-weight: 700; margin: 0; }
+.pipe-degrade-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-lg);
+}
+.pipe-degrade-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  border: 1px solid var(--glass-border);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--glass);
+  padding: var(--space-lg);
+}
+.pipe-degrade-card.valid { border-left-color: var(--low); }
+.pipe-degrade-card.unknown { border-left-color: var(--faint); border-left-style: dashed; }
+.pipe-degrade-card.banner { border-left-color: var(--accent); }
+.pipe-degrade-k { font-family: var(--display); font-size: 15px; font-weight: 700; color: var(--text); }
+.pipe-degrade-card p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--dim); }
+.pipe-degrade-card p strong { color: var(--text); }
+
 @media (max-width: 880px) {
   .help-shell { grid-template-columns: minmax(0, 1fr); gap: var(--space-lg); }
   .help-nav { position: static; flex-direction: row; flex-wrap: wrap; }
