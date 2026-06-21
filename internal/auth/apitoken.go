@@ -86,7 +86,8 @@ type APIToken struct {
 }
 
 // dummyTokenHash equalises Verify timing on unknown-id / malformed paths, mirroring
-// the dummyHash trick in users.go.
+// the dummyHash trick in users.go. It is a var (not const) because hashSecret computes
+// its value at runtime.
 var dummyTokenHash = hashSecret("not-a-real-token-secret-0000000000")
 
 // TokenInfo is a redacted token view (no secret hash) for the admin UI / CLI list.
@@ -192,8 +193,7 @@ func (s *TokenStore) Verify(full string) (APIToken, bool) {
 	if !found || !match || rec.Disabled || (rec.Expires != nil && rec.Expires.Before(time.Now())) {
 		return APIToken{}, false
 	}
-	s.touchLastUsed(id)
-	return rec, true
+	return s.touchLastUsed(id), true
 }
 
 // List returns redacted token views sorted by Created (newest first).
@@ -221,21 +221,25 @@ func (s *TokenStore) Revoke(id string) bool {
 	return true
 }
 
-// touchLastUsed updates last_used in memory and persists it at most once/min/token.
-func (s *TokenStore) touchLastUsed(id string) {
+// touchLastUsed updates last_used in memory, persists it at most once/min/token, and
+// returns the updated record (so Verify's returned APIToken reflects the new LastUsed).
+func (s *TokenStore) touchLastUsed(id string) APIToken {
 	now := time.Now().UTC()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	rec, ok := s.tokens[id]
 	if !ok {
-		return
+		return APIToken{}
 	}
 	rec.LastUsed = &now
 	s.tokens[id] = rec
 	if last := s.lastFlush[id]; last.IsZero() || now.Sub(last) >= time.Minute {
 		s.lastFlush[id] = now
+		// Persist under the lock: low frequency (<=1/min/token) makes this acceptable.
+		// If token volume grows, decouple persist to a background goroutine.
 		_ = s.persistLocked() // best-effort; last_used is non-critical
 	}
+	return rec
 }
 
 // persistLocked writes the token set atomically. Caller must hold the write lock.

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -113,11 +114,18 @@ func TestTokenStoreListRedactedAndRevoke(t *testing.T) {
 			t.Fatal("list label mismatch")
 		}
 	}
+	// TokenInfo must never carry the secret hash, even through JSON.
+	if blob, _ := json.Marshal(s.List()); strings.Contains(string(blob), "secret_hash") {
+		t.Fatal("List output leaked secret_hash")
+	}
 	if !s.Revoke(rec.ID) {
 		t.Fatal("revoke of existing token returned false")
 	}
 	if s.Revoke(rec.ID) {
 		t.Fatal("revoke of missing token returned true")
+	}
+	if items := s.List(); len(items) != 0 {
+		t.Fatalf("expected empty list after revoke, got %d", len(items))
 	}
 }
 
