@@ -1,8 +1,10 @@
 package auth
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNewTokenFormatAndParse(t *testing.T) {
@@ -65,5 +67,69 @@ func TestVerifySecretRoundTrip(t *testing.T) {
 	}
 	if len(h) != 64 {
 		t.Fatalf("hash length = %d, want 64", len(h))
+	}
+}
+
+func TestTokenStoreIssueVerify(t *testing.T) {
+	s := NewTokenStore("", nil)
+	full, rec, err := s.Issue(RoleAnalyst, "gemini", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.Role != RoleAnalyst || rec.Label != "gemini" || rec.SecretHash == "" {
+		t.Fatalf("bad record: %+v", rec)
+	}
+	got, ok := s.Verify(full)
+	if !ok || got.ID != rec.ID || got.Role != RoleAnalyst {
+		t.Fatalf("verify failed: %+v ok=%v", got, ok)
+	}
+	if _, ok := s.Verify(full + "x"); ok {
+		t.Fatal("verify accepted a tampered secret")
+	}
+	if _, ok := s.Verify("patdmcp_unknown_secret"); ok {
+		t.Fatal("verify accepted an unknown id")
+	}
+}
+
+func TestTokenStoreExpiredAndDisabled(t *testing.T) {
+	s := NewTokenStore("", nil)
+	past := time.Now().Add(-time.Hour)
+	full, _, _ := s.Issue(RoleLead, "expired", &past)
+	if _, ok := s.Verify(full); ok {
+		t.Fatal("expired token verified")
+	}
+	full2, rec2, _ := s.Issue(RoleLead, "live", nil)
+	s.setDisabledForTest(rec2.ID, true)
+	if _, ok := s.Verify(full2); ok {
+		t.Fatal("disabled token verified")
+	}
+}
+
+func TestTokenStoreListRedactedAndRevoke(t *testing.T) {
+	s := NewTokenStore("", nil)
+	_, rec, _ := s.Issue(RoleAnalyst, "a", nil)
+	for _, info := range s.List() {
+		if info.ID == rec.ID && info.Label != "a" {
+			t.Fatal("list label mismatch")
+		}
+	}
+	if !s.Revoke(rec.ID) {
+		t.Fatal("revoke of existing token returned false")
+	}
+	if s.Revoke(rec.ID) {
+		t.Fatal("revoke of missing token returned true")
+	}
+}
+
+func TestTokenStorePersistReload(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "mcp_tokens.json")
+	s := NewTokenStore(path, nil)
+	full, _, _ := s.Issue(RoleLead, "persisted", nil)
+	s2, err := OpenTokenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := s2.Verify(full); !ok {
+		t.Fatal("token did not survive persist+reload")
 	}
 }
