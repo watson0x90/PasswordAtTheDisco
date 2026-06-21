@@ -49,7 +49,7 @@ govulncheck ./...              # must be clean
 **Exposure (0–10):**
 - weakness weights: `w_len=0.30`, `w_cx=0.20`, `w_dict=0.35`, `w_sim=0.15` (sum 1.0).
 - `lengthPenalty` = existing sigmoid `1/(1+e^((len−10)/2))` (verbatim, [0,1]).
-- `complexityPenalty` = `(1.0 − complexityF)/0.8`, clamped [0,1]; `complexityF∈[0.2,1.0]` → penalty `[0,1]`.
+- `complexityPenalty` = `(complexityF − 0.2)/0.8`, clamped [0,1]; `complexityF∈[0.2,1.0]` → penalty `[0,1]`. NOTE: in `complexityFactors`, LOWER = stronger (`mixedalphaspecialnum=0.2` strongest, `numeric=1.0` weakest), so the weakest password (cf=1.0) maps to penalty 1.0 and the strongest (cf=0.2) to 0.0. (Corrected during B1 — the earlier `(1.0−cf)/0.8` was sign-inverted.)
 - `dictPenalty` = existing additive dictionary term, clamped [0,1].
 - `simPenalty` = `similarityFactor(simMax)/0.6` (max raw 0.6 → 1.0), clamped [0,1].
 - `hibpExposureFloor(n)`: ≥1e6→9.0, ≥1e5→8.5, ≥1e4→8.0, ≥1e3→7.0, ≥100→6.0, ≥10→5.0, ≥1→4.5, else 0.
@@ -228,13 +228,15 @@ govulncheck ./...              # must be clean
   	return 1.0 / (1.0 + math.Exp(float64(length-10)/2.0))
   }
 
-  // complexityPenalty maps complexityF in [0.2,1.0] -> [0,1] (higher = less complex = worse).
+  // complexityPenalty maps complexityF in [0.2,1.0] -> [0,1]. In complexityFactors
+  // LOWER = stronger (0.2 strongest, 1.0 weakest), so the WEAKEST password gets the
+  // max penalty 1.0 and the strongest gets 0.0.
   func complexityPenalty(label string) float64 {
   	cf := 1.0
   	if v, ok := complexityFactors[label]; ok {
   		cf = v
   	}
-  	p := (1.0 - cf) / 0.8
+  	p := (cf - 0.2) / 0.8
   	return clamp01(p)
   }
 
@@ -825,6 +827,8 @@ govulncheck ./...              # must be clean
 ### Task B4 — engine wiring (`ControlsTier0`, v2 Context, model axis fields)
 
 **Why:** A added `bloodhound.ExtractControlsTier0` but never surfaced it on `Enrichment`. B4 closes that gap, builds the v2 `risk.Context` from `Enrichment` (Enabled, roastable, ControlsTier0, coverage, cracked), and populates the new `model.Account` axis fields in BOTH `scoreCracked` and `scoreUncracked`. The uncracked path now also routes through `risk.Score` (v2 handles `Cracked:false` natively), replacing the ad-hoc `uncrackedScore`/`uncrackedVector`.
+
+> **RE-SCOPE NOTE (B3 already did part of this).** Because changing `Result.Level`/`Result.Score` semantics needed a v2 Context to keep the engine goldens meaningful, B3 (commit `d73749d`) ALREADY added `Cracked: true`, `Coverage: coverageState(enrData.Enriched)`, `Enabled: enabledOrUnknown(enrData.Enabled)` to `scoreCracked`'s `risk.Context` and refreshed `TestProcessDomainCrackedBasics` + `TestProcessDomainHIBPAndDAPath`. So **B4's remaining work is:** (1) add `Enrichment.ControlsTier0` + wire it (live `ExtractControlsTier0`, bulk `false`); (2) add `HasSPN`/`DontReqPreauth`/`ControlsTier0` to BOTH score Contexts (add a `boolOrFalse` helper); (3) extend `model.Account` with the axis fields + extend `model.ScoreBreakdown` with the v2 fields; (4) switch the engine to read/write the v2 `Breakdown` fields and **REMOVE the transitional v1 `risk.Breakdown` shim fields** B3 retained (and stop `Score` computing them — but that v1-func removal is B6; for B4 just stop the engine reading them and remove the `json:"-"` v1 fields from `risk.Breakdown` if nothing else reads them, else leave to B6); (5) rewrite `scoreUncracked` to route through `risk.Score`; (6) populate the axis fields in both scorers; (7) refresh any remaining engine goldens + add `TestControlsTier0Wired`/`TestAxisFieldsPopulated`. Do NOT re-add the 3 Context fields B3 already set in `scoreCracked`.
 
 **Files:**
 - Modify: `internal/model/model.go` — add `Account` fields (`ExposureScore`, `ImpactScore *float64`, `ImpactKnown`, `Percentile`) near line 159; extend `ScoreBreakdown` (lines 208–222) with the v2 fields.

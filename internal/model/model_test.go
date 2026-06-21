@@ -116,3 +116,61 @@ func TestCoverageSurvivesRedaction(t *testing.T) {
 		t.Errorf("credentials not cleared: pw=%q hash=%q", red.Password, red.NTHash)
 	}
 }
+
+func TestAxisFieldsRedactionSafe(t *testing.T) {
+	imp := 7.0
+	a := Account{ExposureScore: 5.0, ImpactScore: &imp, ImpactKnown: true, Percentile: 0.9, Password: "secret"}
+	r := a.Redacted()
+	if r.Password != "" {
+		t.Fatal("password must be redacted")
+	}
+	if r.ExposureScore != 5.0 || r.ImpactScore == nil || *r.ImpactScore != 7.0 || !r.ImpactKnown || r.Percentile != 0.9 {
+		t.Fatalf("axis fields must survive Redacted(): %+v", r)
+	}
+}
+
+func TestEscalateSharedWithDAImpact(t *testing.T) {
+	imp9 := 9.0
+	accts := []Account{
+		{Username: "da", NTHash: "AAA", DADomains: "CORP.INT", RiskLevel: "Critical",
+			ImpactScore: &imp9, ImpactKnown: true, ExposureScore: 6.0},
+		{Username: "helpdesk", NTHash: "AAA", DADomains: "None", RiskLevel: "Low",
+			ImpactScore: nil, ImpactKnown: false, ExposureScore: 7.0}, // shares DA hash, unenriched
+	}
+	EscalateSharedWithDA(accts)
+	hd := accts[1]
+	if hd.RiskLevel != "Critical" {
+		t.Fatalf("shared-DA helpdesk level = %q, want Critical", hd.RiskLevel)
+	}
+	if !hd.ImpactKnown || hd.ImpactScore == nil || *hd.ImpactScore != 10.0 {
+		t.Fatalf("shared-DA helpdesk must inherit max Impact 10: known=%v ptr=%v", hd.ImpactKnown, hd.ImpactScore)
+	}
+	if !hd.EscalatedBySharedDA {
+		t.Fatal("EscalatedBySharedDA flag not set")
+	}
+}
+
+func TestComputePercentiles(t *testing.T) {
+	mk := func(score float64) Account { return Account{RiskScore: score} }
+	accts := []Account{mk(2), mk(5), mk(8), mk(8)} // ties share rank
+	ComputePercentiles(accts)
+	// Lowest score -> lowest percentile; highest -> ~1.0. Strictly ordered, [0,1].
+	for i := range accts {
+		if accts[i].Percentile < 0 || accts[i].Percentile > 1 {
+			t.Fatalf("percentile out of range: %v", accts[i].Percentile)
+		}
+	}
+	if !(accts[0].Percentile < accts[1].Percentile && accts[1].Percentile < accts[2].Percentile) {
+		t.Fatalf("percentiles must be monotonic with score: %v", []float64{
+			accts[0].Percentile, accts[1].Percentile, accts[2].Percentile})
+	}
+	if accts[2].Percentile != accts[3].Percentile {
+		t.Fatalf("ties must share a percentile: %v vs %v", accts[2].Percentile, accts[3].Percentile)
+	}
+	// Idempotent: running twice yields identical results.
+	first := accts[2].Percentile
+	ComputePercentiles(accts)
+	if accts[2].Percentile != first {
+		t.Fatal("ComputePercentiles must be idempotent")
+	}
+}

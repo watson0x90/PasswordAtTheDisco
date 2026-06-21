@@ -66,10 +66,16 @@ func TestProcessDomainCrackedBasics(t *testing.T) {
 	if alice.SharedWith != 1 || bob.SharedWith != 1 {
 		t.Errorf("shared-with: alice=%d bob=%d, want 1/1", alice.SharedWith, bob.SharedWith)
 	}
-	// "Welcome1" is common -> base floor 7.0, reduced by unknown temporal factors
-	// to ~6.2 == High; far above a strong unique password.
-	if alice.RiskLevel != "High" || alice.RiskScore < 6.0 {
-		t.Errorf("common password: level=%q score=%v, want High / >=6.0", alice.RiskLevel, alice.RiskScore)
+	// v2: HIBP no longer triple-counted; level now from Exposure/Impact axes.
+	// "Welcome1" (common, len 8, shared) -> Exposure = weakness(~5.64) floored by
+	// crackedFloor(3.0), + reuse bump 0.5 = 6.1 (High tier). No enricher => Coverage
+	// "none" => Impact Unknown, so Level comes from the Exposure tier alone == High.
+	// Score back-compat blend == Exposure when Impact is Unknown == 6.1.
+	if alice.RiskLevel != "High" || alice.RiskScore != 6.1 {
+		t.Errorf("common password: level=%q score=%v, want High / 6.1", alice.RiskLevel, alice.RiskScore)
+	}
+	if alice.Coverage != "none" {
+		t.Errorf("no enricher -> coverage should be none (Impact Unknown), got %q", alice.Coverage)
 	}
 	if carol := accts[byUser["carol"]]; !(carol.RiskScore < alice.RiskScore) {
 		t.Errorf("strong pw (%v) should score below common pw (%v)", carol.RiskScore, alice.RiskScore)
@@ -100,6 +106,8 @@ func TestProcessDomainHIBPAndDAPath(t *testing.T) {
 	if a.DADomains != "CORP" {
 		t.Errorf("DADomains = %q, want CORP", a.DADomains)
 	}
+	// v2: cracked + confirmed DA path -> hard override to Critical (the daOverride
+	// branch in LevelFromAxes fires because scoreCracked now sets Cracked:true).
 	if a.RiskLevel != "Critical" {
 		t.Errorf("DA pathway must be Critical, got %q", a.RiskLevel)
 	}
@@ -121,11 +129,26 @@ func TestProcessDomainUncracked(t *testing.T) {
 	if !a.HIBPBreached || a.HIBPBreachCount != 5000 {
 		t.Errorf("uncracked HIBP: %v/%d", a.HIBPBreached, a.HIBPBreachCount)
 	}
-	// base 5.0 * priv 1.0 * share 1.0 * hibp(5000)=1.3 = 6.5
-	if a.RiskScore != 6.5 {
-		t.Errorf("uncracked score = %v, want 6.5", a.RiskScore)
+	// v2: the uncracked path now routes through risk.Score (Cracked:false) instead of
+	// the deleted ad-hoc uncrackedScore/uncrackedVector. With no enrichment Impact is
+	// Unknown, so Level comes from the Exposure tier alone.
+	// Exposure = hibpExposureFloor(5000): 5000 is in [1000,10000) -> 7.0 (NOT 8.0,
+	// which needs >=10000); no share/roastable bump. tierOf(7.0)=High. Score
+	// back-compat blend == Exposure when Impact Unknown == 7.0.
+	if a.ExposureScore != 7.0 {
+		t.Errorf("uncracked exposure = %v, want 7.0", a.ExposureScore)
 	}
-	want := "UNCRACKED/DA:N/CO:L/S:0/HIBP:VH"
+	if a.ImpactKnown {
+		t.Errorf("unenriched uncracked must have Impact Unknown, got known=%v", a.ImpactKnown)
+	}
+	if a.RiskLevel != "High" {
+		t.Errorf("uncracked level = %q, want High (from Exposure 7.0 tier)", a.RiskLevel)
+	}
+	if a.RiskScore != 7.0 {
+		t.Errorf("uncracked score = %v, want 7.0", a.RiskScore)
+	}
+	// v2 standard risk.Vector (no more "UNCRACKED/..." form); ends with the two axes.
+	want := "C:C10/L:VS/D:N/SM:N/CM:U/EX:U/DA:N/CO:U/S:0/DR:U/HIBP:VH/EXP:H/IMP:U"
 	if a.RiskVector != want {
 		t.Errorf("uncracked vector = %q, want %q", a.RiskVector, want)
 	}
@@ -353,5 +376,62 @@ func TestBloodhoundEnricherSurfacesRoastable(t *testing.T) {
 	}
 	if enr.DontReqPreauth == nil || !*enr.DontReqPreauth {
 		t.Errorf("DontReqPreauth not surfaced on live path: %v", enr.DontReqPreauth)
+	}
+}
+
+func TestControlsTier0WiredLive(t *testing.T) {
+	// Live BloodhoundEnricher: a controllable named "DOMAIN ADMINS" (a Tier-0 group)
+	// must set Enrichment.ControlsTier0 = true via bloodhound.ExtractControlsTier0.
+	// The /controllables item shape mirrors GetUserControllables' parser, which reads
+	// {"label":..,"name":..}; isTier0Name matches the "DOMAIN ADMINS" name substring.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		switch {
+		case r.URL.Path == "/api/v2/available-domains":
+			_, _ = io.WriteString(w, `{"data":[{"name":"CORP.INT","id":"D1","collected":true,"type":"Domain"}]}`)
+		case r.URL.Path == "/api/v2/search" && q.Get("type") == "User":
+			_, _ = io.WriteString(w, `{"data":[{"name":"svc@CORP.INT","objectid":"S-1-5-SVC"}]}`)
+		case r.URL.Path == "/api/v2/search" && q.Get("type") == "Group":
+			_, _ = io.WriteString(w, `{"data":[{"name":"DOMAIN ADMINS@CORP.INT","objectid":"S-1-5-DA"}]}`)
+		case len(r.URL.Path) > len("/controllables") && r.URL.Path[len(r.URL.Path)-len("/controllables"):] == "/controllables":
+			_, _ = io.WriteString(w, `{"count":1,"data":[{"name":"DOMAIN ADMINS@CORP.INT","label":"Group","objectid":"S-1-5-DA"}]}`)
+		case r.URL.Path == "/api/v2/users/S-1-5-SVC":
+			_, _ = io.WriteString(w, `{"data":{"props":{"enabled":true}}}`)
+		case r.URL.Path == "/api/v2/graphs/shortest-path":
+			w.WriteHeader(http.StatusNotFound)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	u, _ := url.Parse(srv.URL)
+	host, portStr, _ := net.SplitHostPort(u.Host)
+	port, _ := strconv.Atoi(portStr)
+	cl := bloodhound.New(bloodhound.Config{Scheme: "http", Host: host, Port: port, TokenID: "tid", TokenKey: "tkey"})
+	enr := BloodhoundEnricher{Client: cl}.Enrich("svc@CORP.INT")
+	if !enr.ControlsTier0 {
+		t.Fatal("ControlsTier0 not surfaced on live path")
+	}
+}
+
+func TestAxisFieldsPopulated(t *testing.T) {
+	e := newEngine()
+	e.Enricher = fakeEnricher{
+		"alice@CORP": {Enriched: true, Enabled: bp(true), ControlledObjects: ipv(200)},
+	}
+	a := e.ProcessDomain("CORP", []secretsdump.ParsedAccount{
+		{Username: "alice", Domain: "CORP", Hash: "H1", Password: "Str0ng&Unique!Pass", Cracked: true},
+	}, nil)[0]
+	if a.ExposureScore <= 0 {
+		t.Fatalf("exposure not populated: %v", a.ExposureScore)
+	}
+	if !a.ImpactKnown || a.ImpactScore == nil {
+		t.Fatalf("enriched account must have known impact: known=%v ptr=%v", a.ImpactKnown, a.ImpactScore)
+	}
+	if *a.ImpactScore != 7.0 { // controlled 200 -> privilegeSubScore 7
+		t.Fatalf("impact = %v, want 7.0", *a.ImpactScore)
+	}
+	if a.ScoreBreakdown == nil || a.ScoreBreakdown.PrivilegeSubScore != 7.0 {
+		t.Fatalf("breakdown PrivilegeSubScore wrong: %+v", a.ScoreBreakdown)
 	}
 }

@@ -1,18 +1,16 @@
-// Package risk implements the CVSS-style password risk scoring engine: base,
-// temporal, and environmental components, a cracked-password risk floor, the
-// 0-10 score -> level mapping, and a CVSS-like vector string.
+// Package risk implements the v2 two-axis password risk scoring engine: an
+// Exposure axis ("how easily is this credential compromised?") and an Impact axis
+// ("blast radius if it is?"), a derived Level from a 2D matrix, an extended
+// per-factor Breakdown, and a CVSS-like vector string.
 //
-// Ported from legacy-python/core/scoring.py and core/vector.py. Numeric fields
-// that the Python represented as int-or-"Unknown" are modeled here as *int
-// (nil = unknown); DA pathways are a []string (empty = none).
+// Numeric fields that the source data represented as int-or-"Unknown" are modeled
+// here as *int (nil = unknown); DA pathways are a []string (empty = none).
 package risk
 
 import (
 	"math"
 	"strconv"
 	"strings"
-
-	"github.com/watson0x90/PasswordAtTheDisco/internal/hibp"
 )
 
 // Analysis holds intrinsic password characteristics (from the password-analysis
@@ -27,122 +25,158 @@ type Analysis struct {
 	SimilarMax            float64 // highest similarity to another password (0 if none)
 }
 
-// Context holds account/environment signals consumed by scoring.
+// Context holds account/environment signals consumed by scoring. v2: Exposure is
+// always computed; Impact needs Enabled/ControlsTier0/Coverage and is Unknown when
+// coverage == "none". Cracked distinguishes the weakness-bearing path from uncracked.
 type Context struct {
-	SharedWith          int      // accounts sharing this password (<=0 treated as none)
-	DADomains           []string // domains with a Domain Admin pathway (empty = none)
-	ControlledObjects   *int     // controlled object count; nil = unknown
-	DaysOutOfCompliance *int     // nil = unknown
-	PasswordExpires     string   // "No" | "Yes"; anything else = unknown
-	DomainRiskLevel     string   // "Critical"|"High"|"Medium"|"Low"; else unknown
-	HIBPBreachCount     int
+	Cracked           bool     // true = password known (weakness penalties apply)
+	SharedWith        int      // accounts sharing this password (>0 => reuse bump)
+	DADomains         []string // domains with a Domain Admin pathway (empty = none)
+	ControlledObjects *int     // TRUE controlled-object count (env.Count); nil = unknown
+	ControlsTier0     bool     // controls a Tier-0/DA-equivalent object (DCSync/DA group/AdminSDHolder/KRBTGT)
+	Enabled           bool     // false => Impact capped at 2.0 (can't authenticate)
+	HasSPN            bool     // Kerberoastable (Exposure roastable bump)
+	DontReqPreauth    bool     // AS-REP roastable (Exposure roastable bump)
+	Coverage          string   // "full" | "none"; "none" => Impact Unknown
+	DomainRiskLevel   string   // "Critical"|"High"|"Medium"|"Low"; else unknown
+	HIBPBreachCount   int
+	// Retained for the vector string only (no longer scored); see Vector().
+	DaysOutOfCompliance *int
+	PasswordExpires     string
 }
 
-// Breakdown is the per-component score detail (mirrors score_breakdown).
+// Breakdown is the per-axis score detail plus every raw per-factor input the
+// sub-project C leave-one-out radar needs (Δ_k = Score(all) − Score(factor k neutralized)).
 type Breakdown struct {
-	BaseScore          float64
-	ComplexityFactor   float64
-	LengthFactor       float64
-	DictionaryFactor   float64
-	SimilarityFactor   float64
-	TemporalScore      float64
-	ComplianceFactor   float64
-	ExpirationFactor   float64
-	EnvironmentalScore float64
-	PrivilegeFactor    float64
-	ShareFactor        float64
-	DomainFactor       float64
-	HIBPFactor         float64
+	// Exposure axis (v2)
+	ExposureScore     float64 `json:"exposure_score"`
+	WeaknessScore     float64 `json:"weakness_score"`
+	LengthPenalty     float64 `json:"length_penalty"`
+	ComplexityPenalty float64 `json:"complexity_penalty"`
+	DictPenalty       float64 `json:"dict_penalty"`
+	SimPenalty        float64 `json:"sim_penalty"`
+	HIBPFloor         float64 `json:"hibp_floor"`
+	CrackedFloor      float64 `json:"cracked_floor"`
+	ReuseBump         float64 `json:"reuse_bump"`
+	RoastableBump     float64 `json:"roastable_bump"`
+	// Impact axis (v2)
+	ImpactScore       float64 `json:"impact_score"`
+	PrivilegeSubScore float64 `json:"privilege_sub_score"`
+	DAComponent       float64 `json:"da_component"`
+	DomainModifier    float64 `json:"domain_modifier"`
+	EnabledGated      bool    `json:"enabled_gated"`
 }
 
-// Result is the full scoring output for one (cracked) account.
+// Result is the full v2 scoring output for one account.
 type Result struct {
-	Score     float64 // 0-10, one decimal
-	Level     string  // Critical | High | Medium | Low
-	Vector    string  // CVSS-like vector string
-	HasDAPath bool
-	Breakdown Breakdown
+	Exposure    float64 // 0-10, one decimal
+	Impact      float64 // 0-10, one decimal; meaningless when !ImpactKnown
+	ImpactKnown bool
+	Score       float64 // legacy back-compat blend (de-emphasized)
+	Level       string  // from the 2D matrix
+	Provisional bool    // true when ImpactKnown is false (level from Exposure alone)
+	Vector      string
+	HasDAPath   bool
+	Breakdown   Breakdown
 }
 
-// Score computes the full risk result for a cracked password.
+// Score computes the full v2 risk result. Per-account only: it does NOT compute
+// shared-hash-to-DA (an audit-level pass in internal/store).
 func Score(a Analysis, c Context) Result {
-	base, cf, lf, df, sf := baseScore(a)
-	base = floorBase(base, a, c.HIBPBreachCount)
-	temporal, compF, expF := temporalScore(base, c.DaysOutOfCompliance, c.PasswordExpires)
+	exp := round1(exposureScore(a, c))
+	impRaw, known := impactScore(c)
+	imp := round1(impRaw)
 	hasDA := len(c.DADomains) > 0
-	env, privF, shareF, domF, hibpF := environmentalScore(
-		temporal, hasDA, c.ControlledObjects, c.SharedWith, c.DomainRiskLevel, c.HIBPBreachCount)
-	// Apply the final-score floor: the environmental result must never drop below
-	// the cracked-password minimum for this password's characteristics. This prevents
-	// "unknown" temporal/environmental factors from diluting a clearly weak password
-	// below the risk tier it inherently belongs to.
-	env = finalFloor(env, a, c.HIBPBreachCount)
-	final := round1(env)
+	daOverride := c.Cracked && hasDA
+	level := LevelFromAxes(exp, imp, known, daOverride)
+
+	var legacy float64
+	if known {
+		legacy = round1(0.5*exp + 0.5*imp)
+	} else {
+		legacy = exp
+	}
+
+	var reuse, roast float64
+	if c.SharedWith > 0 {
+		reuse = 0.5
+	}
+	if c.HasSPN || c.DontReqPreauth {
+		roast = 0.5
+	}
+
 	return Result{
-		Score:     final,
-		Level:     ComputeLevel(final, hasDA),
-		Vector:    Vector(a, c),
-		HasDAPath: hasDA,
+		Exposure:    exp,
+		Impact:      imp,
+		ImpactKnown: known,
+		Score:       legacy,
+		Level:       level,
+		Provisional: !known,
+		Vector:      Vector(a, c),
+		HasDAPath:   hasDA,
 		Breakdown: Breakdown{
-			BaseScore:          round1(base),
-			ComplexityFactor:   round2(cf),
-			LengthFactor:       round2(lf),
-			DictionaryFactor:   round2(df),
-			SimilarityFactor:   round2(sf),
-			TemporalScore:      round1(temporal),
-			ComplianceFactor:   round2(compF),
-			ExpirationFactor:   round2(expF),
-			EnvironmentalScore: round1(env),
-			PrivilegeFactor:    round2(privF),
-			ShareFactor:        round2(shareF),
-			DomainFactor:       round2(domF),
-			HIBPFactor:         round2(hibpF),
+			ExposureScore:     exp,
+			WeaknessScore:     round2(weaknessScore(a)),
+			LengthPenalty:     round2(lengthPenalty(a.PasswordLength)),
+			ComplexityPenalty: round2(complexityPenalty(a.ComplexityLabel)),
+			DictPenalty:       round2(dictPenalty(a)),
+			SimPenalty:        round2(simPenalty(a.SimilarMax)),
+			HIBPFloor:         hibpExposureFloor(c.HIBPBreachCount),
+			CrackedFloor:      crackedFloor(a, c.Cracked),
+			ReuseBump:         reuse,
+			RoastableBump:     roast,
+			ImpactScore:       imp,
+			PrivilegeSubScore: privilegeSubScore(c.ControlledObjects, c.ControlsTier0),
+			DAComponent:       daComponent(c.DADomains),
+			DomainModifier:    domainModifier(c.DomainRiskLevel),
+			EnabledGated:      known && !c.Enabled,
 		},
 	}
 }
 
-// finalFloor ensures the FINAL score (after all multipliers) never drops below a
-// minimum for a cracked password with the given characteristics. This catches the
-// case where "unknown" temporal/environmental factors (multipliers < 1) would
-// otherwise dilute a clearly dangerous password below its appropriate risk tier.
-func finalFloor(score float64, a Analysis, hibpCount int) float64 {
+// tierOf maps an axis value [0,10] to its tier index: 0=Critical,1=High,2=Medium,3=Low.
+func tierOf(v float64) int {
 	switch {
-	case hibpCount >= 1000000:
-		return math.Max(score, 8.0)
-	case hibpCount >= 100000:
-		return math.Max(score, 7.0)
-	case hibpCount >= 10000 || a.IsCommon:
-		return math.Max(score, 6.5)
-	case hibpCount >= 1000 || a.IsDictionaryWord:
-		return math.Max(score, 5.5)
-	case hibpCount >= 100:
-		return math.Max(score, 4.5)
-	case a.PasswordLength < 8:
-		return math.Max(score, 4.0) // Very short cracked password = at least Medium
-	case hibpCount >= 10 || a.BannedWordsCount > 0 || a.KeyboardPatternsCount > 0:
-		return math.Max(score, 4.0)
-	case a.PasswordLength < 12:
-		return math.Max(score, 3.0)
+	case v >= 8.0:
+		return 0
+	case v >= 6.0:
+		return 1
+	case v >= 4.0:
+		return 2
 	default:
-		return math.Max(score, 2.0)
+		return 3
 	}
 }
 
-// ComputeLevel maps a 0-10 score to a risk level. A Domain Admin pathway is
-// always Critical regardless of score.
-func ComputeLevel(score float64, hasDAPath bool) string {
-	switch {
-	case hasDAPath:
+// levelMatrix[impactTier][exposureTier] -> Level. Rows = Impact, cols = Exposure,
+// each Critical(0)/High(1)/Medium(2)/Low(3). Mirrors the design spec table.
+var levelMatrix = [4][4]string{
+	{"Critical", "Critical", "Critical", "High"}, // Impact Critical
+	{"Critical", "High", "High", "Medium"},       // Impact High
+	{"High", "High", "Medium", "Medium"},         // Impact Medium
+	{"Medium", "Medium", "Low", "Low"},           // Impact Low
+}
+
+// LevelFromAxes derives the overall Level. When impactKnown is false the level is
+// taken from the Exposure tier alone (the caller flags it provisional). A cracked
+// account with a confirmed DA path (daOverride) is always Critical.
+func LevelFromAxes(exposure, impact float64, impactKnown, daOverride bool) string {
+	if daOverride {
 		return "Critical"
-	case score >= 8.0:
-		return "Critical"
-	case score >= 6.0:
-		return "High"
-	case score >= 4.0:
-		return "Medium"
-	default:
-		return "Low"
 	}
+	if !impactKnown {
+		switch tierOf(exposure) {
+		case 0:
+			return "Critical"
+		case 1:
+			return "High"
+		case 2:
+			return "Medium"
+		default:
+			return "Low"
+		}
+	}
+	return levelMatrix[tierOf(impact)][tierOf(exposure)]
 }
 
 var complexityFactors = map[string]float64{
@@ -164,30 +198,6 @@ var complexityFactors = map[string]float64{
 	"none":                 1.0,
 }
 
-func baseScore(a Analysis) (base, complexityF, lengthF, dictionaryF, similarityF float64) {
-	complexityF = 1.0
-	if v, ok := complexityFactors[a.ComplexityLabel]; ok {
-		complexityF = v
-	}
-	lengthF = 1.0 / (1.0 + math.Exp(float64(a.PasswordLength-10)/2.0))
-
-	if a.IsCommon {
-		dictionaryF += 0.7
-	}
-	if a.IsDictionaryWord {
-		dictionaryF += 0.5
-	}
-	dictionaryF += math.Min(0.8, 0.2*float64(a.BannedWordsCount))
-	dictionaryF += math.Min(0.5, 0.1*float64(a.KeyboardPatternsCount))
-	dictionaryF = math.Min(1.0, dictionaryF)
-
-	similarityF = similarityFactor(a.SimilarMax)
-
-	combined := complexityF*lengthF + dictionaryF + similarityF
-	base = math.Min(10.0, combined*(10.0/4.0))
-	return
-}
-
 func similarityFactor(max float64) float64 {
 	switch {
 	case max >= 0.9:
@@ -201,106 +211,190 @@ func similarityFactor(max float64) float64 {
 	}
 }
 
-// floorBase applies the evidence-based cracked-password risk floor: a cracked
-// password always carries baseline risk, tiered by HIBP exposure / weakness.
-//
-// This is an INTENTIONAL divergence from the Python v1 scorer (which had no
-// floor, so a long/complex but cracked password could score ~0). The fact that a
-// password was cracked is itself a risk signal, so we floor it at >=2.0. Every
-// other scoring formula/constant is a faithful port of v1.
-func floorBase(base float64, a Analysis, hibpCount int) float64 {
+// --- Exposure axis (v2): "how easily is this credential compromised?" ---
+
+// exposureWeights sum to 1.0; each penalty is an INDEPENDENT [0,1] term, so
+// complexity is no longer nullified by length (the v1 product bug).
+const (
+	wLen  = 0.30
+	wCx   = 0.20
+	wDict = 0.35
+	wSim  = 0.15
+)
+
+// lengthPenalty is the v1 logistic, kept verbatim (higher = shorter = worse), [0,1].
+func lengthPenalty(length int) float64 {
+	return 1.0 / (1.0 + math.Exp(float64(length-10)/2.0))
+}
+
+// complexityPenalty maps complexityF in [0.2,1.0] -> [0,1] (higher = less complex = worse).
+// In complexityFactors a LOWER factor means a STRONGER password (mixedalphaspecialnum=0.2
+// is strongest, numeric=1.0 weakest), so risk rises WITH the factor. The penalty therefore
+// scales directly with cf: (cf-0.2)/0.8.
+func complexityPenalty(label string) float64 {
+	cf := 1.0
+	if v, ok := complexityFactors[label]; ok {
+		cf = v
+	}
+	p := (cf - 0.2) / 0.8
+	return clamp01(p)
+}
+
+// dictPenalty is the v1 additive dictionary/common/banned/keyboard term, clamped [0,1].
+func dictPenalty(a Analysis) float64 {
+	var d float64
+	if a.IsCommon {
+		d += 0.7
+	}
+	if a.IsDictionaryWord {
+		d += 0.5
+	}
+	d += math.Min(0.8, 0.2*float64(a.BannedWordsCount))
+	d += math.Min(0.5, 0.1*float64(a.KeyboardPatternsCount))
+	return clamp01(d)
+}
+
+// simPenalty normalizes the v1 similarity term (raw max 0.6) to [0,1].
+func simPenalty(simMax float64) float64 {
+	return clamp01(similarityFactor(simMax) / 0.6)
+}
+
+// weaknessScore is the cracked-only weighted sum of bounded penalties, scaled x10.
+func weaknessScore(a Analysis) float64 {
+	return 10.0 * (wLen*lengthPenalty(a.PasswordLength) +
+		wCx*complexityPenalty(a.ComplexityLabel) +
+		wDict*dictPenalty(a) +
+		wSim*simPenalty(a.SimilarMax))
+}
+
+// hibpExposureFloor is the SINGLE HIBP channel (kills the v1 triple-count).
+func hibpExposureFloor(count int) float64 {
 	switch {
-	case hibpCount >= 1000000:
-		return math.Max(base, 8.0)
-	case hibpCount >= 100000:
-		return math.Max(base, 7.5)
-	case hibpCount >= 10000 || a.IsCommon:
-		return math.Max(base, 7.0)
-	case hibpCount >= 1000 || a.IsDictionaryWord:
-		return math.Max(base, 6.0)
-	case hibpCount >= 100:
-		return math.Max(base, 5.0)
-	case hibpCount >= 10 || a.BannedWordsCount > 0 || a.KeyboardPatternsCount > 0:
-		return math.Max(base, 4.0)
-	case hibpCount > 0 || a.PasswordLength < 8:
-		return math.Max(base, 4.0)
-	case a.PasswordLength < 12:
-		return math.Max(base, 3.5)
+	case count >= 1000000:
+		return 9.0
+	case count >= 100000:
+		return 8.5
+	case count >= 10000:
+		return 8.0
+	case count >= 1000:
+		return 7.0
+	case count >= 100:
+		return 6.0
+	case count >= 10:
+		return 5.0
+	case count >= 1:
+		return 4.5
 	default:
-		return math.Max(base, 2.0)
+		return 0
 	}
 }
 
-func temporalScore(base float64, days *int, expires string) (temporal, complianceF, expirationF float64) {
-	if days == nil {
-		complianceF = 0.8
+// crackedFloor: cracking is itself exposure, applied ONCE.
+func crackedFloor(a Analysis, cracked bool) float64 {
+	switch {
+	case cracked && a.PasswordLength < 8:
+		return 4.0
+	case cracked:
+		return 3.0
+	default:
+		return 0
+	}
+}
+
+// exposureScore is the per-account Exposure axis [0,10].
+func exposureScore(a Analysis, c Context) float64 {
+	var floor float64
+	if c.Cracked {
+		floor = math.Max(weaknessScore(a), math.Max(hibpExposureFloor(c.HIBPBreachCount), crackedFloor(a, true)))
 	} else {
-		complianceF = math.Min(1.0, 0.6+0.4*math.Min(1.0, float64(*days)/180.0))
+		// Uncracked: password unknown, no weakness signals.
+		floor = hibpExposureFloor(c.HIBPBreachCount)
 	}
-	switch expires {
-	case "No":
-		expirationF = 1.0
-	case "Yes":
-		expirationF = 0.85
-	default: // Unknown / unset
-		expirationF = 0.925
+	var bump float64
+	if c.SharedWith > 0 {
+		bump += 0.5
 	}
-	temporal = math.Min(10.0, base*complianceF*expirationF)
-	return
+	if c.HasSPN || c.DontReqPreauth {
+		bump += 0.5
+	}
+	return math.Min(10.0, floor+bump)
 }
 
-func environmentalScore(temporal float64, hasDA bool, controlled *int, shared int, domainRisk string, hibpCount int) (env, privF, shareF, domF, hibpF float64) {
-	privF = 1.0
-	if hasDA {
-		privF += 0.5
+func clamp01(x float64) float64 {
+	if x < 0 {
+		return 0
 	}
-	if controlled != nil {
-		switch oc := *controlled; {
-		case oc > 1000:
-			privF += 0.5
-		case oc > 500:
-			privF += 0.4
-		case oc > 100:
-			privF += 0.3
-		case oc > 50:
-			privF += 0.2
-		case oc > 10:
-			privF += 0.1
-		}
+	if x > 1 {
+		return 1
 	}
-
-	shareF = 1.0
-	if shared > 0 {
-		switch {
-		case shared >= 1000:
-			shareF += 0.5
-		case shared >= 100:
-			shareF += 0.4
-		case shared >= 10:
-			shareF += 0.3
-		default:
-			shareF += 0.2
-		}
-	}
-
-	domF = domainFactor(domainRisk)
-	hibpF = hibp.Factor(hibpCount) // identical tiers to the Python environmental hibp_factor
-
-	env = math.Min(10.0, temporal*privF*shareF*domF*hibpF)
-	return
+	return x
 }
 
-func domainFactor(level string) float64 {
+// --- Impact axis (v2): "blast radius if this credential is compromised?" ---
+
+// privilegeSubScore maps the TRUE controlled-objects count to [0,10]. Control of a
+// Tier-0/DA-equivalent object is the maximum regardless of count.
+func privilegeSubScore(controlled *int, controlsTier0 bool) float64 {
+	if controlsTier0 {
+		return 10
+	}
+	if controlled == nil {
+		return 0
+	}
+	switch oc := *controlled; {
+	case oc > 1000:
+		return 9
+	case oc > 500:
+		return 8
+	case oc > 100:
+		return 7
+	case oc > 50:
+		return 6
+	case oc > 10:
+		return 5
+	case oc > 0:
+		return 3
+	default:
+		return 0
+	}
+}
+
+// daComponent is 10 when THIS account has its own confirmed DA path, else 0.
+// (Shared-hash-to-DA inheritance is an audit-level pass, not here.)
+func daComponent(daDomains []string) float64 {
+	if len(daDomains) > 0 {
+		return 10
+	}
+	return 0
+}
+
+func domainModifier(level string) float64 {
 	switch level {
 	case "Critical":
-		return 1.3
-	case "High":
-		return 1.2
-	case "Medium":
-		return 1.1
-	default: // Low, Unknown, "", anything else
 		return 1.0
+	case "High":
+		return 0.6
+	case "Medium":
+		return 0.3
+	default:
+		return 0
 	}
+}
+
+// impactScore returns the per-account Impact axis and whether it is known. When
+// coverage == "none" (not BloodHound-enriched) Impact is Unknown (known=false) and
+// the returned number is meaningless.
+func impactScore(c Context) (score float64, known bool) {
+	if c.Coverage == "none" {
+		return 0, false
+	}
+	priv := privilegeSubScore(c.ControlledObjects, c.ControlsTier0)
+	da := daComponent(c.DADomains)
+	imp := math.Min(10.0, math.Max(priv, da)+domainModifier(c.DomainRiskLevel))
+	if !c.Enabled {
+		imp = math.Min(imp, 2.0) // disabled can't authenticate
+	}
+	return imp, true
 }
 
 // Vector returns the CVSS-like risk vector string:
@@ -318,8 +412,33 @@ func Vector(a Analysis, c Context) string {
 		"S:" + shareCode(c.SharedWith),
 		"DR:" + domainCode(c.DomainRiskLevel),
 		"HIBP:" + hibpCode(c.HIBPBreachCount),
+		"EXP:" + axisCode(exposureScore(a, c)),
+		"IMP:" + impactCode(c),
 	}
 	return strings.Join(parts, "/")
+}
+
+// axisCode maps an axis value to its tier letter (C/H/M/L).
+func axisCode(v float64) string {
+	switch tierOf(v) {
+	case 0:
+		return "C"
+	case 1:
+		return "H"
+	case 2:
+		return "M"
+	default:
+		return "L"
+	}
+}
+
+// impactCode is the Impact tier letter, or "U" when Impact is Unknown.
+func impactCode(c Context) string {
+	v, known := impactScore(c)
+	if !known {
+		return "U"
+	}
+	return axisCode(v)
 }
 
 var complexityCodes = map[string]string{

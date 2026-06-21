@@ -3,6 +3,7 @@ package model
 
 import (
 	"math"
+	"sort"
 	"strings"
 	"time"
 )
@@ -156,9 +157,19 @@ type Account struct {
 	// Coverage is the per-account BloodHound coverage state: "full" (enriched) or
 	// "none" (not enriched). Drives the Unknown-Impact state and the coverage
 	// banner. Descriptive, not a credential — survives Redacted().
-	Coverage    string `json:"coverage,omitempty"`
-	MeetsPolicy bool   `json:"meets_policy"`
-	Complexity  string `json:"complexity,omitempty"`
+	Coverage string `json:"coverage,omitempty"`
+	// v2 two-axis scoring. ExposureScore (always computed). ImpactScore is nil when
+	// Impact is Unknown (no BloodHound enrichment); ImpactKnown mirrors that. Percentile
+	// is the within-audit triage rank [0,1] assigned by ComputePercentiles; it is
+	// always computed for every account in a loaded audit, so 0.0 is a valid lowest
+	// rank and must serialize (no omitempty). All are descriptive, not credentials —
+	// they survive Redacted().
+	ExposureScore float64  `json:"exposure_score"`
+	ImpactScore   *float64 `json:"impact_score"`
+	ImpactKnown   bool     `json:"impact_known"`
+	Percentile    float64  `json:"percentile"`
+	MeetsPolicy   bool     `json:"meets_policy"`
+	Complexity    string   `json:"complexity,omitempty"`
 	// Wordlist weakness signals (cracked accounts only). Counts/booleans are
 	// redacted-safe; the matched substrings live in BannedWords / KeyboardPatterns
 	// below (see their comment) and are stripped by Redacted().
@@ -204,7 +215,8 @@ type Account struct {
 }
 
 // ScoreBreakdown is the per-component detail of a CVSS-style risk score. Only
-// populated for cracked accounts (uncracked use a simplified formula).
+// populated for cracked accounts (uncracked accounts are scored through the same
+// risk.Score path but do not carry a stored breakdown).
 type ScoreBreakdown struct {
 	BaseScore          float64 `json:"base_score"`
 	ComplexityFactor   float64 `json:"complexity_factor"`
@@ -219,6 +231,23 @@ type ScoreBreakdown struct {
 	ShareFactor        float64 `json:"share_factor"`
 	DomainFactor       float64 `json:"domain_factor"`
 	HIBPFactor         float64 `json:"hibp_factor"`
+
+	// v2 two-axis sub-scores + raw per-factor inputs for the leave-one-out radar.
+	ExposureScore     float64 `json:"exposure_score,omitempty"`
+	WeaknessScore     float64 `json:"weakness_score,omitempty"`
+	LengthPenalty     float64 `json:"length_penalty,omitempty"`
+	ComplexityPenalty float64 `json:"complexity_penalty,omitempty"`
+	DictPenalty       float64 `json:"dict_penalty,omitempty"`
+	SimPenalty        float64 `json:"sim_penalty,omitempty"`
+	HIBPFloor         float64 `json:"hibp_floor,omitempty"`
+	CrackedFloor      float64 `json:"cracked_floor,omitempty"`
+	ReuseBump         float64 `json:"reuse_bump,omitempty"`
+	RoastableBump     float64 `json:"roastable_bump,omitempty"`
+	ImpactScore       float64 `json:"impact_score,omitempty"`
+	PrivilegeSubScore float64 `json:"privilege_sub_score,omitempty"`
+	DAComponent       float64 `json:"da_component,omitempty"`
+	DomainModifier    float64 `json:"domain_modifier,omitempty"`
+	EnabledGated      bool    `json:"enabled_gated,omitempty"`
 }
 
 // IsWeak reports whether the password matched any wordlist signal (common,
@@ -311,6 +340,59 @@ func EscalateSharedWithDA(accts []Account) {
 			a.RiskVector += "/SHARED-DA"
 		}
 		a.EscalatedBySharedDA = true
+		// v2: inherit MAX Impact — cracking a hash shared with a DA-reachable account
+		// IS a DA compromise. Force Impact known + 10 (a fresh local per iteration, no
+		// aliasing); Level stays Critical (set above; the matrix at Impact=10 over any
+		// Exposure is at least High, and the shared-DA signal is the flagship
+		// lateral-movement escalation -> Critical).
+		max := 10.0
+		a.ImpactScore = &max
+		a.ImpactKnown = true
+	}
+}
+
+// ComputePercentiles assigns each account a within-audit triage percentile in [0,1]
+// from its RiskScore (ties share a rank), so a large block of same-Level accounts
+// still yields a strict order. A SORT KEY, not a displayed score. Idempotent: it
+// depends only on RiskScore, never on a prior Percentile. Empty/one-account sets get 0.
+//
+// O(n log n): collect (score, index), sort by score, then walk assigning each run of
+// equal scores a rank = number of accounts with a strictly lower score, advancing the
+// rank past each run so ties share it. Percentile = rank/(n-1).
+func ComputePercentiles(accts []Account) {
+	n := len(accts)
+	if n == 0 {
+		return
+	}
+	if n == 1 {
+		accts[0].Percentile = 0
+		return
+	}
+	type sc struct {
+		score float64
+		idx   int
+	}
+	order := make([]sc, n)
+	for i := range accts {
+		order[i] = sc{score: accts[i].RiskScore, idx: i}
+	}
+	sort.SliceStable(order, func(i, j int) bool {
+		return order[i].score < order[j].score
+	})
+	denom := float64(n - 1)
+	// Walk ascending: each run of equal scores shares rank = #strictly-lower scores,
+	// which equals the index of the first element in the run.
+	for i := 0; i < n; {
+		j := i
+		for j < n && order[j].score == order[i].score {
+			j++
+		}
+		rank := float64(i) // count of strictly-lower scores
+		p := rank / denom
+		for k := i; k < j; k++ {
+			accts[order[k].idx].Percentile = p
+		}
+		i = j
 	}
 }
 
