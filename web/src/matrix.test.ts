@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import type { Account } from "./api"
-import { axisTier, coverageState, coverageStats, exposureImpactMatrix, isProvisional, matrixMaxCount, IMPACT_UNKNOWN } from "./matrix"
+import { axisTier, cellLevel, coverageState, coverageStats, exposureImpactMatrix, isProvisional, matrixMaxCount, IMPACT_UNKNOWN, TIERS, type Tier } from "./matrix"
 
 // Mirrors the Account test factory used across web/src/*.test.ts (e.g. insights.test.ts):
 // C1 set the factory default impact_known:false, so a test that wants a known Impact
@@ -35,6 +35,23 @@ describe("axisTier (mirrors B cutoffs: >=8 C, >=6 H, >=4 M, else L)", () => {
     expect(axisTier(4)).toBe("Medium")
     expect(axisTier(3.9)).toBe("Low")
     expect(axisTier(0)).toBe("Low")
+  })
+})
+
+describe("cellLevel (single source for risk.go levelMatrix; drives heatmap + Help grid)", () => {
+  // Expected grid keyed [exposure][impact], transcribed from the risk.go table in
+  // ExposureImpactGrid's header comment (rows=Impact there; re-keyed here).
+  const EXPECT: Record<Tier, Record<Tier, Tier>> = {
+    Critical: { Critical: "Critical", High: "Critical", Medium: "High", Low: "Medium" },
+    High: { Critical: "Critical", High: "High", Medium: "High", Low: "Medium" },
+    Medium: { Critical: "Critical", High: "High", Medium: "Medium", Low: "Low" },
+    Low: { Critical: "High", High: "Medium", Medium: "Medium", Low: "Low" },
+  }
+  it("matches the engine matrix for every Exposure × Impact tier cell", () => {
+    for (const exp of TIERS) for (const imp of TIERS) expect(cellLevel(exp, imp)).toBe(EXPECT[exp][imp])
+  })
+  it("Unknown column takes the Exposure tier alone (provisional)", () => {
+    for (const exp of TIERS) expect(cellLevel(exp, IMPACT_UNKNOWN)).toBe(exp)
   })
 })
 

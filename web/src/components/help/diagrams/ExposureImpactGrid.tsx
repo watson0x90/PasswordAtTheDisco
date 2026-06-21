@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react"
+import { cellLevel } from "../../../matrix"
 
 // ExposureImpactGrid — a STATIC, illustrative Exposure × Impact matrix diagram
 // for the scoring chapter. It mirrors the dashboard's live MatrixHeatmap visual
@@ -40,15 +41,10 @@ const LEVEL_TOKEN: Record<Level, string> = {
 const EXPOSURE_ROWS: Level[] = ["Critical", "High", "Medium", "Low"]
 const IMPACT_COLS: (Level | "Unknown")[] = ["Critical", "High", "Medium", "Low", "Unknown"]
 
-// levelFor — the cell Level for an (exposure, impact) pair, transcribed verbatim
-// from risk.go. Keyed by [exposure][impact]; the Unknown column = Exposure tier
-// alone (provisional).
-const MATRIX: Record<Level, Record<Level | "Unknown", Level>> = {
-  Critical: { Critical: "Critical", High: "Critical", Medium: "High", Low: "Medium", Unknown: "Critical" },
-  High: { Critical: "Critical", High: "High", Medium: "High", Low: "Medium", Unknown: "High" },
-  Medium: { Critical: "Critical", High: "High", Medium: "Medium", Low: "Low", Unknown: "Medium" },
-  Low: { Critical: "High", High: "Medium", Medium: "Medium", Low: "Low", Unknown: "Low" },
-}
+// The cell Level for an (exposure, impact) pair comes from the shared cellLevel()
+// in matrix.ts (the single transcription of risk.go's levelMatrix) so this static
+// diagram can't drift from the live dashboard. The Unknown column = Exposure tier
+// alone (provisional), handled inside cellLevel.
 
 export function ExposureImpactGrid() {
   return (
@@ -87,7 +83,7 @@ export function ExposureImpactGrid() {
                 {exp}
               </div>
               {IMPACT_COLS.map((imp) => {
-                const level = MATRIX[exp][imp]
+                const level = cellLevel(exp, imp)
                 const unknown = imp === "Unknown"
                 return (
                   <div

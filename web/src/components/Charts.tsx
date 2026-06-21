@@ -21,9 +21,10 @@ import {
   IMPACT_COLS,
   IMPACT_UNKNOWN,
   TIERS,
+  cellLevel,
   matrixMaxCount,
   type ExposureImpactMatrix,
-  type ImpactCol,
+  type Tier,
 } from "../matrix"
 
 const AXIS = { fill: "#8a96b2", fontSize: 11 }
@@ -194,15 +195,16 @@ export function AxisFactorBars({ data }: { data: TierFactorBars[] }) {
   )
 }
 
-// Per-tier accent used to tint a cell by its IMPACT column (the column tells you the
-// blast radius). The Unknown column gets a neutral slate — "we don't know the blast
-// radius", deliberately NOT a low/green tone that would read as "safe".
-const IMPACT_COL_COLOR: Record<ImpactCol, string> = {
+// LEVEL_COLOR mirrors the app's risk-level tokens (--crit/--high/--med/--low). A cell
+// is tinted by the LEVEL it resolves to (cellLevel = the engine's Exposure × Impact
+// outcome) so the grid reads as a danger map: a Critical zone is red wherever it sits,
+// an Unknown-column cell takes its Exposure-only provisional level. Count still drives
+// intensity, so hue = rating and saturation = how many accounts are there.
+const LEVEL_COLOR: Record<Tier, string> = {
   Critical: "#fb7185",
   High: "#fbbf24",
   Medium: "#a3e635",
   Low: "#22d3ee",
-  [IMPACT_UNKNOWN]: "#8a96b2",
 }
 
 // MatrixHeatmap: a CSS-grid heatmap of the Exposure × Impact account distribution.
@@ -214,45 +216,62 @@ const IMPACT_COL_COLOR: Record<ImpactCol, string> = {
 export function MatrixHeatmap({ m }: { m: ExposureImpactMatrix }) {
   const maxN = matrixMaxCount(m)
   return (
-    <div className="matrix-heatmap" role="table" aria-label="Exposure by Impact account distribution">
-      <div className="matrix-axis-y">Exposure ↓</div>
-      <div className="matrix-grid" role="rowgroup">
-        <div className="matrix-row matrix-row-head" role="row">
-          <div className="matrix-corner" role="columnheader">
-            <span className="matrix-corner-imp">Impact →</span>
+    <div className="matrix-block">
+      <div className="matrix-heatmap" role="table" aria-label="Exposure by Impact account distribution">
+        <div className="matrix-axis-y">Exposure ↓</div>
+        <div className="matrix-grid" role="rowgroup">
+          <div className="matrix-row matrix-row-head" role="row">
+            <div className="matrix-corner" role="columnheader">
+              <span className="matrix-corner-imp">Impact →</span>
+            </div>
+            {IMPACT_COLS.map((c) => (
+              <div
+                key={c}
+                role="columnheader"
+                className={`matrix-col-head${c === IMPACT_UNKNOWN ? " matrix-col-unknown" : ""}`}
+              >
+                {c}
+              </div>
+            ))}
           </div>
-          {IMPACT_COLS.map((c) => (
-            <div
-              key={c}
-              role="columnheader"
-              className={`matrix-col-head${c === IMPACT_UNKNOWN ? " matrix-col-unknown" : ""}`}
-            >
-              {c}
+          {TIERS.map((exp) => (
+            <div key={exp} className="matrix-row" role="row">
+              <div className="matrix-row-head-cell" role="rowheader">
+                {exp}
+              </div>
+              {IMPACT_COLS.map((imp) => {
+                const n = m.cell(exp, imp)
+                const level = cellLevel(exp, imp)
+                const unknown = imp === IMPACT_UNKNOWN
+                // Floor the tint for non-empty cells so the level hue is always legible
+                // (a Critical cell with a handful of accounts must still read red, not
+                // blank); sqrt softens the long tail so mid-size cells aren't washed out.
+                const intensity = n === 0 ? 0 : 0.45 + 0.55 * Math.sqrt(n / maxN)
+                return (
+                  <div
+                    key={imp}
+                    role="cell"
+                    className={`matrix-cell${n === 0 ? " matrix-cell-empty" : ""}${unknown ? " matrix-col-unknown" : ""}`}
+                    style={{ "--cell": intensity, "--cell-color": LEVEL_COLOR[level] } as CSSProperties}
+                    title={`Exposure ${exp} × Impact ${unknown ? "Unknown (no BloodHound coverage)" : imp} → ${level}${
+                      unknown ? " (provisional)" : ""
+                    }: ${n} account${n === 1 ? "" : "s"}`}
+                  >
+                    {n}
+                  </div>
+                )
+              })}
             </div>
           ))}
         </div>
-        {TIERS.map((exp) => (
-          <div key={exp} className="matrix-row" role="row">
-            <div className="matrix-row-head-cell" role="rowheader">
-              {exp}
-            </div>
-            {IMPACT_COLS.map((imp) => {
-              const n = m.cell(exp, imp)
-              const intensity = maxN > 0 ? n / maxN : 0
-              const unknown = imp === IMPACT_UNKNOWN
-              return (
-                <div
-                  key={imp}
-                  role="cell"
-                  className={`matrix-cell${n === 0 ? " matrix-cell-empty" : ""}${unknown ? " matrix-col-unknown" : ""}`}
-                  style={{ "--cell": intensity, "--cell-color": IMPACT_COL_COLOR[imp] } as CSSProperties}
-                  title={`Exposure ${exp} × Impact ${imp}: ${n} account${n === 1 ? "" : "s"}`}
-                >
-                  {n}
-                </div>
-              )
-            })}
-          </div>
+      </div>
+      <div className="matrix-legend">
+        <span className="matrix-legend-label">Cell colour = resulting level</span>
+        {TIERS.map((t) => (
+          <span key={t} className="matrix-legend-item">
+            <span className="matrix-legend-swatch" style={{ "--swatch": LEVEL_COLOR[t] } as CSSProperties} />
+            {t}
+          </span>
         ))}
       </div>
     </div>
