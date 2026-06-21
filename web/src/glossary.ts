@@ -12,4 +12,6 @@ export const GLOSSARY = {
   risk_score: "Per-account risk, 0–10 — higher is worse (opposite of the org health score).",
   bridge_matrix: "Each cell = number of shared-password groups that bridge the two domains. Darker = more bridges.",
   breach_impact: "Directional estimate from this audit's critical-risk + Domain-Admin-path counts; cost & recovery use IBM Cost of a Data Breach industry averages — not a quote.",
+  coverage: "BloodHound coverage: how many accounts were enriched. Un-enriched accounts have Unknown Impact and a provisional level.",
+  exposure_impact_matrix: "Accounts placed by Exposure (how easily the credential is compromised, rows) × Impact (blast radius if compromised, columns). The Unknown column is accounts with no BloodHound coverage — we don't know their blast radius, which is not the same as low.",
 } as const

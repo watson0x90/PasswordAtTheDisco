@@ -84,3 +84,13 @@ export function exposureImpactMatrix(accts: Account[]): ExposureImpactMatrix {
   }
   return { counts, total, cell: (exp, imp) => counts[exp][imp] }
 }
+
+// matrixMaxCount: the single largest cell count across the whole grid. Heatmap
+// callers divide each cell by this to get a [0,1] intensity — kept here (tested)
+// rather than computed in the component so the scale is pinned and never 0/NaN
+// for an empty grid (returns 0, which callers guard before dividing).
+export function matrixMaxCount(m: ExposureImpactMatrix): number {
+  let max = 0
+  for (const r of TIERS) for (const c of IMPACT_COLS) max = Math.max(max, m.counts[r][c])
+  return max
+}

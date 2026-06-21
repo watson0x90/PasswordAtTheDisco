@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import type { Account } from "./api"
-import { axisTier, coverageState, coverageStats, exposureImpactMatrix, isProvisional, IMPACT_UNKNOWN } from "./matrix"
+import { axisTier, coverageState, coverageStats, exposureImpactMatrix, isProvisional, matrixMaxCount, IMPACT_UNKNOWN } from "./matrix"
 
 // Mirrors the Account test factory used across web/src/*.test.ts (e.g. insights.test.ts):
 // C1 set the factory default impact_known:false, so a test that wants a known Impact
@@ -93,5 +93,20 @@ describe("exposureImpactMatrix", () => {
     expect(m.cell("High", "Medium")).toBe(1)
     expect(m.cell("Critical", IMPACT_UNKNOWN)).toBe(1)
     expect(m.total).toBe(3)
+  })
+})
+
+describe("matrixMaxCount (heatmap intensity scale)", () => {
+  it("returns the single largest cell count across the whole grid", () => {
+    const m = exposureImpactMatrix([
+      a({ exposure_score: 9, impact_score: 9, impact_known: true }), // Crit x Crit
+      a({ exposure_score: 9, impact_score: 9, impact_known: true }), // Crit x Crit
+      a({ exposure_score: 9, impact_score: 9, impact_known: true }), // Crit x Crit
+      a({ exposure_score: 6, impact_score: 4, impact_known: true }), // High x Med
+    ])
+    expect(matrixMaxCount(m)).toBe(3)
+  })
+  it("returns 0 for an empty grid (no division-by-zero in callers)", () => {
+    expect(matrixMaxCount(exposureImpactMatrix([]))).toBe(0)
   })
 })

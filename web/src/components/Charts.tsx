@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import type { CSSProperties, ReactNode } from "react"
 import {
   Bar,
   BarChart,
@@ -21,6 +21,14 @@ import {
   ZAxis,
 } from "recharts"
 import type { AxisFactor, Bar as BarDatum, Series, Slice, TierFactorBars } from "../insights"
+import {
+  IMPACT_COLS,
+  IMPACT_UNKNOWN,
+  TIERS,
+  matrixMaxCount,
+  type ExposureImpactMatrix,
+  type ImpactCol,
+} from "../matrix"
 
 const AXIS = { fill: "#8a96b2", fontSize: 11 }
 const TOOLTIP = {
@@ -186,6 +194,71 @@ export function AxisFactorBars({ data }: { data: TierFactorBars[] }) {
           {!t.impactKnown && <div className="axis-impact-unknown">Impact unknown for this tier — no BloodHound-enriched accounts.</div>}
         </div>
       ))}
+    </div>
+  )
+}
+
+// Per-tier accent used to tint a cell by its IMPACT column (the column tells you the
+// blast radius). The Unknown column gets a neutral slate — "we don't know the blast
+// radius", deliberately NOT a low/green tone that would read as "safe".
+const IMPACT_COL_COLOR: Record<ImpactCol, string> = {
+  Critical: "#fb7185",
+  High: "#fbbf24",
+  Medium: "#a3e635",
+  Low: "#22d3ee",
+  [IMPACT_UNKNOWN]: "#8a96b2",
+}
+
+// MatrixHeatmap: a CSS-grid heatmap of the Exposure × Impact account distribution.
+// Rows = Exposure tier (Critical→Low, top-down), columns = Impact tier + an explicit
+// "Unknown" column (impact_known=false accounts that can't be placed in an Impact
+// tier). Cell tint intensity scales with the account count via a computed --cell
+// custom property (count/maxCount); empty cells render muted. The Unknown column is
+// set apart with the matrix-col-unknown class so it never reads as "low impact".
+export function MatrixHeatmap({ m }: { m: ExposureImpactMatrix }) {
+  const maxN = matrixMaxCount(m)
+  return (
+    <div className="matrix-heatmap" role="table" aria-label="Exposure by Impact account distribution">
+      <div className="matrix-axis-y">Exposure ↓</div>
+      <div className="matrix-grid" role="rowgroup">
+        <div className="matrix-row matrix-row-head" role="row">
+          <div className="matrix-corner" role="columnheader">
+            <span className="matrix-corner-imp">Impact →</span>
+          </div>
+          {IMPACT_COLS.map((c) => (
+            <div
+              key={c}
+              role="columnheader"
+              className={`matrix-col-head${c === IMPACT_UNKNOWN ? " matrix-col-unknown" : ""}`}
+            >
+              {c}
+            </div>
+          ))}
+        </div>
+        {TIERS.map((exp) => (
+          <div key={exp} className="matrix-row" role="row">
+            <div className="matrix-row-head-cell" role="rowheader">
+              {exp}
+            </div>
+            {IMPACT_COLS.map((imp) => {
+              const n = m.cell(exp, imp)
+              const intensity = maxN > 0 ? n / maxN : 0
+              const unknown = imp === IMPACT_UNKNOWN
+              return (
+                <div
+                  key={imp}
+                  role="cell"
+                  className={`matrix-cell${n === 0 ? " matrix-cell-empty" : ""}${unknown ? " matrix-col-unknown" : ""}`}
+                  style={{ "--cell": intensity, "--cell-color": IMPACT_COL_COLOR[imp] } as CSSProperties}
+                  title={`Exposure ${exp} × Impact ${imp}: ${n} account${n === 1 ? "" : "s"}`}
+                >
+                  {n}
+                </div>
+              )
+            })}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
