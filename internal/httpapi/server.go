@@ -46,6 +46,8 @@ type Server struct {
 	StaticFS           fs.FS              // embedded SPA; if nil, served from StaticDir on disk
 	StaticDir          string             // disk fallback for the SPA (e.g. web/dist)
 	IngestToken        string             // bearer token the analysis engine uses to push data
+	MCPTokens          *auth.TokenStore   // role-scoped API tokens for MCP/programmatic access (may be nil)
+	MCPLimiter         *auth.Limiter      // per-IP failed-MCP-auth throttle (may be nil)
 	Users              *auth.UserStore    // live operator store (add/disable/remove without restart)
 	Logins             *auth.LoginTracker // per-account lockout + login history (may be nil)
 	Sessions           *auth.SessionStore
@@ -88,6 +90,7 @@ func (s *Server) staticFS() fs.FS {
 type ctxKey int
 
 const sessionKey ctxKey = 0
+const mcpTokenKey ctxKey = 1
 
 func sessionFrom(ctx context.Context) (auth.Session, bool) {
 	s, ok := ctx.Value(sessionKey).(auth.Session)
@@ -103,6 +106,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	// Engine ingestion (separate token, not a user session) -- creates an audit
 	mux.Handle("POST /api/ingest", s.requireIngestToken(s.requireUnlocked(http.HandlerFunc(s.handleIngest))))
+	// MCP / programmatic API: bearer token, role-scoped, no session required
+	mux.Handle("GET /api/mcp/whoami", s.requireMCPToken(http.HandlerFunc(s.handleMCPWhoami)))
 	// Authenticated operators (any role) -- redacted data only
 	mux.Handle("POST /api/logout", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleLogout))))
 	mux.Handle("GET /api/me", http.HandlerFunc(s.handleMe))
