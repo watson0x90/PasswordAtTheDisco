@@ -65,6 +65,9 @@ func main() {
 		case "reindex":
 			runReindex()
 			return
+		case "token":
+			runToken(os.Args[2:])
+			return
 		}
 	}
 
