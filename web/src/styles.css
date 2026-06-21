@@ -978,6 +978,40 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 .bd-card-factors { display: flex; flex-direction: column; gap: 4px; }
 .bd-factor { display: flex; justify-content: space-between; font-size: 11px; color: var(--faint); }
 .bd-factor .mono { font-family: var(--mono); color: var(--body); }
+.bd-note { font-size: 11px; color: var(--faint); font-style: italic; margin: 10px 0 0; }
+
+/* Impact-Unknown drawer card: a dashed, muted panel that reads as a coverage GAP,
+   never as a low-impact value. No number is shown. */
+.impact-unknown-card { border-style: dashed; background: transparent; }
+.impact-unknown-note { font-size: 11px; line-height: 1.5; color: var(--dim); margin: 0; }
+
+/* badge-provisional / badge-no-bh: deliberately NOT a tier color. Dashed, muted, so
+   "Unknown" never reads as a low/safe value — it reads as missing information. */
+.badge-provisional {
+  display: inline-block;
+  font-size: 10px;
+  letter-spacing: 0.3px;
+  color: var(--dim);
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px dashed var(--glass-border);
+  border-radius: 999px;
+  padding: 1px 8px;
+  margin-left: 7px;
+  vertical-align: middle;
+}
+.badge-no-bh {
+  display: inline-block;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--faint);
+  background: transparent;
+  border: 1px dashed var(--glass-border);
+  border-radius: 4px;
+  padding: 0 5px;
+  margin-left: 7px;
+  vertical-align: middle;
+}
 
 /* ---- compare ---- */
 

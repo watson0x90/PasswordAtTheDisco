@@ -13,5 +13,8 @@ export const GLOSSARY = {
   bridge_matrix: "Each cell = number of shared-password groups that bridge the two domains. Darker = more bridges.",
   breach_impact: "Directional estimate from this audit's critical-risk + Domain-Admin-path counts; cost & recovery use IBM Cost of a Data Breach industry averages — not a quote.",
   coverage: "BloodHound coverage: how many accounts were enriched. Un-enriched accounts have Unknown Impact and a provisional level.",
+  exposure_axis: "Exposure (0–10): how easily this credential is compromised — from the dump, HIBP, and password reuse. Always computed.",
+  impact_axis: "Impact (0–10, or Unknown): blast radius if this credential is compromised — from BloodHound. 'Unknown' means this account was not enriched and is not the same as low.",
+  impact_unknown: "Impact is Unknown because this account has no BloodHound coverage. The level is provisional, computed from Exposure alone — run enrichment to finalize.",
   exposure_impact_matrix: "Accounts placed by Exposure (how easily the credential is compromised, rows) × Impact (blast radius if compromised, columns). The Unknown column is accounts with no BloodHound coverage — we don't know their blast radius, which is not the same as low.",
 } as const

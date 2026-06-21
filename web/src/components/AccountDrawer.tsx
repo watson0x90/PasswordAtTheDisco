@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from "react"
-import type { Account } from "../api"
+import type { Account, ScoreBreakdown } from "../api"
 import { RISK_CLASS, hasDA, weaknessTags } from "../util"
+import { impactIsKnown, coverageState } from "../matrix"
 
 // WeakCell shows wordlist-weakness badges (common / dictionary / forbidden /
 // keyboard). The matched word itself is never shown — only the category.
@@ -38,6 +39,17 @@ export function AccountDrawer({ account: a, onClose }: { account: Account; onClo
     ["Domain", a.domain],
     ["Status", a.cracked ? "Cracked" : "Uncracked"],
     ["Risk level", <span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span>],
+    ["Exposure", a.exposure_score.toFixed(1)],
+    [
+      "Impact",
+      impactIsKnown(a) ? (
+        (a.impact_score as number).toFixed(1)
+      ) : (
+        <span className="badge-provisional" title="no BloodHound coverage">Unknown</span>
+      ),
+    ],
+    ["Coverage", coverageState(a) === "full" ? "BloodHound-enriched" : "Not enriched"],
+    ...(a.percentile != null ? ([["Triage percentile", `${Math.round((a.percentile ?? 0) * 100)}th`]] as [string, ReactNode][]) : []),
     ["Risk score", a.risk_score.toFixed(1)],
     ["Risk vector", <code className="vector">{a.risk_vector || "—"}</code>],
     ["HIBP breaches", a.hibp_breached ? a.hibp_breach_count.toLocaleString() : "—"],
@@ -61,7 +73,15 @@ export function AccountDrawer({ account: a, onClose }: { account: Account; onClo
     ["Enabled", a.enabled ? "Yes" : "No"],
   ]
 
-  // TODO(C5): v2 breakdown reads a.score_breakdown (v2 sub-scores) here.
+  // v2 breakdown reads a.score_breakdown (v2 axis sub-scores). Per D2 every breakdown
+  // field is omitempty, so a missing key is a legitimate 0 (never "unknown"): the v()
+  // safe-accessor coalesces undefined → 0. (impact_score null is the only true Unknown
+  // and is handled separately via impactIsKnown — never coalesced.)
+  const bd = a.score_breakdown
+  const v = (k: keyof ScoreBreakdown): number => {
+    const x = bd?.[k]
+    return typeof x === "number" ? x : 0
+  }
   return (
     <>
       <div className="drawer-backdrop" onClick={onClose} />
@@ -80,16 +100,72 @@ export function AccountDrawer({ account: a, onClose }: { account: Account; onClo
             </div>
           ))}
         </dl>
-        {/* TODO(C5): v2 breakdown — the v1 Score Breakdown cards read v1 score_breakdown
-            fields (base_score, temporal_score, environmental_score, …) that the v2 engine
-            no longer emits. C5 rewrites this as Exposure/Impact axis cards (v2 sub-scores,
-            provisional handling). Stubbed to {null} in #C1 to keep the tree green. */}
-        {null}
+        {bd && (
+          <div className="drawer-breakdown">
+            <div className="drawer-section-title">Score breakdown (v2)</div>
+            <div className="breakdown-grid">
+              <BreakdownCard
+                title="Exposure"
+                score={a.exposure_score.toFixed(1)}
+                factors={[
+                  ["Weakness", v("weakness_score")],
+                  ["HIBP floor", v("hibp_floor")],
+                  ["Cracked floor", v("cracked_floor")],
+                  ["Reuse", v("reuse_bump")],
+                  ["Roastable", v("roastable_bump")],
+                ]}
+              />
+              {impactIsKnown(a) ? (
+                <BreakdownCard
+                  title="Impact"
+                  score={(a.impact_score as number).toFixed(1)}
+                  factors={[
+                    ["Privilege", v("privilege_sub_score")],
+                    ["DA path", v("da_component")],
+                    ["Domain", v("domain_modifier")],
+                  ]}
+                />
+              ) : (
+                <div className="bd-card impact-unknown-card">
+                  <div className="bd-card-head">
+                    <span className="bd-card-title">Impact</span>
+                    <span className="badge-provisional">Unknown</span>
+                  </div>
+                  <p className="impact-unknown-note">
+                    Impact Unknown — this account was not BloodHound-enriched, so its blast
+                    radius can't be computed. Run enrichment to finalize the level.
+                  </p>
+                </div>
+              )}
+            </div>
+            {bd.enabled_gated && (
+              <p className="bd-note">Impact was gated because the account is disabled in AD.</p>
+            )}
+          </div>
+        )}
       </aside>
     </>
   )
 }
 
-// TODO(C5): v2 breakdown — BreakdownCard (Exposure/Impact axis sub-score cards) was
-// removed in #C1 along with the v1 Score Breakdown block (noUnusedLocals would flag it
-// while unused). C5 restores it to render the v2 Exposure/Impact axis cards.
+// BreakdownCard — v2 axis sub-score card (one per axis: Exposure / Impact). Shows the
+// axis score and its per-factor contributions. This is the v2 rewrite of the card #C1
+// removed; it does NOT resurrect the v1 base/temporal/environmental cards.
+function BreakdownCard({ title, score, factors }: { title: string; score: string; factors: [string, number][] }) {
+  return (
+    <div className="bd-card">
+      <div className="bd-card-head">
+        <span className="bd-card-title">{title}</span>
+        <span className="bd-card-score">{score}</span>
+      </div>
+      <div className="bd-card-factors">
+        {factors.map(([name, value]) => (
+          <div className="bd-factor" key={name}>
+            <span>{name}</span>
+            <span className="mono">{value.toFixed(2)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
