@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import type { Account } from "./api"
-import { axisTier, coverageStats, exposureImpactMatrix, isProvisional, IMPACT_UNKNOWN } from "./matrix"
+import { axisTier, coverageState, coverageStats, exposureImpactMatrix, isProvisional, IMPACT_UNKNOWN } from "./matrix"
 
 // Mirrors the Account test factory used across web/src/*.test.ts (e.g. insights.test.ts):
 // C1 set the factory default impact_known:false, so a test that wants a known Impact
@@ -43,6 +43,24 @@ describe("isProvisional", () => {
     expect(isProvisional(a({ impact_known: false }))).toBe(true)
     expect(isProvisional(a({ impact_known: true, impact_score: 5 }))).toBe(false)
   })
+  // Asymmetry guard: impact_known:true but impact_score:null is NOT a usable
+  // number, so the provisional badge and the matrix Unknown column must agree
+  // via the shared impactIsKnown predicate (they keyed off different checks before).
+  it("treats impact_known:true + impact_score:null as provisional AND routes it to matrix Unknown", () => {
+    const acct = a({ exposure_score: 9, impact_known: true, impact_score: null })
+    expect(isProvisional(acct)).toBe(true)
+    const m = exposureImpactMatrix([acct])
+    expect(m.cell("Critical", IMPACT_UNKNOWN)).toBe(1)
+    // and it is NOT counted in any concrete Impact tier
+    expect(m.cell("Critical", "Critical")).toBe(0)
+  })
+})
+
+describe("coverageState", () => {
+  it("returns full for coverage:full and none for absent coverage", () => {
+    expect(coverageState(a({ coverage: "full" }))).toBe("full")
+    expect(coverageState(a({}))).toBe("none")
+  })
 })
 
 describe("coverageStats", () => {
@@ -58,6 +76,9 @@ describe("coverageStats", () => {
   })
   it("not partial when all enriched", () => {
     expect(coverageStats([a({ coverage: "full" })]).partial).toBe(false)
+  })
+  it("empty input => zeroed stats, not partial", () => {
+    expect(coverageStats([])).toEqual({ enriched: 0, total: 0, partial: false })
   })
 })
 

@@ -25,11 +25,18 @@ export function axisTier(v: number): Tier {
   return "Low"
 }
 
+// impactIsKnown: Impact is a usable number only when impact_known AND impact_score
+// is non-null; both surfaces (provisional badge, matrix Unknown column) must use
+// this so they can't drift.
+export function impactIsKnown(a: Account): boolean {
+  return a.impact_known === true && a.impact_score !== null
+}
+
 // isProvisional: true exactly when Impact is Unknown (level was derived from
 // Exposure alone). The UI shows a "provisional" badge and never claims a number
 // for Impact.
 export function isProvisional(a: Account): boolean {
-  return a.impact_known === false
+  return !impactIsKnown(a)
 }
 
 // coverageState: absent coverage (omitempty) means no enrichment record => "none".
@@ -70,7 +77,8 @@ export function exposureImpactMatrix(accts: Account[]): ExposureImpactMatrix {
   let total = 0
   for (const a of accts) {
     const expT = axisTier(a.exposure_score)
-    const impCol: ImpactCol = a.impact_known && a.impact_score !== null ? axisTier(a.impact_score) : IMPACT_UNKNOWN
+    const impCol: ImpactCol =
+      impactIsKnown(a) && a.impact_score !== null ? axisTier(a.impact_score) : IMPACT_UNKNOWN
     counts[expT][impCol]++
     total++
   }
