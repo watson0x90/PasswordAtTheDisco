@@ -2223,8 +2223,13 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
 .faq-a strong { color: var(--text); font-weight: 600; }
 
 @media (max-width: 880px) {
-  .help-shell { grid-template-columns: minmax(0, 1fr); gap: var(--space-lg); }
+  /* Left-rail sub-nav stops being sticky and stacks into a horizontal,
+     wrapping chip row above the content; the standalone shell tightens its
+     gutters so the content card isn't crowded on phones. */
+  .help-shell { grid-template-columns: minmax(0, 1fr); gap: var(--space-lg); padding: var(--space-lg); }
   .help-nav { position: static; flex-direction: row; flex-wrap: wrap; }
+  .help-topbar { padding: var(--space-md) var(--space-lg); }
+  .help-content { padding: var(--space-lg); }
   .help-contrast { grid-template-columns: minmax(0, 1fr); }
   .help-contrast-arrow { transform: rotate(90deg); }
   .gloss-item { grid-template-columns: minmax(0, 1fr); gap: var(--space-sm); }
@@ -2235,4 +2240,7 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
   .score-grid-body .matrix-row { grid-template-columns: 70px repeat(5, 1fr); gap: var(--space-xs); }
   .score-grid-cell { min-height: 48px; }
   .score-grid-level { font-size: 11px; }
+  /* Stacked step rows so the 84px label column doesn't squeeze the value text
+     in the worked example at phone width. */
+  .score-case-steps li { grid-template-columns: minmax(0, 1fr); gap: var(--space-xs); }
 }
