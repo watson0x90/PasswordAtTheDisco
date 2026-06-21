@@ -525,6 +525,21 @@ export const api = {
       headers: { "X-CSRF-Token": csrf },
     }),
 
+  listMcpTokens: () => request<McpToken[]>("/mcp/tokens"),
+
+  createMcpToken: (label: string, role: Role, expires: string | undefined, csrf: string) =>
+    request<McpTokenCreated>("/mcp/tokens", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+      body: JSON.stringify({ label, role, expires }),
+    }),
+
+  revokeMcpToken: (id: string, csrf: string) =>
+    request<void>(`/mcp/tokens/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: { "X-CSRF-Token": csrf },
+    }),
+
   loginActivity: () => request<LoginAttempt[]>("/login-activity"),
 
   bheStatus: () => request<BHEStatus>("/bhe/status"),
@@ -604,6 +619,20 @@ export interface Operator {
   failed_attempts: number
   locked: boolean
   locked_until?: string
+}
+
+export interface McpToken {
+  id: string
+  role: Role
+  label: string
+  created: string
+  expires?: string
+  disabled: boolean
+  last_used?: string
+}
+
+export interface McpTokenCreated extends McpToken {
+  token: string // full secret, shown exactly once
 }
 
 export interface LoginAttempt {
