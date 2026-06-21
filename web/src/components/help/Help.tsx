@@ -1,5 +1,6 @@
 import { CHAPTERS } from "./chapters"
 import { useChapterHash } from "./useChapterHash"
+import { ChapterThesis } from "./ChapterThesis"
 import { Logo } from "../Logo"
 
 // Help / Methodology surface — a PURE STATIC explainer of how the tool works.
@@ -35,8 +36,12 @@ export function Help({ onClose }: { onClose?: () => void }) {
         ))}
       </nav>
       <section className="help-content" aria-live="polite">
-        {/* Placeholder — real chapter sections land in T2–T5. */}
-        <h2>{active.label}</h2>
+        {active.id === "thesis" ? (
+          <ChapterThesis />
+        ) : (
+          // Placeholder — remaining chapter sections land in T3–T5.
+          <h2>{active.label}</h2>
+        )}
       </section>
     </div>
   )
