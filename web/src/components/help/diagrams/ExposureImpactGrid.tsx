@@ -62,12 +62,12 @@ export function ExposureImpactGrid() {
       </p>
 
       <div className="score-grid" role="table" aria-label="Resulting Level for each Exposure tier by Impact tier">
-        <div className="score-grid-corner" role="columnheader">
-          <span className="score-grid-corner-imp">Impact →</span>
-          <span className="score-grid-corner-exp">Exposure ↓</span>
-        </div>
         <div className="score-grid-head" role="rowgroup">
           <div className="matrix-row matrix-row-head" role="row">
+            <div className="score-grid-corner" role="presentation">
+              <span className="score-grid-corner-imp">Impact →</span>
+              <span className="score-grid-corner-exp">Exposure ↓</span>
+            </div>
             {IMPACT_COLS.map((c) => (
               <div
                 key={c}

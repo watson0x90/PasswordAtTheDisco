@@ -1800,7 +1800,9 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
 
 /* CSS grid reusing the MatrixHeatmap row/header classes; 1 label col + 5 cols. */
 .score-grid { display: flex; flex-direction: column; gap: var(--space-sm); }
-.score-grid-corner { display: flex; justify-content: space-between; align-items: flex-end; }
+/* The corner is the first cell of the header row (over the row-label column),
+   carrying both diagonal axis captions; stacked, bottom-aligned. */
+.score-grid-corner { display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end; }
 .score-grid-corner-imp,
 .score-grid-corner-exp {
   font-size: 11px;
@@ -1811,9 +1813,6 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
 .score-grid-head .matrix-row,
 .score-grid-body .matrix-row { display: grid; grid-template-columns: 96px repeat(5, 1fr); gap: var(--space-sm); align-items: stretch; }
 .score-grid-head .matrix-row-head { grid-template-columns: 96px repeat(5, 1fr); }
-/* The header row has no row-label cell, so offset it under the data columns. */
-.score-grid-head .matrix-row { grid-template-columns: 96px repeat(5, 1fr); }
-.score-grid-head .matrix-col-head:first-child { grid-column: 2; }
 
 .score-grid-cell {
   position: relative;
@@ -1908,7 +1907,7 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
   background: var(--glass);
   padding: var(--space-xl);
 }
-.score-case.crit { border-color: rgba(251, 113, 133, 0.4); }
+.score-case.crit { border-color: color-mix(in srgb, var(--crit) 40%, transparent); }
 .score-case.prov { border-color: var(--faint); border-style: dashed; }
 .score-case-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); }
 .score-case-acct { font-family: var(--mono); font-size: 13px; color: var(--text); }
@@ -1922,8 +1921,8 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
   padding: 3px 8px;
   white-space: nowrap;
 }
-.score-case-result.crit { color: var(--crit); border: 1px solid rgba(251, 113, 133, 0.4); background: var(--crit-bg); }
-.score-case-result.prov { color: var(--high); border: 1px dashed rgba(251, 191, 36, 0.5); background: var(--high-bg); }
+.score-case-result.crit { color: var(--crit); border: 1px solid color-mix(in srgb, var(--crit) 40%, transparent); background: var(--crit-bg); }
+.score-case-result.prov { color: var(--high); border: 1px dashed color-mix(in srgb, var(--high) 50%, transparent); background: var(--high-bg); }
 
 .score-case-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-md); }
 .score-case-steps li {
