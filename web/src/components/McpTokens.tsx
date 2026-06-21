@@ -200,7 +200,9 @@ export function McpTokens() {
               <code className="token-secret-value">{revealed.token}</code>
               <button
                 className="btn"
-                onClick={() => void navigator.clipboard.writeText(revealed.token)}
+                disabled={!navigator.clipboard}
+                title={navigator.clipboard ? "" : "Clipboard needs a secure (HTTPS/loopback) context — select the token to copy manually"}
+                onClick={() => void navigator.clipboard?.writeText(revealed.token)}
               >
                 Copy
               </button>
