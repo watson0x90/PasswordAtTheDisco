@@ -126,6 +126,9 @@ func TestListTokensNeverLeaksHash(t *testing.T) {
 	if strings.Contains(rec.Body.String(), "secret_hash") {
 		t.Fatal("token list leaked secret_hash")
 	}
+	if strings.Contains(rec.Body.String(), `"token"`) {
+		t.Fatal("token list leaked the full token field")
+	}
 }
 
 func TestListTokensAnalystForbidden(t *testing.T) {

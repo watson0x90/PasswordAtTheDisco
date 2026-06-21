@@ -18,6 +18,13 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/fsutil"
 )
 
+// Issue validation errors (caller-input problems → HTTP 400). Other Issue errors
+// (id collision, entropy failure) are server-side → HTTP 500.
+var (
+	ErrTokenLabelRequired = errors.New("label is required")
+	ErrTokenInvalidRole   = errors.New("invalid token role")
+)
+
 // tokenPrefix self-identifies an MCP API token (secret-scanner friendly; cheap reject).
 const tokenPrefix = "patdmcp_"
 
@@ -151,10 +158,10 @@ func NewTokenStore(path string, tokens map[string]APIToken) *TokenStore {
 func (s *TokenStore) Issue(role Role, label string, expires *time.Time) (string, APIToken, error) {
 	label = strings.TrimSpace(label)
 	if label == "" {
-		return "", APIToken{}, errors.New("label is required")
+		return "", APIToken{}, ErrTokenLabelRequired
 	}
 	if !validRole(role) {
-		return "", APIToken{}, fmt.Errorf("invalid role %q", role)
+		return "", APIToken{}, fmt.Errorf("%w %q", ErrTokenInvalidRole, role)
 	}
 	id, secret, full, err := newToken()
 	if err != nil {

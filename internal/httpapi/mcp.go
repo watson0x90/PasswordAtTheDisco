@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -57,6 +58,15 @@ func (s *Server) handleMCPWhoami(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"token_id": tok.ID, "role": string(tok.Role)})
 }
 
+// mcpTokensReady writes 503 and returns false when the token store isn't configured.
+func (s *Server) mcpTokensReady(w http.ResponseWriter) bool {
+	if s.MCPTokens == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "mcp access disabled"})
+		return false
+	}
+	return true
+}
+
 // requireLeadSession returns the session iff the caller is an authenticated lead;
 // otherwise it writes 401/403 and returns false.
 func requireLeadSession(w http.ResponseWriter, r *http.Request) (auth.Session, bool) {
@@ -76,12 +86,18 @@ func (s *Server) handleListMCPTokens(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireLeadSession(w, r); !ok {
 		return
 	}
+	if !s.mcpTokensReady(w) {
+		return
+	}
 	writeJSON(w, http.StatusOK, s.MCPTokens.List())
 }
 
 func (s *Server) handleCreateMCPToken(w http.ResponseWriter, r *http.Request) {
 	sess, ok := requireLeadSession(w, r)
 	if !ok {
+		return
+	}
+	if !s.mcpTokensReady(w) {
 		return
 	}
 	var body struct {
@@ -96,7 +112,11 @@ func (s *Server) handleCreateMCPToken(w http.ResponseWriter, r *http.Request) {
 	full, rec, err := s.MCPTokens.Issue(body.Role, body.Label, body.Expires)
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "token_create", Target: rec.ID, Source: r.RemoteAddr, Result: okOr(err)})
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		status := http.StatusInternalServerError
+		if errors.Is(err, auth.ErrTokenLabelRequired) || errors.Is(err, auth.ErrTokenInvalidRole) {
+			status = http.StatusBadRequest
+		}
+		writeJSON(w, status, map[string]string{"error": err.Error()})
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{
@@ -110,11 +130,14 @@ func (s *Server) handleRevokeMCPToken(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !s.mcpTokensReady(w) {
+		return
+	}
 	id := r.PathValue("id")
 	revoked := s.MCPTokens.Revoke(id)
 	result := "ok"
 	if !revoked {
-		result = "denied"
+		result = "failed"
 	}
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "token_revoke", Target: id, Source: r.RemoteAddr, Result: result})
 	if !revoked {
