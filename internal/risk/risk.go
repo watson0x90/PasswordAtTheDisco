@@ -27,15 +27,24 @@ type Analysis struct {
 	SimilarMax            float64 // highest similarity to another password (0 if none)
 }
 
-// Context holds account/environment signals consumed by scoring.
+// Context holds account/environment signals consumed by scoring. v2: Exposure is
+// always computed; Impact needs Enabled/ControlsTier0/Coverage and is Unknown when
+// coverage == "none". Cracked distinguishes the weakness-bearing path from uncracked.
 type Context struct {
-	SharedWith          int      // accounts sharing this password (<=0 treated as none)
-	DADomains           []string // domains with a Domain Admin pathway (empty = none)
-	ControlledObjects   *int     // controlled object count; nil = unknown
-	DaysOutOfCompliance *int     // nil = unknown
-	PasswordExpires     string   // "No" | "Yes"; anything else = unknown
-	DomainRiskLevel     string   // "Critical"|"High"|"Medium"|"Low"; else unknown
-	HIBPBreachCount     int
+	Cracked           bool     // true = password known (weakness penalties apply)
+	SharedWith        int      // accounts sharing this password (>0 => reuse bump)
+	DADomains         []string // domains with a Domain Admin pathway (empty = none)
+	ControlledObjects *int     // TRUE controlled-object count (env.Count); nil = unknown
+	ControlsTier0     bool     // controls a Tier-0/DA-equivalent object (DCSync/DA group/AdminSDHolder/KRBTGT)
+	Enabled           bool     // false => Impact capped at 2.0 (can't authenticate)
+	HasSPN            bool     // Kerberoastable (Exposure roastable bump)
+	DontReqPreauth    bool     // AS-REP roastable (Exposure roastable bump)
+	Coverage          string   // "full" | "none"; "none" => Impact Unknown
+	DomainRiskLevel   string   // "Critical"|"High"|"Medium"|"Low"; else unknown
+	HIBPBreachCount   int
+	// Retained for the vector string only (no longer scored); see Vector().
+	DaysOutOfCompliance *int
+	PasswordExpires     string
 }
 
 // Breakdown is the per-component score detail (mirrors score_breakdown).
@@ -199,6 +208,125 @@ func similarityFactor(max float64) float64 {
 	default:
 		return 0
 	}
+}
+
+// --- Exposure axis (v2): "how easily is this credential compromised?" ---
+
+// exposureWeights sum to 1.0; each penalty is an INDEPENDENT [0,1] term, so
+// complexity is no longer nullified by length (the v1 product bug).
+const (
+	wLen  = 0.30
+	wCx   = 0.20
+	wDict = 0.35
+	wSim  = 0.15
+)
+
+// lengthPenalty is the v1 logistic, kept verbatim (higher = shorter = worse), [0,1].
+func lengthPenalty(length int) float64 {
+	return 1.0 / (1.0 + math.Exp(float64(length-10)/2.0))
+}
+
+// complexityPenalty maps complexityF in [0.2,1.0] -> [0,1] (higher = less complex = worse).
+// In complexityFactors a LOWER factor means a STRONGER password (mixedalphaspecialnum=0.2
+// is strongest, numeric=1.0 weakest), and v1 baseScore multiplied that factor in, so risk
+// rises WITH the factor. The penalty therefore scales directly with cf: (cf-0.2)/0.8.
+func complexityPenalty(label string) float64 {
+	cf := 1.0
+	if v, ok := complexityFactors[label]; ok {
+		cf = v
+	}
+	p := (cf - 0.2) / 0.8
+	return clamp01(p)
+}
+
+// dictPenalty is the v1 additive dictionary/common/banned/keyboard term, clamped [0,1].
+func dictPenalty(a Analysis) float64 {
+	var d float64
+	if a.IsCommon {
+		d += 0.7
+	}
+	if a.IsDictionaryWord {
+		d += 0.5
+	}
+	d += math.Min(0.8, 0.2*float64(a.BannedWordsCount))
+	d += math.Min(0.5, 0.1*float64(a.KeyboardPatternsCount))
+	return clamp01(d)
+}
+
+// simPenalty normalizes the v1 similarity term (raw max 0.6) to [0,1].
+func simPenalty(simMax float64) float64 {
+	return clamp01(similarityFactor(simMax) / 0.6)
+}
+
+// weaknessScore is the cracked-only weighted sum of bounded penalties, scaled x10.
+func weaknessScore(a Analysis) float64 {
+	return 10.0 * (wLen*lengthPenalty(a.PasswordLength) +
+		wCx*complexityPenalty(a.ComplexityLabel) +
+		wDict*dictPenalty(a) +
+		wSim*simPenalty(a.SimilarMax))
+}
+
+// hibpExposureFloor is the SINGLE HIBP channel (kills the v1 triple-count).
+func hibpExposureFloor(count int) float64 {
+	switch {
+	case count >= 1000000:
+		return 9.0
+	case count >= 100000:
+		return 8.5
+	case count >= 10000:
+		return 8.0
+	case count >= 1000:
+		return 7.0
+	case count >= 100:
+		return 6.0
+	case count >= 10:
+		return 5.0
+	case count >= 1:
+		return 4.5
+	default:
+		return 0
+	}
+}
+
+// crackedFloor: cracking is itself exposure, applied ONCE.
+func crackedFloor(a Analysis, cracked bool) float64 {
+	switch {
+	case cracked && a.PasswordLength < 8:
+		return 4.0
+	case cracked:
+		return 3.0
+	default:
+		return 0
+	}
+}
+
+// exposureScore is the per-account Exposure axis [0,10].
+func exposureScore(a Analysis, c Context) float64 {
+	var floor float64
+	if c.Cracked {
+		floor = math.Max(weaknessScore(a), math.Max(hibpExposureFloor(c.HIBPBreachCount), crackedFloor(a, true)))
+	} else {
+		// Uncracked: password unknown, no weakness signals.
+		floor = hibpExposureFloor(c.HIBPBreachCount)
+	}
+	var bump float64
+	if c.SharedWith > 0 {
+		bump += 0.5
+	}
+	if c.HasSPN || c.DontReqPreauth {
+		bump += 0.5
+	}
+	return math.Min(10.0, floor+bump)
+}
+
+func clamp01(x float64) float64 {
+	if x < 0 {
+		return 0
+	}
+	if x > 1 {
+		return 1
+	}
+	return x
 }
 
 // floorBase applies the evidence-based cracked-password risk floor: a cracked

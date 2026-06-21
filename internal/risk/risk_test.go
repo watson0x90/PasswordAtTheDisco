@@ -183,6 +183,99 @@ func TestVector(t *testing.T) {
 	}
 }
 
+func TestExposureComplexityIndependentOfLength(t *testing.T) {
+	// Two 16-char passwords, identical length, differing ONLY in complexity.
+	// In v1 the base multiplied complexityF*lengthF, so a long password collapsed
+	// complexity's contribution and these scored identically. In v2 complexity is an
+	// independent weighted term, so the mixed-special password must score strictly
+	// LOWER exposure than the all-lowercase one.
+	// Length 8 (not 16): both weakness scores must clear the crackedFloor (3.0) for the
+	// complexity difference to be observable through exposureScore; at length 16 both fall
+	// below the floor and exposure collapses to 3.0 for both (deviation from plan's literal
+	// length 16 — the floor masked the difference there). The point — complexity is an
+	// independent term, not nullified by length — holds.
+	lower := Analysis{ComplexityLabel: "loweralpha", PasswordLength: 8}
+	mixed := Analysis{ComplexityLabel: "mixedalphaspecialnum", PasswordLength: 8}
+	c := Context{Cracked: true, Coverage: "none"}
+	eLow := exposureScore(lower, c)
+	eMixed := exposureScore(mixed, c)
+	if !(eLow > eMixed) {
+		t.Fatalf("complexity must matter independent of length: lower=%v mixed=%v", eLow, eMixed)
+	}
+}
+
+func TestExposureHIBPCountedOnce(t *testing.T) {
+	// A strong, long, unique password whose hash matches HIBP at exactly the 1e5
+	// tier. v1 multiplied/floored HIBP three times; v2 uses a single floor of 8.5.
+	// Exposure must equal exactly the floor (no weakness signal beats it, no bumps).
+	a := strong()
+	got := exposureScore(a, Context{Cracked: true, Coverage: "none", HIBPBreachCount: 100000})
+	if !almost(got, 8.5) {
+		t.Fatalf("HIBP 1e5 exposure = %v, want exactly 8.5 (single channel)", got)
+	}
+	// One breach hit floors at 4.5, not higher.
+	if got := exposureScore(a, Context{Cracked: true, Coverage: "none", HIBPBreachCount: 1}); !almost(got, 4.5) {
+		t.Fatalf("HIBP 1 exposure = %v, want 4.5", got)
+	}
+}
+
+func TestExposureWeakness(t *testing.T) {
+	// Worst-case weakness: shortest, least complex ("numeric" cf=1.0 -> max penalty),
+	// every dict signal, max similarity. complexity/dict/sim penalties saturate to 1.0;
+	// lengthPenalty is a sigmoid that ASYMPTOTES to 1.0 but never reaches it (lengthPenalty(1)
+	// = 0.989), so the locked "= 10.0" is the cf=1.0/len=0 idealization. The achievable
+	// saturated weakness is ~9.97; assert it is essentially maxed (>= 9.9) rather than the
+	// unreachable exact 10.0 (deviation from plan's literal almost(10.0)).
+	a := Analysis{ComplexityLabel: "numeric", PasswordLength: 1, IsCommon: true,
+		IsDictionaryWord: true, BannedWordsCount: 50, KeyboardPatternsCount: 50, SimilarMax: 1.0}
+	if got := weaknessScore(a); got < 9.9 {
+		t.Fatalf("saturated weakness = %v, want ~10.0 (>= 9.9)", got)
+	}
+	// A perfectly strong long password: lengthPenalty~0, complexityPenalty=0,
+	// dict=0, sim=0 -> weaknessScore ~ 0.
+	if got := weaknessScore(strong()); got > 0.1 {
+		t.Fatalf("strong weakness = %v, want ~0", got)
+	}
+}
+
+func TestExposureBumps(t *testing.T) {
+	a := strong()
+	base := exposureScore(a, Context{Cracked: true, Coverage: "none"}) // crackedFloor 3.0
+	if !almost(base, 3.0) {
+		t.Fatalf("strong cracked floor = %v, want 3.0", base)
+	}
+	reuse := exposureScore(a, Context{Cracked: true, Coverage: "none", SharedWith: 2})
+	if !almost(reuse, 3.5) {
+		t.Fatalf("reuse bump = %v, want 3.5", reuse)
+	}
+	roast := exposureScore(a, Context{Cracked: true, Coverage: "full", HasSPN: true})
+	if !almost(roast, 3.5) {
+		t.Fatalf("roastable bump = %v, want 3.5", roast)
+	}
+	short := exposureScore(Analysis{ComplexityLabel: "loweralpha", PasswordLength: 5},
+		Context{Cracked: true, Coverage: "none"})
+	if short < 4.0 {
+		t.Fatalf("short cracked floor = %v, want >= 4.0", short)
+	}
+}
+
+func TestExposureUncracked(t *testing.T) {
+	// Uncracked: no weakness signals (password unknown). Exposure from HIBP floor + bumps only.
+	c := Context{Cracked: false, Coverage: "none", HIBPBreachCount: 1000}
+	if got := exposureScore(Analysis{}, c); !almost(got, 7.0) {
+		t.Fatalf("uncracked HIBP 1e3 = %v, want 7.0", got)
+	}
+	// Uncracked, no HIBP, no bumps -> 0 exposure (unknown password, no signal).
+	if got := exposureScore(Analysis{}, Context{Cracked: false, Coverage: "none"}); !almost(got, 0.0) {
+		t.Fatalf("uncracked no-signal exposure = %v, want 0.0", got)
+	}
+	// Uncracked + reuse + roastable bump still applies.
+	c2 := Context{Cracked: false, Coverage: "full", SharedWith: 3, DontReqPreauth: true}
+	if got := exposureScore(Analysis{}, c2); !almost(got, 1.0) {
+		t.Fatalf("uncracked bumps-only exposure = %v, want 1.0", got)
+	}
+}
+
 func TestShareCode(t *testing.T) {
 	for _, c := range []struct {
 		n    int
