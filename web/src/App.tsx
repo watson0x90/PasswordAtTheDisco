@@ -14,6 +14,7 @@ import { Ingest } from "./components/Ingest"
 import { Policies } from "./components/Policies"
 import { Integrations } from "./components/Integrations"
 import { Operators } from "./components/Operators"
+import { McpTokens } from "./components/McpTokens"
 import { Activity } from "./components/Activity"
 import { ManageAudits } from "./components/ManageAudits"
 import { Reports } from "./components/Reports"
@@ -53,6 +54,8 @@ function viewFor(view: View) {
       return <Integrations />
     case "operators":
       return <Operators />
+    case "mcptokens":
+      return <McpTokens />
     case "activity":
       return <Activity />
     case "audits":

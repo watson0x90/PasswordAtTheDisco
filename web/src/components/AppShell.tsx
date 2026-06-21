@@ -7,7 +7,7 @@ import { JobPill } from "./JobPill"
 
 export type View =
   | "overview" | "actionable" | "accounts" | "domains" | "compare" | "reports"
-  | "ingest" | "policies" | "integrations" | "operators" | "activity" | "audits"
+  | "ingest" | "policies" | "integrations" | "operators" | "mcptokens" | "activity" | "audits"
   | "audit-data" | "exposure" | "search" | "help"
 
 export const TABS: { id: View; label: string }[] = [
@@ -30,6 +30,7 @@ export const SETUP_ITEMS: { id: View; label: string }[] = [
 ]
 export const ADMIN_ITEMS: { id: View; label: string }[] = [
   { id: "operators", label: "Operators" },
+  { id: "mcptokens", label: "MCP Tokens" },
   { id: "activity", label: "Activity" },
   { id: "audits", label: "Manage Audits" },
 ]
