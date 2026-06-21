@@ -47,52 +47,118 @@ type Context struct {
 	PasswordExpires     string
 }
 
-// Breakdown is the per-component score detail (mirrors score_breakdown).
+// Breakdown is the per-axis score detail plus every raw per-factor input the
+// sub-project C leave-one-out radar needs (Δ_k = Score(all) − Score(factor k neutralized)).
 type Breakdown struct {
-	BaseScore          float64
-	ComplexityFactor   float64
-	LengthFactor       float64
-	DictionaryFactor   float64
-	SimilarityFactor   float64
-	TemporalScore      float64
-	ComplianceFactor   float64
-	ExpirationFactor   float64
-	EnvironmentalScore float64
-	PrivilegeFactor    float64
-	ShareFactor        float64
-	DomainFactor       float64
-	HIBPFactor         float64
+	// Exposure axis (v2)
+	ExposureScore     float64 `json:"exposure_score"`
+	WeaknessScore     float64 `json:"weakness_score"`
+	LengthPenalty     float64 `json:"length_penalty"`
+	ComplexityPenalty float64 `json:"complexity_penalty"`
+	DictPenalty       float64 `json:"dict_penalty"`
+	SimPenalty        float64 `json:"sim_penalty"`
+	HIBPFloor         float64 `json:"hibp_floor"`
+	CrackedFloor      float64 `json:"cracked_floor"`
+	ReuseBump         float64 `json:"reuse_bump"`
+	RoastableBump     float64 `json:"roastable_bump"`
+	// Impact axis (v2)
+	ImpactScore       float64 `json:"impact_score"`
+	PrivilegeSubScore float64 `json:"privilege_sub_score"`
+	DAComponent       float64 `json:"da_component"`
+	DomainModifier    float64 `json:"domain_modifier"`
+	EnabledGated      bool    `json:"enabled_gated"`
+
+	// --- Retained v1 fields (compile-compat for internal/engine, which still reads
+	// these in scoreCracked; B4 migrates the engine and B6 removes them). Populated
+	// from the still-present v1 scoring funcs so the engine's emitted breakdown is
+	// unchanged in B3. ---
+	BaseScore          float64 `json:"-"`
+	ComplexityFactor   float64 `json:"-"`
+	LengthFactor       float64 `json:"-"`
+	DictionaryFactor   float64 `json:"-"`
+	SimilarityFactor   float64 `json:"-"`
+	TemporalScore      float64 `json:"-"`
+	ComplianceFactor   float64 `json:"-"`
+	ExpirationFactor   float64 `json:"-"`
+	EnvironmentalScore float64 `json:"-"`
+	PrivilegeFactor    float64 `json:"-"`
+	ShareFactor        float64 `json:"-"`
+	DomainFactor       float64 `json:"-"`
+	HIBPFactor         float64 `json:"-"`
 }
 
-// Result is the full scoring output for one (cracked) account.
+// Result is the full v2 scoring output for one account.
 type Result struct {
-	Score     float64 // 0-10, one decimal
-	Level     string  // Critical | High | Medium | Low
-	Vector    string  // CVSS-like vector string
-	HasDAPath bool
-	Breakdown Breakdown
+	Exposure    float64 // 0-10, one decimal
+	Impact      float64 // 0-10, one decimal; meaningless when !ImpactKnown
+	ImpactKnown bool
+	Score       float64 // legacy back-compat blend (de-emphasized)
+	Level       string  // from the 2D matrix
+	Provisional bool    // true when ImpactKnown is false (level from Exposure alone)
+	Vector      string
+	HasDAPath   bool
+	Breakdown   Breakdown
 }
 
-// Score computes the full risk result for a cracked password.
+// Score computes the full v2 risk result. Per-account only: it does NOT compute
+// shared-hash-to-DA (an audit-level pass in internal/store).
 func Score(a Analysis, c Context) Result {
+	exp := round1(exposureScore(a, c))
+	impRaw, known := impactScore(c)
+	imp := round1(impRaw)
+	hasDA := len(c.DADomains) > 0
+	daOverride := c.Cracked && hasDA
+	level := LevelFromAxes(exp, imp, known, daOverride)
+
+	var legacy float64
+	if known {
+		legacy = round1(0.5*exp + 0.5*imp)
+	} else {
+		legacy = exp
+	}
+
+	var reuse, roast float64
+	if c.SharedWith > 0 {
+		reuse = 0.5
+	}
+	if c.HasSPN || c.DontReqPreauth {
+		roast = 0.5
+	}
+
+	// v1 breakdown (compile-compat for the engine; removed in B6).
 	base, cf, lf, df, sf := baseScore(a)
 	base = floorBase(base, a, c.HIBPBreachCount)
 	temporal, compF, expF := temporalScore(base, c.DaysOutOfCompliance, c.PasswordExpires)
-	hasDA := len(c.DADomains) > 0
 	env, privF, shareF, domF, hibpF := environmentalScore(
 		temporal, hasDA, c.ControlledObjects, c.SharedWith, c.DomainRiskLevel, c.HIBPBreachCount)
-	// Apply the final-score floor: the environmental result must never drop below
-	// the cracked-password minimum for this password's characteristics. This prevents
-	// "unknown" temporal/environmental factors from diluting a clearly weak password
-	// below the risk tier it inherently belongs to.
 	env = finalFloor(env, a, c.HIBPBreachCount)
-	final := round1(env)
+
 	return Result{
-		Score:     final,
-		Level:     ComputeLevel(final, hasDA),
-		Vector:    Vector(a, c),
-		HasDAPath: hasDA,
+		Exposure:    exp,
+		Impact:      imp,
+		ImpactKnown: known,
+		Score:       legacy,
+		Level:       level,
+		Provisional: !known,
+		Vector:      Vector(a, c),
+		HasDAPath:   hasDA,
 		Breakdown: Breakdown{
+			ExposureScore:     exp,
+			WeaknessScore:     round2(weaknessScore(a)),
+			LengthPenalty:     round2(lengthPenalty(a.PasswordLength)),
+			ComplexityPenalty: round2(complexityPenalty(a.ComplexityLabel)),
+			DictPenalty:       round2(dictPenalty(a)),
+			SimPenalty:        round2(simPenalty(a.SimilarMax)),
+			HIBPFloor:         hibpExposureFloor(c.HIBPBreachCount),
+			CrackedFloor:      crackedFloor(a, c.Cracked),
+			ReuseBump:         reuse,
+			RoastableBump:     roast,
+			ImpactScore:       imp,
+			PrivilegeSubScore: privilegeSubScore(c.ControlledObjects, c.ControlsTier0),
+			DAComponent:       daComponent(c.DADomains),
+			DomainModifier:    domainModifier(c.DomainRiskLevel),
+			EnabledGated:      known && !c.Enabled,
+			// retained v1 fields
 			BaseScore:          round1(base),
 			ComplexityFactor:   round2(cf),
 			LengthFactor:       round2(lf),
@@ -152,6 +218,51 @@ func ComputeLevel(score float64, hasDAPath bool) string {
 	default:
 		return "Low"
 	}
+}
+
+// tierOf maps an axis value [0,10] to its tier index: 0=Critical,1=High,2=Medium,3=Low.
+func tierOf(v float64) int {
+	switch {
+	case v >= 8.0:
+		return 0
+	case v >= 6.0:
+		return 1
+	case v >= 4.0:
+		return 2
+	default:
+		return 3
+	}
+}
+
+// levelMatrix[impactTier][exposureTier] -> Level. Rows = Impact, cols = Exposure,
+// each Critical(0)/High(1)/Medium(2)/Low(3). Mirrors the design spec table.
+var levelMatrix = [4][4]string{
+	{"Critical", "Critical", "Critical", "High"}, // Impact Critical
+	{"Critical", "High", "High", "Medium"},       // Impact High
+	{"High", "High", "Medium", "Medium"},         // Impact Medium
+	{"Medium", "Medium", "Low", "Low"},           // Impact Low
+}
+
+// LevelFromAxes derives the overall Level. When impactKnown is false the level is
+// taken from the Exposure tier alone (the caller flags it provisional). A cracked
+// account with a confirmed DA path (daOverride) is always Critical.
+func LevelFromAxes(exposure, impact float64, impactKnown, daOverride bool) string {
+	if daOverride {
+		return "Critical"
+	}
+	if !impactKnown {
+		switch tierOf(exposure) {
+		case 0:
+			return "Critical"
+		case 1:
+			return "High"
+		case 2:
+			return "Medium"
+		default:
+			return "Low"
+		}
+	}
+	return levelMatrix[tierOf(impact)][tierOf(exposure)]
 }
 
 var complexityFactors = map[string]float64{
@@ -513,8 +624,33 @@ func Vector(a Analysis, c Context) string {
 		"S:" + shareCode(c.SharedWith),
 		"DR:" + domainCode(c.DomainRiskLevel),
 		"HIBP:" + hibpCode(c.HIBPBreachCount),
+		"EXP:" + axisCode(exposureScore(a, c)),
+		"IMP:" + impactCode(c),
 	}
 	return strings.Join(parts, "/")
+}
+
+// axisCode maps an axis value to its tier letter (C/H/M/L).
+func axisCode(v float64) string {
+	switch tierOf(v) {
+	case 0:
+		return "C"
+	case 1:
+		return "H"
+	case 2:
+		return "M"
+	default:
+		return "L"
+	}
+}
+
+// impactCode is the Impact tier letter, or "U" when Impact is Unknown.
+func impactCode(c Context) string {
+	v, known := impactScore(c)
+	if !known {
+		return "U"
+	}
+	return axisCode(v)
 }
 
 var complexityCodes = map[string]string{

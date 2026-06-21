@@ -66,10 +66,16 @@ func TestProcessDomainCrackedBasics(t *testing.T) {
 	if alice.SharedWith != 1 || bob.SharedWith != 1 {
 		t.Errorf("shared-with: alice=%d bob=%d, want 1/1", alice.SharedWith, bob.SharedWith)
 	}
-	// "Welcome1" is common -> base floor 7.0, reduced by unknown temporal factors
-	// to ~6.2 == High; far above a strong unique password.
-	if alice.RiskLevel != "High" || alice.RiskScore < 6.0 {
-		t.Errorf("common password: level=%q score=%v, want High / >=6.0", alice.RiskLevel, alice.RiskScore)
+	// v2: HIBP no longer triple-counted; level now from Exposure/Impact axes.
+	// "Welcome1" (common, len 8, shared) -> Exposure = weakness(~5.64) floored by
+	// crackedFloor(3.0), + reuse bump 0.5 = 6.1 (High tier). No enricher => Coverage
+	// "none" => Impact Unknown, so Level comes from the Exposure tier alone == High.
+	// Score back-compat blend == Exposure when Impact is Unknown == 6.1.
+	if alice.RiskLevel != "High" || alice.RiskScore != 6.1 {
+		t.Errorf("common password: level=%q score=%v, want High / 6.1", alice.RiskLevel, alice.RiskScore)
+	}
+	if alice.Coverage != "none" {
+		t.Errorf("no enricher -> coverage should be none (Impact Unknown), got %q", alice.Coverage)
 	}
 	if carol := accts[byUser["carol"]]; !(carol.RiskScore < alice.RiskScore) {
 		t.Errorf("strong pw (%v) should score below common pw (%v)", carol.RiskScore, alice.RiskScore)
@@ -100,6 +106,8 @@ func TestProcessDomainHIBPAndDAPath(t *testing.T) {
 	if a.DADomains != "CORP" {
 		t.Errorf("DADomains = %q, want CORP", a.DADomains)
 	}
+	// v2: cracked + confirmed DA path -> hard override to Critical (the daOverride
+	// branch in LevelFromAxes fires because scoreCracked now sets Cracked:true).
 	if a.RiskLevel != "Critical" {
 		t.Errorf("DA pathway must be Critical, got %q", a.RiskLevel)
 	}

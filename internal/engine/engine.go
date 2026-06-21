@@ -291,6 +291,9 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 
 	daysOOC := daysOutOfCompliance(enrData.PwdLastSet, now, pol.MaxPasswordAgeDays)
 	rctx := risk.Context{
+		Cracked:             true,
+		Coverage:            coverageState(enrData.Enriched),
+		Enabled:             enabledOrUnknown(enrData.Enabled),
 		SharedWith:          sharedWith,
 		DADomains:           enrData.DADomains,
 		ControlledObjects:   enrData.ControlledObjects,

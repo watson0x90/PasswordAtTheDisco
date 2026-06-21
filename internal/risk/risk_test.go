@@ -151,34 +151,45 @@ func TestScoreFlooring(t *testing.T) {
 }
 
 func TestScoreDAPathAndRange(t *testing.T) {
-	r := Score(strong(), Context{DADomains: []string{"CORP.INT"}, PasswordExpires: "Unknown"})
+	// v2: a CRACKED account with a confirmed DA path is the hard-override -> Critical.
+	r := Score(strong(), Context{Cracked: true, Coverage: "full", Enabled: true,
+		DADomains: []string{"CORP.INT"}, PasswordExpires: "Unknown"})
 	if !r.HasDAPath || r.Level != "Critical" {
-		t.Errorf("DA path should be Critical: %+v", r)
+		t.Errorf("cracked + DA path should be Critical: %+v", r)
 	}
-	if Score(strong(), Context{PasswordExpires: "Unknown"}).HasDAPath {
+	if Score(strong(), Context{Cracked: true, Coverage: "none", PasswordExpires: "Unknown"}).HasDAPath {
 		t.Error("no DADomains should mean no DA path")
 	}
 	r2 := Score(
 		Analysis{ComplexityLabel: "mixedalphaspecialnum", PasswordLength: 20, IsCommon: true},
-		Context{SharedWith: 1000, DADomains: []string{"CORP.INT"}, ControlledObjects: ip(2000),
+		Context{Cracked: true, Coverage: "full", Enabled: true, SharedWith: 1000,
+			DADomains: []string{"CORP.INT"}, ControlledObjects: ip(2000),
 			DomainRiskLevel: "Critical", HIBPBreachCount: 100000, PasswordExpires: "Unknown"},
 	)
 	if r2.Score < 0.0 || r2.Score > 10.0 {
-		t.Errorf("final score out of range: %v", r2.Score)
+		t.Errorf("legacy score out of range: %v", r2.Score)
+	}
+	if r2.Exposure < 0.0 || r2.Exposure > 10.0 || r2.Impact < 0.0 || r2.Impact > 10.0 {
+		t.Errorf("axes out of range: exposure=%v impact=%v", r2.Exposure, r2.Impact)
 	}
 }
 
 func TestVector(t *testing.T) {
-	if got := Vector(strong(), Context{PasswordExpires: "Unknown"}); got != "C:C1/L:VL/D:N/SM:N/CM:U/EX:U/DA:N/CO:U/S:0/DR:U/HIBP:N" {
+	// v2 vector now carries EXP:/IMP: trailers. Strong, uncracked, unenriched
+	// (Coverage "none" -> Impact Unknown -> IMP:U; Exposure 0 -> EXP:L).
+	if got := Vector(strong(), Context{Coverage: "none", PasswordExpires: "Unknown"}); got != "C:C1/L:VL/D:N/SM:N/CM:U/EX:U/DA:N/CO:U/S:0/DR:U/HIBP:N/EXP:L/IMP:U" {
 		t.Errorf("strong vector = %q", got)
 	}
+	// High-risk cracked + enriched: every code maxed; Exposure 9.0 (HIBP 2e5) -> EXP:C,
+	// Impact 10 (DA path, clamped with Critical modifier) -> IMP:C.
 	high := Vector(
 		Analysis{ComplexityLabel: "numeric", PasswordLength: 4, IsCommon: true, IsDictionaryWord: true,
 			BannedWordsCount: 1, KeyboardPatternsCount: 1, SimilarMax: 0.95},
-		Context{SharedWith: 1500, DADomains: []string{"A", "B", "C"}, ControlledObjects: ip(2000),
+		Context{Cracked: true, Coverage: "full", Enabled: true, SharedWith: 1500,
+			DADomains: []string{"A", "B", "C"}, ControlledObjects: ip(2000),
 			DaysOutOfCompliance: ip(800), PasswordExpires: "No", DomainRiskLevel: "Critical", HIBPBreachCount: 200000},
 	)
-	if high != "C:C10/L:VS/D:CO+DW+BW+KP/SM:VH/CM:E/EX:N/DA:M/CO:E/S:4/DR:C/HIBP:C" {
+	if high != "C:C10/L:VS/D:CO+DW+BW+KP/SM:VH/CM:E/EX:N/DA:M/CO:E/S:4/DR:C/HIBP:C/EXP:C/IMP:C" {
 		t.Errorf("high-risk vector = %q", high)
 	}
 }
@@ -338,5 +349,89 @@ func TestImpactDomainModifier(t *testing.T) {
 	got, _ = impactScore(Context{Coverage: "full", Enabled: true, DADomains: []string{"CORP"}, DomainRiskLevel: "Critical"})
 	if !almost(got, 10.0) {
 		t.Fatalf("DA + domain clamp = %v, want 10", got)
+	}
+}
+
+func TestLevelMatrix(t *testing.T) {
+	cases := []struct {
+		exp, imp float64
+		want     string
+	}{
+		{9, 9, "Critical"}, {6.5, 9, "Critical"}, {4.5, 9, "Critical"}, {2, 9, "High"}, // Impact Critical row
+		{9, 6.5, "Critical"}, {6.5, 6.5, "High"}, {4.5, 6.5, "High"}, {2, 6.5, "Medium"}, // Impact High row
+		{9, 4.5, "High"}, {6.5, 4.5, "High"}, {4.5, 4.5, "Medium"}, {2, 4.5, "Medium"}, // Impact Medium row
+		{9, 2, "Medium"}, {6.5, 2, "Medium"}, {4.5, 2, "Low"}, {2, 2, "Low"}, // Impact Low row
+	}
+	for _, c := range cases {
+		if got := LevelFromAxes(c.exp, c.imp, true, false); got != c.want {
+			t.Errorf("matrix(exp=%v,imp=%v) = %q, want %q", c.exp, c.imp, got, c.want)
+		}
+	}
+	// Unknown impact -> level from Exposure tier alone.
+	if got := LevelFromAxes(6.5, 0, false, false); got != "High" {
+		t.Errorf("unknown-impact level from exposure(6.5) = %q, want High", got)
+	}
+	if got := LevelFromAxes(2, 0, false, false); got != "Low" {
+		t.Errorf("unknown-impact level from exposure(2) = %q, want Low", got)
+	}
+	// Hard override: cracked + DA -> Critical even with low exposure/impact.
+	if got := LevelFromAxes(2, 2, true, true); got != "Critical" {
+		t.Errorf("DA hard override = %q, want Critical", got)
+	}
+}
+
+func TestScoreV2Result(t *testing.T) {
+	// Strong cracked, no enrichment: Exposure=crackedFloor 3.0 (Low), Impact Unknown,
+	// Level from Exposure alone (Low), Provisional=true, RiskScore=Exposure (legacy blend).
+	r := Score(strong(), Context{Cracked: true, Coverage: "none"})
+	if !almost(r.Exposure, 3.0) || r.ImpactKnown {
+		t.Fatalf("strong/none: exposure=%v impactKnown=%v, want 3.0/false", r.Exposure, r.ImpactKnown)
+	}
+	if r.Level != "Low" || !r.Provisional {
+		t.Fatalf("strong/none: level=%q provisional=%v, want Low/true", r.Level, r.Provisional)
+	}
+	if !almost(r.Score, 3.0) {
+		t.Fatalf("legacy blend (unknown impact) = %v, want exposure 3.0", r.Score)
+	}
+	// Enriched, privileged: exposure 3.0, impact 7 (count 101), known.
+	// RiskScore = round1(0.5*3.0 + 0.5*7.0) = 5.0.
+	r2 := Score(strong(), Context{Cracked: true, Coverage: "full", Enabled: true, ControlledObjects: ip(101)})
+	if !r2.ImpactKnown || !almost(r2.Impact, 7.0) || r2.Provisional {
+		t.Fatalf("enriched: impact=%v known=%v provisional=%v", r2.Impact, r2.ImpactKnown, r2.Provisional)
+	}
+	if !almost(r2.Score, 5.0) {
+		t.Fatalf("legacy blend = %v, want 5.0", r2.Score)
+	}
+	// Breakdown carries radar inputs (each factor's raw value).
+	if !almost(r2.Breakdown.LengthPenalty, round2(lengthPenalty(20))) {
+		t.Fatalf("breakdown LengthPenalty = %v", r2.Breakdown.LengthPenalty)
+	}
+	if !almost(r2.Breakdown.PrivilegeSubScore, 7.0) {
+		t.Fatalf("breakdown PrivilegeSubScore = %v, want 7.0", r2.Breakdown.PrivilegeSubScore)
+	}
+}
+
+func TestScoreDAHardOverride(t *testing.T) {
+	// Cracked + own DA path: hard override -> Critical, HasDAPath true.
+	r := Score(strong(), Context{Cracked: true, Coverage: "full", Enabled: true, DADomains: []string{"CORP"}})
+	if !r.HasDAPath || r.Level != "Critical" {
+		t.Fatalf("cracked+DA: hasDA=%v level=%q, want true/Critical", r.HasDAPath, r.Level)
+	}
+}
+
+func TestVectorV2(t *testing.T) {
+	got := Vector(strong(), Context{Cracked: true, Coverage: "none", PasswordExpires: "Unknown"})
+	// EXP: strong cracked exposure=3.0 -> Low tier 'L'; IMP:U (unknown).
+	if want := "C:C1/L:VL/D:N/SM:N/CM:U/EX:U/DA:N/CO:U/S:0/DR:U/HIBP:N/EXP:L/IMP:U"; got != want {
+		t.Errorf("v2 strong vector = %q, want %q", got, want)
+	}
+	// Enriched privileged: CO from real count, IMP tier present.
+	// count 101 -> privilegeSubScore 7, + Critical domain modifier (+1.0) = Impact 8.0
+	// -> tier Critical 'C' (the plan's literal "IMP:H" predated the domain modifier;
+	// derived from the real impactScore here).
+	got = Vector(strong(), Context{Cracked: true, Coverage: "full", Enabled: true, ControlledObjects: ip(101),
+		DomainRiskLevel: "Critical", PasswordExpires: "Unknown"})
+	if want := "C:C1/L:VL/D:N/SM:N/CM:U/EX:U/DA:N/CO:H/S:0/DR:C/HIBP:N/EXP:L/IMP:C"; got != want {
+		t.Errorf("v2 enriched vector = %q, want %q", got, want)
 	}
 }
