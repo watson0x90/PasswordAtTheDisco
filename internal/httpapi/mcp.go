@@ -26,7 +26,7 @@ func (s *Server) requireMCPToken(next http.Handler) http.Handler {
 		ip := clientIP(r)
 		if s.MCPLimiter != nil {
 			if ok, retry := s.MCPLimiter.Allowed(ip); !ok {
-				w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())))
+				w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())+1))
 				writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many failed attempts"})
 				return
 			}

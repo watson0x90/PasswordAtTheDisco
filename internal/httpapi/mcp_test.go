@@ -51,3 +51,36 @@ func TestWhoamiRejectsBadToken(t *testing.T) {
 		}
 	}
 }
+
+func TestWhoamiDisabledWhenNilStore(t *testing.T) {
+	s := &Server{} // MCPTokens is nil
+	h := s.requireMCPToken(http.HandlerFunc(s.handleMCPWhoami))
+	req := httptest.NewRequest("GET", "/api/mcp/whoami", nil)
+	req.Header.Set("Authorization", "Bearer patdmcp_anything_here")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rec.Code)
+	}
+}
+
+func TestWhoamiRateLimited(t *testing.T) {
+	s, _, _ := mcpTestServer(t)
+	s.MCPLimiter = auth.NewLimiter(1, time.Minute) // 1 failure allowed
+	h := s.requireMCPToken(http.HandlerFunc(s.handleMCPWhoami))
+	bad := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest("GET", "/api/mcp/whoami", nil)
+		req.Header.Set("Authorization", "Bearer patdmcp_bad_bad")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	bad() // consumes the single allowed failure (401)
+	rec := bad()
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429", rec.Code)
+	}
+	if rec.Header().Get("Retry-After") == "" {
+		t.Error("want Retry-After header on 429")
+	}
+}
