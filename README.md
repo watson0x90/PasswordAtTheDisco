@@ -41,21 +41,28 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
-## What's new in 2.15
+## What's new in 2.20
 
-**Global search + a password-in-use probe.**
+**The Exposure × Impact grid is now a colour-coded danger map — plus a round of
+post-audit hardening.**
 
-- **⌘/Ctrl-K command palette** — from any view, search accounts (opens the
-  account-detail drawer) or jump to another view. Account search runs over the
-  already-loaded, redacted set, so there are no extra round-trips.
-- **Search tab** — an *Accounts* sub-tab (the full sortable, paginated accounts
-  table + drawer) and a *Password in use?* sub-tab.
-- **Password-in-use probe** — check whether any account uses a specific password,
-  **including uncracked ones**, by matching its NT hash server-side. Useful for a
-  leaked or banned credential. The candidate you type is **never stored, logged, or
-  echoed**; the server returns only redacted accounts, and every check is recorded
-  in the audit log with the operator, time, and match count — never the password.
-  (`POST /api/probe`; available to any operator, CSRF-gated.)
+- **Colourised risk matrix** — every cell of the Overview's Exposure × Impact grid
+  is tinted by the **risk level it resolves to** (Critical → red, High → amber,
+  Medium → green, Low → cyan), with a legend. Account count still drives the tint
+  intensity, so hue tells you the rating and saturation tells you how many accounts
+  sit there. The Unknown column (no BloodHound coverage) keeps its dashed edge and
+  takes its provisional, Exposure-only level. A single shared `cellLevel()` now feeds
+  both the live grid and the in-app methodology diagram, so they can't drift from the
+  scoring engine.
+- **Scoring / enrichment hardening** (post-review fixes) — Kerberoastable and
+  AS-REP-roastable signals are now captured on every BloodHound response format; the
+  Domain-Admin pathway tables show each account's controlled-object count; uncracked
+  accounts appear in the risk-factor breakdown; and a transient BloodHound outage is
+  no longer mistaken for "account not found" (which would silently drop Impact).
+
+Since 2.15, scoring was rebuilt around a **two-axis Exposure × Impact model** (2.18)
+and the console gained an in-app, pre-auth **Help / methodology** section (2.19) that
+explains the model to CISOs and blue-team leads.
 
 See **[CHANGELOG.md](CHANGELOG.md)** for the full release history.
 

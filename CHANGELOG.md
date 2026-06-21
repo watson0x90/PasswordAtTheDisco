@@ -7,7 +7,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [2.20.0] — 2026-06-21 — Colourised Exposure × Impact matrix + audit hardening
+
+### Added
+- **Colourised risk matrix** — the Overview's Exposure × Impact cells are now tinted by
+  the risk **level** they resolve to (Critical → red, High → amber, Medium → green,
+  Low → cyan), with a legend; account count still drives the tint intensity. A single
+  shared `cellLevel()` feeds both the live grid and the in-app Help methodology diagram,
+  so the two can't drift from the scoring engine.
+
+### Fixed
+Post-v2.19 subsystem audit:
+- Kerberoastable / AS-REP-roastable signals are captured on **every** BloodHound response
+  format (previously only the BHE CE "literals" path; tabular/node formats dropped them).
+- Domain-Admin pathway tables now show each account's controlled-object count
+  (`ReportAccount` carried none, so the column always rendered "—").
+- Uncracked accounts now carry their score breakdown, so they appear in the
+  risk-factor-by-tier dashboard rather than being silently excluded.
+- A Domain-Admin account no longer self-flags as "escalated by shared-DA" (a false
+  positive that inflated the lateral-movement report).
+- The risk-factor breakdown uses the shared `impactIsKnown` predicate, so it can't
+  diverge from the matrix and accounts table.
+- A transient BloodHound outage now surfaces an error instead of being mistaken for
+  "account not found", which had silently dropped Impact to Unknown.
+- Matrix cell tint was an invalid non-final CSS background layer (so cells rendered
+  un-coloured); it is now painted as a valid gradient layer over the glass.
+
+## [2.19.1] — 2026-06-21 — Dead-session 401 console noise
+
+### Fixed
+- The console now returns to the login screen on any **401** (mirroring the existing
+  423 → lock handling), so a dead server-side session — wiped by a restart or expired by
+  the idle / absolute timeout — stops the lead-only job pollers from 401-ing every 5 s.
+  While authenticated: zero console errors; on session death: a single bounce to login.
+
+## [2.19.0] — 2026-06-21 — In-app Help / Methodology section
+
+### Added
+- **Help / Methodology** — a pre-auth, presentation-style section (reachable from the
+  login and unlock screens, deep-linkable via `#help/<slug>`) with five chapters: the
+  security thesis, the two-axis Exposure × Impact scoring model, the enrichment pipeline,
+  the security / privacy model, and a glossary / FAQ. Inline-SVG diagrams, **pure static —
+  no API calls.** Written to explain the model to CISOs and blue-team leads.
+
+## [2.18.0] — 2026-06-21 — Two-axis (Exposure × Impact) risk scoring
+
 ### Changed
+- **Risk scoring rebuilt around two axes.** **Exposure** (crackability / HIBP / reuse /
+  roastable — always computed from the dump) × **Impact** (blast radius — BloodHound-derived,
+  and explicitly **Unknown** when an account isn't enriched). The overall level comes from a
+  2-D Exposure × Impact matrix, not a single blended number. **Scores change for every
+  account — this is intentional.**
+
+### Added
+- True BloodHound **controlled-objects count** (uses the API's real total — removes the old
+  10-object cap), **Tier-0 / DA-equivalent** control detection, roastable signals on the live
+  enrichment path, and per-account **coverage**.
+- **Within-audit percentile** triage, **shared-hash → DA** Impact inheritance, and HIBP
+  de-duplication.
+- Honest dashboard: per-axis sub-score bars (replacing the old radar), the Exposure × Impact
+  matrix with an explicit **Unknown** column, a coverage banner, **provisional** badges, a
+  needs-enrichment worklist, and two-axis KPIs.
+
+### Removed
+- The v1 single-axis CVSS-style scoring path.
+
+## [2.17.0] — 2026-06-20 — Lead-gated reveal in the similarity breakdown
+
+### Added
+- Reveal the cleartext of a selected account and its similar peers from the **Password
+  Similarity Clusters** breakdown, through the existing lead-only, audit-logged reveal — now
+  domain-aware so the exact account is revealed.
+
+### Fixed
+- Similar-peer duplication (accounts sharing a password) and a doubled-domain audit target
+  for `username@domain` accounts.
+
+## [2.16.0] — 2026-06-20 — Similarity clusters: expand + explain
+
+### Added
+- The **Password Similarity Clusters** graph is now expandable into a large modal and
+  explainable: clicking a node names its most-similar accounts and similarity scores, backed
+  by new server-computed similar-peer references (redacted — username / domain / score, never
+  the password).
+
+### Changed
+- Graph edges are now real pairwise links from those peers (replacing the prior heuristic
+  domain-chain edges).
 - **Search** page split into **Accounts** and **Password in use?** sub-tabs.
 
 ## [2.15.0] — 2026-06-19 — Global search + password-in-use probe
@@ -145,7 +233,13 @@ The ground-up Go API + React console that replaced the original Python tool.
 - Cleartext never written to disk; cleartext reveal is a lead-only, audit-logged action that
   never records the password value.
 
-[Unreleased]: https://github.com/watson0x90/PasswordAtTheDisco/compare/v2.15.0...HEAD
+[Unreleased]: https://github.com/watson0x90/PasswordAtTheDisco/compare/v2.20.0...HEAD
+[2.20.0]: https://github.com/watson0x90/PasswordAtTheDisco/compare/v2.19.1...v2.20.0
+[2.19.1]: https://github.com/watson0x90/PasswordAtTheDisco/compare/v2.19.0...v2.19.1
+[2.19.0]: https://github.com/watson0x90/PasswordAtTheDisco/compare/v2.18.0...v2.19.0
+[2.18.0]: https://github.com/watson0x90/PasswordAtTheDisco/compare/v2.17.0...v2.18.0
+[2.17.0]: https://github.com/watson0x90/PasswordAtTheDisco/compare/v2.16.0...v2.17.0
+[2.16.0]: https://github.com/watson0x90/PasswordAtTheDisco/compare/v2.15.0...v2.16.0
 [2.15.0]: https://github.com/watson0x90/PasswordAtTheDisco/compare/v2.14.0...v2.15.0
 [2.14.0]: https://github.com/watson0x90/PasswordAtTheDisco/compare/v2.13.0...v2.14.0
 [2.13.0]: https://github.com/watson0x90/PasswordAtTheDisco/compare/v2.12.1...v2.13.0
