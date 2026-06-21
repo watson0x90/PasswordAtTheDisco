@@ -232,6 +232,8 @@ config/*.json
 # Operator credentials (argon2id hashes) and live audit log -- never commit
 users.json
 audit.log
+# MCP API tokens (hashed secrets -- never commit)
+mcp_tokens.json
 # Node (also covered by web/.gitignore)
 node_modules/
 # Built SPA copied here for `-tags embed` release builds (artifact)

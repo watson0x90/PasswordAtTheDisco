@@ -83,6 +83,15 @@ func main() {
 		log.Printf("loaded %d operator(s) from %s", users.Count(), usersFile)
 	}
 
+	mcpFile := env("PATD_MCP_TOKENS_FILE", "mcp_tokens.json")
+	mcpTokens, err := auth.OpenTokenStore(mcpFile)
+	if err != nil {
+		log.Printf("no MCP tokens loaded (%v) -- mint one with `patd token create --role analyst --label <name>`", err)
+		mcpTokens = auth.NewTokenStore(mcpFile, nil)
+	} else {
+		log.Printf("loaded %d MCP token(s) from %s", len(mcpTokens.List()), mcpFile)
+	}
+
 	// Audit log (JSON lines, 0600). Defaults to stdout; never contains cleartext.
 	auditPath := os.Getenv("PATD_AUDIT_LOG")
 	var auditW = os.Stdout
@@ -179,6 +188,8 @@ func main() {
 		AuditPath:          auditPath,
 		Sessions:           auth.NewSessionStore(30*time.Minute, 8*time.Hour),
 		Audit:              audit.New(auditW),
+		MCPTokens:          mcpTokens,
+		MCPLimiter:         auth.NewLimiter(20, 15*time.Minute),
 		LoginLimiter:       auth.NewLimiter(10, 15*time.Minute),
 		UnlockLimiter:      auth.NewLimiter(5, 15*time.Minute),
 		RekeyLimiter:       auth.NewLimiter(5, 15*time.Minute),
