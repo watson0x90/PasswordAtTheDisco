@@ -3,7 +3,7 @@ import { useAuth } from "../auth"
 import { ApiError } from "../api"
 import { Logo } from "./Logo"
 
-export function Login() {
+export function Login({ onShowHelp }: { onShowHelp?: () => void }) {
   const { login } = useAuth()
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
@@ -57,6 +57,11 @@ export function Login() {
         <button className="btn btn-primary" type="submit" disabled={busy || !username || !password}>
           {busy ? "Authenticating…" : "Sign In"}
         </button>
+        {onShowHelp && (
+          <button type="button" className="link-btn login-help" onClick={onShowHelp}>
+            How it works
+          </button>
+        )}
       </form>
     </div>
   )

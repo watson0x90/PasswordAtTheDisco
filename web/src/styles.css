@@ -327,6 +327,9 @@ a { color: var(--accent); text-decoration: none; }
 .unlock-actions { display: flex; gap: 10px; margin-top: 18px; }
 .unlock-actions .btn { flex: 1; }
 .unlock-signout { display: block; width: 100%; text-align: center; margin-top: 14px; }
+/* "How it works" link on the locked screen — distinct from sign-out for clarity
+   (mirrors Login's .login-help); token-based spacing, no inline gaps. */
+.unlock-help { display: block; width: 100%; text-align: center; margin-top: var(--space-md); }
 
 .error {
   font-size: 13px;
@@ -1480,3 +1483,764 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
 .simbreak-reveal { margin: 8px 0 4px; }
 .simbreak-score { font-family: var(--mono); font-size: 12px; color: var(--accent); }
 .simbreak-note { margin-top: 14px; }
+
+/* ── Help / Methodology surface ──────────────────────────────────────────────
+   Pure static explainer. Standalone (pre-auth/locked) wraps in a full-screen
+   shell with the brand lockup + Back; embedded (post-auth) renders inside the
+   app shell's <main>. Both share the .help-shell two-column (sub-nav | content)
+   layout. Token-based — no literal inline spacing (styleguard). */
+.login-help { display: block; width: 100%; text-align: center; margin-top: var(--space-lg); }
+
+.help-standalone {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: radial-gradient(120% 80% at 50% -10%, rgba(56, 189, 248, 0.06), transparent 60%);
+  animation: rise 0.4s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.help-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-lg) var(--space-xl);
+  border-bottom: 1px solid var(--glass-border);
+}
+.help-topbar .brand { display: flex; align-items: center; gap: var(--space-md); }
+.help-topbar .word { font-family: var(--display); font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
+.help-topbar .word b { background: linear-gradient(90deg, #67e8f9, #a5b4fc); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+.help-shell {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: var(--space-xl);
+  width: 100%;
+  max-width: var(--main-max-width);
+  margin: 0 auto;
+  padding: var(--space-xl);
+  flex: 1;
+}
+
+.help-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  align-self: start;
+  position: sticky;
+  top: var(--space-xl);
+}
+.help-nav-item {
+  font-family: var(--sans);
+  font-size: 14px;
+  text-align: left;
+  color: var(--dim);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm) var(--space-md);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.help-nav-item:hover { color: var(--text); background: rgba(255, 255, 255, 0.04); }
+.help-nav-item.active {
+  color: var(--text);
+  background: var(--glass);
+  border-color: var(--glass-border);
+}
+
+.help-content {
+  min-width: 0;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-2xl);
+}
+.help-content h2 { font-family: var(--display); margin: 0; }
+
+.help-back { flex: none; }
+
+/* ── Chapter 1 — the security thesis (hero / before-after / pillars) ──────────
+   Confident, presentation-grade chapter. Token-based spacing only. */
+.help-chapter { display: flex; flex-direction: column; gap: var(--space-2xl); }
+
+.help-hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  padding: var(--space-sm) 0 var(--space-md);
+  border-bottom: 1px solid var(--hairline);
+}
+.help-hero-eyebrow {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.help-hero-title {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: clamp(30px, 4.4vw, 50px);
+  line-height: 1.04;
+  letter-spacing: -0.02em;
+  margin: 0;
+  max-width: 18ch;
+}
+.help-hero-mark {
+  background: var(--accent-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.help-hero-lede {
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--dim);
+  max-width: 70ch;
+  margin: 0;
+}
+.help-hero-lede strong { color: var(--text); font-weight: 600; }
+
+/* Before / after split. */
+.help-contrast {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: stretch;
+  gap: var(--space-lg);
+}
+.help-contrast-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--glass-border);
+  background: var(--glass);
+  padding: var(--space-xl);
+}
+.help-contrast-card.legacy {
+  border-color: rgba(251, 113, 133, 0.4);
+  background: linear-gradient(180deg, rgba(251, 113, 133, 0.08), #0f1525);
+}
+.help-contrast-card.current {
+  border-color: rgba(34, 211, 238, 0.45);
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0.08), #0f1525);
+}
+.help-contrast-head { display: flex; flex-direction: column; gap: var(--space-xs); }
+.help-contrast-tag {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.help-contrast-card.legacy .help-contrast-tag { color: var(--crit); }
+.help-contrast-card.current .help-contrast-tag { color: var(--low); }
+.help-contrast-title {
+  font-family: var(--display);
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0;
+}
+.help-contrast-card.legacy .help-contrast-title { color: var(--crit); }
+.help-contrast-card.current .help-contrast-title { color: var(--low); }
+.help-contrast-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+.help-contrast-list li {
+  position: relative;
+  padding-left: var(--space-lg);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--dim);
+}
+.help-contrast-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.55;
+}
+.help-contrast-card.legacy .help-contrast-list li::before { background: var(--crit); }
+.help-contrast-card.current .help-contrast-list li::before { background: var(--low); }
+.help-contrast-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  color: var(--accent);
+}
+
+/* Reveal-flow diagram card. */
+.reveal-flow-card { padding: var(--space-lg) var(--space-xl) var(--space-md); }
+.reveal-flow { width: 100%; }
+.reveal-flow-svg { width: 100%; height: auto; display: block; }
+.reveal-flow-link { stroke: var(--accent); stroke-width: 2; opacity: 0.7; }
+.reveal-flow-box { fill: rgba(20, 29, 49, 0.9); stroke-width: 1.5; }
+.reveal-flow-step { font-family: var(--mono); font-size: 12px; font-weight: 700; fill: #0f1525; }
+.reveal-flow-node-title { font-family: var(--display); font-size: 13px; font-weight: 700; fill: var(--text); }
+.reveal-flow-node-sub { font-family: var(--sans); font-size: 9.5px; fill: var(--dim); }
+.reveal-flow-foot { font-family: var(--sans); font-size: 11px; font-style: italic; fill: var(--faint); }
+
+/* Three-guarantee pillars. */
+.help-pillars {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-lg);
+}
+.help-pillar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  border: 1px solid var(--glass-border);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--glass);
+  padding: var(--space-lg);
+}
+.help-pillar-k {
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+.help-pillar p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--dim); }
+
+/* ── Chapter 2 — "How we score risk" (Exposure × Impact) ─────────────────────
+   The centerpiece: two axis cards, the static Exposure × Impact matrix diagram
+   (mirroring the dashboard MatrixHeatmap), coverage/provisional/percentile
+   concepts, and a two-case worked example. Token-based spacing only. */
+.help-hero-compact { padding: 0 0 var(--space-sm); border-bottom: none; }
+
+/* The two axes, side by side. */
+.score-axes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--space-lg);
+}
+.score-axis {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  border: 1px solid var(--glass-border);
+  border-top: 2px solid var(--accent);
+  border-radius: var(--radius-lg);
+  background: var(--glass);
+  padding: var(--space-xl);
+}
+.score-axis.exposure { border-top-color: var(--high); }
+.score-axis.impact { border-top-color: var(--accent-2); }
+.score-axis-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-sm); }
+.score-axis-tag {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.score-axis-title { font-family: var(--display); font-size: 24px; font-weight: 700; margin: 0; }
+.score-axis.exposure .score-axis-title { color: var(--high); }
+.score-axis.impact .score-axis-title { color: var(--accent-2); }
+.score-axis-range {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--faint);
+}
+.score-axis-lede { margin: 0; font-size: 14px; line-height: 1.6; color: var(--dim); }
+.score-axis-lede strong { color: var(--text); }
+.score-axis-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+.score-axis-list li {
+  position: relative;
+  padding-left: var(--space-lg);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--dim);
+}
+.score-axis-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+}
+.score-axis.exposure .score-axis-list li::before { background: var(--high); }
+.score-axis.impact .score-axis-list li::before { background: var(--accent-2); }
+.score-axis-list li b { color: var(--text); font-weight: 600; }
+
+/* The matrix diagram card. */
+.score-grid-card { padding: var(--space-lg) var(--space-xl) var(--space-xl); }
+.score-grid-caption { margin: 0 0 var(--space-lg); font-size: 13px; line-height: 1.6; color: var(--dim); max-width: 88ch; }
+.score-grid-caption strong { color: var(--text); }
+.score-cut {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+/* CSS grid reusing the MatrixHeatmap row/header classes; 1 label col + 5 cols. */
+.score-grid { display: flex; flex-direction: column; gap: var(--space-sm); }
+/* The corner is the first cell of the header row (over the row-label column),
+   carrying both diagonal axis captions; stacked, bottom-aligned. */
+.score-grid-corner { display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end; }
+.score-grid-corner-imp,
+.score-grid-corner-exp {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.score-grid-head .matrix-row,
+.score-grid-body .matrix-row { display: grid; grid-template-columns: 96px repeat(5, 1fr); gap: var(--space-sm); align-items: stretch; }
+.score-grid-head .matrix-row-head { grid-template-columns: 96px repeat(5, 1fr); }
+
+.score-grid-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  min-height: 58px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--glass-border);
+  background:
+    color-mix(in srgb, var(--level-color) 22%, transparent),
+    var(--glass);
+}
+.score-grid-level {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--level-color);
+  letter-spacing: 0.2px;
+}
+.score-grid-cell-unknown {
+  border-style: dashed;
+  border-color: var(--faint);
+  background: rgba(86, 96, 118, 0.1);
+}
+.score-grid-cell-unknown .score-grid-level { color: var(--dim); }
+.score-grid-prov {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.score-grid-notes { display: flex; flex-direction: column; gap: var(--space-sm); margin-top: var(--space-lg); }
+.score-grid-note { margin: 0; font-size: 12px; line-height: 1.55; color: var(--dim); }
+.score-grid-note strong { color: var(--text); }
+.score-grid-note-k {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+  margin-right: var(--space-xs);
+}
+.score-grid-note-k.unknown { color: var(--faint); border: 1px dashed var(--faint); }
+.score-grid-note-k.override { color: var(--crit); background: var(--crit-bg); }
+
+/* Coverage / provisional / percentile concepts. */
+.score-concepts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-lg);
+}
+.score-concept {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  border: 1px solid var(--glass-border);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--glass);
+  padding: var(--space-lg);
+}
+.score-concept-k { font-family: var(--display); font-size: 15px; font-weight: 700; color: var(--text); }
+.score-concept p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--dim); }
+.score-concept p strong { color: var(--text); }
+
+/* Worked example — two cases, input → Exposure → Impact → Level. */
+.score-example { display: flex; flex-direction: column; gap: var(--space-lg); }
+.score-example-head { display: flex; flex-direction: column; gap: var(--space-xs); }
+.score-example-eyebrow {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.score-example-title { font-family: var(--display); font-size: 22px; font-weight: 700; margin: 0; }
+.score-example-sub { margin: 0; font-size: 13px; color: var(--faint); }
+.score-example-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--space-lg); }
+
+.score-case {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  background: var(--glass);
+  padding: var(--space-xl);
+}
+.score-case.crit { border-color: color-mix(in srgb, var(--crit) 40%, transparent); }
+.score-case.prov { border-color: var(--faint); border-style: dashed; }
+.score-case-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); }
+.score-case-acct { font-family: var(--mono); font-size: 13px; color: var(--text); }
+.score-case-result {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+.score-case-result.crit { color: var(--crit); border: 1px solid color-mix(in srgb, var(--crit) 40%, transparent); background: var(--crit-bg); }
+.score-case-result.prov { color: var(--high); border: 1px dashed color-mix(in srgb, var(--high) 50%, transparent); background: var(--high-bg); }
+
+.score-case-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-md); }
+.score-case-steps li {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: var(--space-md);
+  align-items: baseline;
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--hairline);
+}
+.score-case-steps li:first-child { padding-top: 0; border-top: none; }
+.score-case-step-k {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.score-case-step-v { font-size: 13px; line-height: 1.55; color: var(--dim); }
+.score-case-step-v b { color: var(--text); }
+
+/* Small tier pill used inside the worked example. */
+.tier-pill {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  padding: 1px 7px;
+}
+.tier-pill.crit { color: var(--crit); background: var(--crit-bg); }
+.tier-pill.high { color: var(--high); background: var(--high-bg); }
+.tier-pill.med { color: var(--med); background: var(--med-bg); }
+.tier-pill.low { color: var(--low); background: var(--low-bg); }
+.tier-pill.unknown { color: var(--faint); border: 1px dashed var(--faint); }
+
+/* ── Chapter 3 — the enrichment pipeline (flow diagram / sources / degradation) ─
+   Token-based spacing only; mirrors the reveal-flow + score-axis house style. */
+
+/* Pipeline-flow diagram card (mirrors .reveal-flow-*). */
+.pipe-flow-card { padding: var(--space-lg) var(--space-xl) var(--space-md); }
+.pipe-flow { width: 100%; }
+.pipe-flow-svg { width: 100%; height: auto; display: block; }
+.pipe-flow-link { stroke: var(--accent); stroke-width: 2; opacity: 0.7; }
+.pipe-flow-branch-optional { stroke: var(--dim); stroke-width: 2; stroke-dasharray: 5 4; opacity: 0.7; }
+.pipe-flow-box { fill: rgba(20, 29, 49, 0.9); stroke-width: 1.5; }
+.pipe-flow-box-optional { stroke-dasharray: 5 4; }
+.pipe-flow-step { font-family: var(--mono); font-size: 12px; font-weight: 700; fill: #0f1525; }
+.pipe-flow-node-title { font-family: var(--display); font-size: 13px; font-weight: 700; fill: var(--text); }
+.pipe-flow-node-sub { font-family: var(--sans); font-size: 9.5px; fill: var(--dim); }
+.pipe-flow-source-tag { font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.12em; fill: var(--low); }
+.pipe-flow-source-tag.optional { fill: var(--faint); }
+.pipe-flow-foot { font-family: var(--sans); font-size: 11px; font-style: italic; fill: var(--faint); }
+
+/* The two enrichment sources, side by side (mirrors .score-axes). */
+.pipe-sources {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--space-lg);
+}
+.pipe-source {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  border: 1px solid var(--glass-border);
+  border-top: 3px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  background: var(--glass);
+  padding: var(--space-xl);
+}
+.pipe-source.bloodhound { border-top-color: var(--accent-2); }
+.pipe-source.hibp { border-top-color: var(--low); }
+.pipe-source-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-sm); }
+.pipe-source-tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  width: 100%;
+}
+.pipe-source-title { font-family: var(--display); font-size: 24px; font-weight: 700; margin: 0; }
+.pipe-source.bloodhound .pipe-source-title { color: var(--accent-2); }
+.pipe-source.hibp .pipe-source-title { color: var(--low); }
+.pipe-source-range {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--faint);
+}
+.pipe-source-lede { margin: 0; font-size: 14px; line-height: 1.6; color: var(--dim); }
+.pipe-source-lede strong { color: var(--text); }
+.pipe-source-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+.pipe-source-list li {
+  position: relative;
+  padding-left: var(--space-lg);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--dim);
+}
+.pipe-source-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.pipe-source.bloodhound .pipe-source-list li::before { background: var(--accent-2); }
+.pipe-source.hibp .pipe-source-list li::before { background: var(--low); }
+.pipe-source-list li b { color: var(--text); font-weight: 600; }
+.pipe-source-list li strong { color: var(--text); }
+
+/* Graceful degradation — three honest-by-design cards. */
+.pipe-degrade { display: flex; flex-direction: column; gap: var(--space-lg); }
+.pipe-degrade-head { display: flex; flex-direction: column; gap: var(--space-xs); }
+.pipe-degrade-eyebrow {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.pipe-degrade-title { font-family: var(--display); font-size: 22px; font-weight: 700; margin: 0; }
+.pipe-degrade-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-lg);
+}
+.pipe-degrade-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  border: 1px solid var(--glass-border);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--glass);
+  padding: var(--space-lg);
+}
+.pipe-degrade-card.valid { border-left-color: var(--low); }
+.pipe-degrade-card.unknown { border-left-color: var(--faint); border-left-style: dashed; }
+.pipe-degrade-card.banner { border-left-color: var(--accent); }
+.pipe-degrade-k { font-family: var(--display); font-size: 15px; font-weight: 700; color: var(--text); }
+.pipe-degrade-card p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--dim); }
+.pipe-degrade-card p strong { color: var(--text); }
+
+/* ── Chapter 4 — "Security & privacy" ────────────────────────────────────────
+   The CISO reassurance chapter: four themed groups of scannable assurance cards.
+   Each group carries an accent token; cards are a uniform glass grid. Token-based
+   spacing only. */
+.sec-groups { display: flex; flex-direction: column; gap: var(--space-2xl); }
+.sec-group { display: flex; flex-direction: column; gap: var(--space-lg); }
+.sec-group-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding-left: var(--space-md);
+  border-left: 2px solid var(--accent);
+}
+.sec-group.data .sec-group-head { border-left-color: var(--crit); }
+.sec-group.access .sec-group-head { border-left-color: var(--accent); }
+.sec-group.transport .sec-group-head { border-left-color: var(--low); }
+.sec-group.build .sec-group-head { border-left-color: var(--med); }
+.sec-group-tag {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.sec-group.data .sec-group-tag { color: var(--crit); }
+.sec-group.access .sec-group-tag { color: var(--accent); }
+.sec-group.transport .sec-group-tag { color: var(--low); }
+.sec-group.build .sec-group-tag { color: var(--med); }
+.sec-group-title {
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text);
+}
+.sec-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-lg);
+}
+.sec-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  background: var(--glass);
+  padding: var(--space-lg);
+}
+.sec-group.data .sec-card { border-top: 2px solid rgba(251, 113, 133, 0.45); }
+.sec-group.access .sec-card { border-top: 2px solid rgba(56, 189, 248, 0.45); }
+.sec-group.transport .sec-card { border-top: 2px solid rgba(34, 211, 238, 0.45); }
+.sec-group.build .sec-card { border-top: 2px solid rgba(163, 230, 53, 0.45); }
+.sec-card-k {
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+.sec-card-body { margin: 0; font-size: 13px; line-height: 1.55; color: var(--dim); }
+.sec-card-body strong { color: var(--text); font-weight: 600; }
+.sec-card-body code {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--accent);
+  background: rgba(56, 189, 248, 0.1);
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+}
+.sec-foot {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--faint);
+  font-style: italic;
+  max-width: 78ch;
+}
+
+/* ── Chapter 5 — "Glossary & FAQ" ────────────────────────────────────────────
+   A definition list (terms reused from glossary.ts, tagged) plus an FAQ of
+   Q/A cards. Token-based spacing only. */
+.gloss-dl { margin: 0; display: flex; flex-direction: column; gap: var(--space-md); }
+.gloss-item {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.32fr) minmax(0, 1fr);
+  gap: var(--space-lg);
+  align-items: start;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  background: var(--glass);
+  padding: var(--space-lg);
+}
+.gloss-term {
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  align-items: flex-start;
+}
+.gloss-src {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+}
+.gloss-src.reused { color: var(--low); background: var(--low-bg); }
+.gloss-src.local { color: var(--faint); background: rgba(86, 96, 118, 0.16); }
+.gloss-def { margin: 0; font-size: 13px; line-height: 1.6; color: var(--dim); }
+
+.faq { display: flex; flex-direction: column; gap: var(--space-lg); }
+.faq-head { display: flex; flex-direction: column; gap: var(--space-xs); }
+.faq-eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.faq-title { font-family: var(--display); font-size: 20px; font-weight: 700; margin: 0; color: var(--text); }
+.faq-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-lg);
+}
+.faq-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  border: 1px solid var(--glass-border);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--glass);
+  padding: var(--space-lg);
+}
+.faq-q { font-family: var(--display); font-size: 16px; font-weight: 700; margin: 0; color: var(--text); }
+.faq-a { margin: 0; font-size: 13px; line-height: 1.6; color: var(--dim); }
+.faq-a strong { color: var(--text); font-weight: 600; }
+
+@media (max-width: 880px) {
+  /* Left-rail sub-nav stops being sticky and stacks into a horizontal,
+     wrapping chip row above the content; the standalone shell tightens its
+     gutters so the content card isn't crowded on phones. */
+  .help-shell { grid-template-columns: minmax(0, 1fr); gap: var(--space-lg); padding: var(--space-lg); }
+  .help-nav { position: static; flex-direction: row; flex-wrap: wrap; }
+  .help-topbar { padding: var(--space-md) var(--space-lg); }
+  .help-content { padding: var(--space-lg); }
+  .help-contrast { grid-template-columns: minmax(0, 1fr); }
+  .help-contrast-arrow { transform: rotate(90deg); }
+  .gloss-item { grid-template-columns: minmax(0, 1fr); gap: var(--space-sm); }
+}
+
+@media (max-width: 720px) {
+  .score-grid-head .matrix-row,
+  .score-grid-body .matrix-row { grid-template-columns: 70px repeat(5, 1fr); gap: var(--space-xs); }
+  .score-grid-cell { min-height: 48px; }
+  .score-grid-level { font-size: 11px; }
+  /* Stacked step rows so the 84px label column doesn't squeeze the value text
+     in the worked example at phone width. */
+  .score-case-steps li { grid-template-columns: minmax(0, 1fr); gap: var(--space-xs); }
+}

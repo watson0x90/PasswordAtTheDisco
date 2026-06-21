@@ -8,7 +8,7 @@ import { JobPill } from "./JobPill"
 export type View =
   | "overview" | "actionable" | "accounts" | "domains" | "compare" | "reports"
   | "ingest" | "policies" | "integrations" | "operators" | "activity" | "audits"
-  | "audit-data" | "exposure" | "search"
+  | "audit-data" | "exposure" | "search" | "help"
 
 export const TABS: { id: View; label: string }[] = [
   { id: "overview", label: "Overview" },
@@ -81,6 +81,9 @@ export function AppShell({ view, onNav, children }: { view: View; onNav: (v: Vie
                 Lock
               </button>
             )}
+            <button className={view === "help" ? "btn active" : "btn"} onClick={() => onNav("help")} title="How this tool works">
+              Help
+            </button>
             <button className="btn" onClick={() => void logout()}>
               Sign Out
             </button>
