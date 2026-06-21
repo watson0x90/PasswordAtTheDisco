@@ -106,7 +106,7 @@ func New(cfg Config) *Client {
 	}
 	controllablesLimit := cfg.ControllablesLimit
 	if controllablesLimit == 0 {
-		controllablesLimit = 10
+		controllablesLimit = 100 // wider sample for Tier-0/sensitivity; env.Count gives true magnitude
 	}
 	concurrency := cfg.EnrichConcurrency
 	if concurrency <= 0 {
@@ -383,30 +383,31 @@ func (c *Client) computerDomain(objectID string) string {
 }
 
 // GetUserControllables returns the objects controllable by a user, grouped as
-// domain -> (controllable label -> count), plus the API's TRUE total controlled
-// count from the envelope (env.Count). The label map is only the sampled page
-// (bounded by controllablesLimit); total is the real magnitude and is not capped.
-func (c *Client) GetUserControllables(objectID string) (byDomain map[string]map[string]int, total int, err error) {
+// domain -> (controllable label -> count) plus domain -> sampled items, plus the
+// API's TRUE total (env.Count). The label/item sample is bounded by
+// controllablesLimit; total is the real magnitude and is not capped.
+func (c *Client) GetUserControllables(objectID string) (byDomain map[string]map[string]int, items map[string][]ControllableItem, total int, err error) {
 	out := map[string]map[string]int{}
+	itemsOut := map[string][]ControllableItem{}
 
 	// Single call with the configured limit (avoids double round-trip). limit now
 	// bounds only the display/label sample; env.Count carries the true total.
 	env, status, err := c.get(fmt.Sprintf("/api/v2/base/%s/controllables?skip=0&limit=%d&type=list", objectID, c.controllablesLimit))
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, 0, err
 	}
 	if status != http.StatusOK || env.Count == 0 {
-		return out, 0, nil
+		return out, itemsOut, 0, nil
 	}
 
-	var items []struct {
+	var rawItems []struct {
 		Label string `json:"label"`
 		Name  string `json:"name"`
 	}
-	if err := json.Unmarshal(env.Data, &items); err != nil {
-		return nil, 0, err
+	if err := json.Unmarshal(env.Data, &rawItems); err != nil {
+		return nil, nil, 0, err
 	}
-	for _, it := range items {
+	for _, it := range rawItems {
 		domain := domainFromName(it.Name)
 		if domain == "LOCALDOMAIN" || domain == "Unknown" || domain == "INT" {
 			if comp, ok, _ := c.GetComputer(it.Name); ok {
@@ -423,8 +424,9 @@ func (c *Client) GetUserControllables(objectID string) (byDomain map[string]map[
 			label = "Unknown"
 		}
 		out[domain][label]++
+		itemsOut[domain] = append(itemsOut[domain], ControllableItem{Label: label, Name: it.Name})
 	}
-	return out, env.Count, nil
+	return out, itemsOut, env.Count, nil
 }
 
 // domainFromName extracts a domain from an object name: "user@DOMAIN" -> DOMAIN,
@@ -502,12 +504,21 @@ func (c *Client) setDAGroup(domain, sid string) {
 	c.daGroups[domain] = sid
 }
 
+// ControllableItem is one sampled controllable object (label + name). Retained so
+// Tier-0 / DA-equivalent control can be detected by name heuristic. The sample is
+// bounded by controllablesLimit; env.Count (ControllableTotal) gives the true count.
+type ControllableItem struct {
+	Label string
+	Name  string
+}
+
 // DomainControllables holds, for one domain, the user's controllable-object
 // label counts and whether they have a Domain Admin pathway there.
 type DomainControllables struct {
 	Domain    string
 	Labels    map[string]int
-	HasDAPath *bool // nil = unknown
+	Items     []ControllableItem // the sampled controllable objects (bounded by controllablesLimit)
+	HasDAPath *bool              // nil = unknown
 }
 
 // UserData is the aggregated BHE enrichment for a single user.
@@ -545,7 +556,7 @@ func (c *Client) GetUserData(username string) (*UserData, error) {
 	}
 	sid := user.ObjectID
 
-	byCount, total, err := c.GetUserControllables(sid)
+	byCount, ctrlItems, total, err := c.GetUserControllables(sid)
 	if err != nil {
 		return nil, err
 	}
@@ -569,7 +580,7 @@ func (c *Client) GetUserData(username string) (*UserData, error) {
 	idx := map[string]int{}
 	for _, d := range domainsSorted {
 		idx[d] = len(ud.Controllables)
-		ud.Controllables = append(ud.Controllables, DomainControllables{Domain: d, Labels: byCount[d]})
+		ud.Controllables = append(ud.Controllables, DomainControllables{Domain: d, Labels: byCount[d], Items: ctrlItems[d]})
 	}
 
 	// DA pathways per collected domain (attach to existing entry or append).
@@ -597,6 +608,52 @@ func ExtractDADomains(ud *UserData) []string {
 		}
 	}
 	return out
+}
+
+// tier0Names are case-insensitive name fragments whose control is DA-equivalent.
+var tier0Names = []string{
+	"DOMAIN ADMINS",
+	"ENTERPRISE ADMINS",
+	"ADMINISTRATORS",
+	"DOMAIN CONTROLLERS",
+	"KRBTGT",
+	"ADMINSDHOLDER",
+}
+
+// isTier0Name reports whether an object name matches a Tier-0 / DA-equivalent
+// object by case-insensitive substring (best-effort name heuristic).
+func isTier0Name(name string) bool {
+	u := strings.ToUpper(name)
+	for _, t := range tier0Names {
+		if strings.Contains(u, t) {
+			return true
+		}
+	}
+	return false
+}
+
+// ExtractControlsTier0 reports whether the user controls a Tier-0 / DA-equivalent
+// object (Domain Admins, Enterprise Admins, Administrators, Domain Controllers,
+// KRBTGT, AdminSDHolder, or the domain object — DCSync). Best-effort over the
+// SAMPLED controllables page (bounded by controllablesLimit); a true magnitude
+// still comes from ExtractControllableCount and the literal DA path from
+// ExtractDADomains. Never a gate — an additive Impact signal.
+func ExtractControlsTier0(ud *UserData) bool {
+	if ud == nil {
+		return false
+	}
+	for _, dc := range ud.Controllables {
+		for _, it := range dc.Items {
+			if isTier0Name(it.Name) {
+				return true
+			}
+			// Control of the domain object itself implies DCSync (DA-equivalent).
+			if it.Label == "Domain" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ExtractControllableCount returns the TRUE number of controlled objects: the

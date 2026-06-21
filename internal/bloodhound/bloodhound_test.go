@@ -300,3 +300,52 @@ func splitHostPort(t *testing.T, raw string) (string, int) {
 	}
 	return u.Hostname(), p
 }
+
+func TestExtractControlsTier0(t *testing.T) {
+	// Controlling the Domain Admins group is DA-equivalent.
+	udTier0 := &UserData{Controllables: []DomainControllables{
+		{Domain: "CORP.LOCAL", Items: []ControllableItem{
+			{Label: "Group", Name: "DOMAIN ADMINS@CORP.LOCAL"},
+			{Label: "User", Name: "bob@CORP.LOCAL"},
+		}},
+	}}
+	if !ExtractControlsTier0(udTier0) {
+		t.Error("control of DOMAIN ADMINS group must be Tier-0")
+	}
+	// Controlling only ordinary users is NOT Tier-0.
+	udOrdinary := &UserData{Controllables: []DomainControllables{
+		{Domain: "CORP.LOCAL", Items: []ControllableItem{
+			{Label: "User", Name: "carol@CORP.LOCAL"},
+			{Label: "User", Name: "dave@CORP.LOCAL"},
+		}},
+	}}
+	if ExtractControlsTier0(udOrdinary) {
+		t.Error("control of ordinary users must not be Tier-0")
+	}
+	// Case-insensitive + other sensitive names.
+	for _, name := range []string{"krbtgt@corp.local", "Enterprise Admins@CORP.LOCAL", "AdminSDHolder@CORP.LOCAL", "DOMAIN CONTROLLERS@CORP.LOCAL"} {
+		ud := &UserData{Controllables: []DomainControllables{
+			{Domain: "CORP.LOCAL", Items: []ControllableItem{{Label: "Group", Name: name}}},
+		}}
+		if !ExtractControlsTier0(ud) {
+			t.Errorf("name %q should be Tier-0", name)
+		}
+	}
+	if ExtractControlsTier0(nil) {
+		t.Error("nil UserData must not be Tier-0")
+	}
+}
+
+func TestControllablesLimitDefault(t *testing.T) {
+	// An unset ControllablesLimit defaults to 100 so the Tier-0/sensitivity sample
+	// is wide enough in a single call (env.Count still gives the true magnitude).
+	c := New(Config{Scheme: "http", Host: "h", Port: 1, TokenID: "t", TokenKey: "k"})
+	if c.controllablesLimit != 100 {
+		t.Errorf("default controllablesLimit = %d, want 100", c.controllablesLimit)
+	}
+	// An explicit value is honored.
+	c2 := New(Config{ControllablesLimit: 25})
+	if c2.controllablesLimit != 25 {
+		t.Errorf("explicit controllablesLimit = %d, want 25", c2.controllablesLimit)
+	}
+}
