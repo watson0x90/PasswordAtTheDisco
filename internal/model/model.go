@@ -215,7 +215,8 @@ type Account struct {
 }
 
 // ScoreBreakdown is the per-component detail of a CVSS-style risk score. Only
-// populated for cracked accounts (uncracked use a simplified formula).
+// populated for cracked accounts (uncracked accounts are scored through the same
+// risk.Score path but do not carry a stored breakdown).
 type ScoreBreakdown struct {
 	BaseScore          float64 `json:"base_score"`
 	ComplexityFactor   float64 `json:"complexity_factor"`

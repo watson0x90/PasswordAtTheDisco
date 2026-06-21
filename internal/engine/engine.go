@@ -389,10 +389,12 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 	}
 }
 
-// scoreUncracked applies the simplified uncracked-hash scoring (base 5.0 scaled
-// by privilege/share/HIBP factors). BHE is always consulted when available so
-// DA pathways, controlled objects, and account properties are captured even for
-// uncracked accounts (their hash may be in HIBP or shared with a DA).
+// scoreUncracked routes the uncracked-hash path through risk.Score with
+// Cracked:false: Exposure comes from HIBP/reuse/roastable signals (no weakness
+// penalties, since the password is unknown), Impact from BloodHound enrichment,
+// and Impact is Unknown when the account is unenriched. BHE is always consulted
+// when available so DA pathways, controlled objects, and account properties are
+// captured even for uncracked accounts (their hash may be in HIBP or shared with a DA).
 func (e *Engine) scoreUncracked(domain string, a secretsdump.ParsedAccount, sharedWith int, now time.Time, enr Enricher) model.Account {
 	count := e.hibpCount(a.Hash)
 	enrData := enrichVia(enr, a.Username, domain)

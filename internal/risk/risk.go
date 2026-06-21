@@ -1,18 +1,16 @@
-// Package risk implements the CVSS-style password risk scoring engine: base,
-// temporal, and environmental components, a cracked-password risk floor, the
-// 0-10 score -> level mapping, and a CVSS-like vector string.
+// Package risk implements the v2 two-axis password risk scoring engine: an
+// Exposure axis ("how easily is this credential compromised?") and an Impact axis
+// ("blast radius if it is?"), a derived Level from a 2D matrix, an extended
+// per-factor Breakdown, and a CVSS-like vector string.
 //
-// Ported from legacy-python/core/scoring.py and core/vector.py. Numeric fields
-// that the Python represented as int-or-"Unknown" are modeled here as *int
-// (nil = unknown); DA pathways are a []string (empty = none).
+// Numeric fields that the source data represented as int-or-"Unknown" are modeled
+// here as *int (nil = unknown); DA pathways are a []string (empty = none).
 package risk
 
 import (
 	"math"
 	"strconv"
 	"strings"
-
-	"github.com/watson0x90/PasswordAtTheDisco/internal/hibp"
 )
 
 // Analysis holds intrinsic password characteristics (from the password-analysis
@@ -67,24 +65,6 @@ type Breakdown struct {
 	DAComponent       float64 `json:"da_component"`
 	DomainModifier    float64 `json:"domain_modifier"`
 	EnabledGated      bool    `json:"enabled_gated"`
-
-	// --- Retained v1 fields (compile-compat for internal/engine, which still reads
-	// these in scoreCracked; B4 migrates the engine and B6 removes them). Populated
-	// from the still-present v1 scoring funcs so the engine's emitted breakdown is
-	// unchanged in B3. ---
-	BaseScore          float64 `json:"-"`
-	ComplexityFactor   float64 `json:"-"`
-	LengthFactor       float64 `json:"-"`
-	DictionaryFactor   float64 `json:"-"`
-	SimilarityFactor   float64 `json:"-"`
-	TemporalScore      float64 `json:"-"`
-	ComplianceFactor   float64 `json:"-"`
-	ExpirationFactor   float64 `json:"-"`
-	EnvironmentalScore float64 `json:"-"`
-	PrivilegeFactor    float64 `json:"-"`
-	ShareFactor        float64 `json:"-"`
-	DomainFactor       float64 `json:"-"`
-	HIBPFactor         float64 `json:"-"`
 }
 
 // Result is the full v2 scoring output for one account.
@@ -125,14 +105,6 @@ func Score(a Analysis, c Context) Result {
 		roast = 0.5
 	}
 
-	// v1 breakdown (compile-compat for the engine; removed in B6).
-	base, cf, lf, df, sf := baseScore(a)
-	base = floorBase(base, a, c.HIBPBreachCount)
-	temporal, compF, expF := temporalScore(base, c.DaysOutOfCompliance, c.PasswordExpires)
-	env, privF, shareF, domF, hibpF := environmentalScore(
-		temporal, hasDA, c.ControlledObjects, c.SharedWith, c.DomainRiskLevel, c.HIBPBreachCount)
-	env = finalFloor(env, a, c.HIBPBreachCount)
-
 	return Result{
 		Exposure:    exp,
 		Impact:      imp,
@@ -158,65 +130,7 @@ func Score(a Analysis, c Context) Result {
 			DAComponent:       daComponent(c.DADomains),
 			DomainModifier:    domainModifier(c.DomainRiskLevel),
 			EnabledGated:      known && !c.Enabled,
-			// retained v1 fields
-			BaseScore:          round1(base),
-			ComplexityFactor:   round2(cf),
-			LengthFactor:       round2(lf),
-			DictionaryFactor:   round2(df),
-			SimilarityFactor:   round2(sf),
-			TemporalScore:      round1(temporal),
-			ComplianceFactor:   round2(compF),
-			ExpirationFactor:   round2(expF),
-			EnvironmentalScore: round1(env),
-			PrivilegeFactor:    round2(privF),
-			ShareFactor:        round2(shareF),
-			DomainFactor:       round2(domF),
-			HIBPFactor:         round2(hibpF),
 		},
-	}
-}
-
-// finalFloor ensures the FINAL score (after all multipliers) never drops below a
-// minimum for a cracked password with the given characteristics. This catches the
-// case where "unknown" temporal/environmental factors (multipliers < 1) would
-// otherwise dilute a clearly dangerous password below its appropriate risk tier.
-func finalFloor(score float64, a Analysis, hibpCount int) float64 {
-	switch {
-	case hibpCount >= 1000000:
-		return math.Max(score, 8.0)
-	case hibpCount >= 100000:
-		return math.Max(score, 7.0)
-	case hibpCount >= 10000 || a.IsCommon:
-		return math.Max(score, 6.5)
-	case hibpCount >= 1000 || a.IsDictionaryWord:
-		return math.Max(score, 5.5)
-	case hibpCount >= 100:
-		return math.Max(score, 4.5)
-	case a.PasswordLength < 8:
-		return math.Max(score, 4.0) // Very short cracked password = at least Medium
-	case hibpCount >= 10 || a.BannedWordsCount > 0 || a.KeyboardPatternsCount > 0:
-		return math.Max(score, 4.0)
-	case a.PasswordLength < 12:
-		return math.Max(score, 3.0)
-	default:
-		return math.Max(score, 2.0)
-	}
-}
-
-// ComputeLevel maps a 0-10 score to a risk level. A Domain Admin pathway is
-// always Critical regardless of score.
-func ComputeLevel(score float64, hasDAPath bool) string {
-	switch {
-	case hasDAPath:
-		return "Critical"
-	case score >= 8.0:
-		return "Critical"
-	case score >= 6.0:
-		return "High"
-	case score >= 4.0:
-		return "Medium"
-	default:
-		return "Low"
 	}
 }
 
@@ -284,30 +198,6 @@ var complexityFactors = map[string]float64{
 	"none":                 1.0,
 }
 
-func baseScore(a Analysis) (base, complexityF, lengthF, dictionaryF, similarityF float64) {
-	complexityF = 1.0
-	if v, ok := complexityFactors[a.ComplexityLabel]; ok {
-		complexityF = v
-	}
-	lengthF = 1.0 / (1.0 + math.Exp(float64(a.PasswordLength-10)/2.0))
-
-	if a.IsCommon {
-		dictionaryF += 0.7
-	}
-	if a.IsDictionaryWord {
-		dictionaryF += 0.5
-	}
-	dictionaryF += math.Min(0.8, 0.2*float64(a.BannedWordsCount))
-	dictionaryF += math.Min(0.5, 0.1*float64(a.KeyboardPatternsCount))
-	dictionaryF = math.Min(1.0, dictionaryF)
-
-	similarityF = similarityFactor(a.SimilarMax)
-
-	combined := complexityF*lengthF + dictionaryF + similarityF
-	base = math.Min(10.0, combined*(10.0/4.0))
-	return
-}
-
 func similarityFactor(max float64) float64 {
 	switch {
 	case max >= 0.9:
@@ -339,8 +229,8 @@ func lengthPenalty(length int) float64 {
 
 // complexityPenalty maps complexityF in [0.2,1.0] -> [0,1] (higher = less complex = worse).
 // In complexityFactors a LOWER factor means a STRONGER password (mixedalphaspecialnum=0.2
-// is strongest, numeric=1.0 weakest), and v1 baseScore multiplied that factor in, so risk
-// rises WITH the factor. The penalty therefore scales directly with cf: (cf-0.2)/0.8.
+// is strongest, numeric=1.0 weakest), so risk rises WITH the factor. The penalty therefore
+// scales directly with cf: (cf-0.2)/0.8.
 func complexityPenalty(label string) float64 {
 	cf := 1.0
 	if v, ok := complexityFactors[label]; ok {
@@ -505,108 +395,6 @@ func impactScore(c Context) (score float64, known bool) {
 		imp = math.Min(imp, 2.0) // disabled can't authenticate
 	}
 	return imp, true
-}
-
-// floorBase applies the evidence-based cracked-password risk floor: a cracked
-// password always carries baseline risk, tiered by HIBP exposure / weakness.
-//
-// This is an INTENTIONAL divergence from the Python v1 scorer (which had no
-// floor, so a long/complex but cracked password could score ~0). The fact that a
-// password was cracked is itself a risk signal, so we floor it at >=2.0. Every
-// other scoring formula/constant is a faithful port of v1.
-func floorBase(base float64, a Analysis, hibpCount int) float64 {
-	switch {
-	case hibpCount >= 1000000:
-		return math.Max(base, 8.0)
-	case hibpCount >= 100000:
-		return math.Max(base, 7.5)
-	case hibpCount >= 10000 || a.IsCommon:
-		return math.Max(base, 7.0)
-	case hibpCount >= 1000 || a.IsDictionaryWord:
-		return math.Max(base, 6.0)
-	case hibpCount >= 100:
-		return math.Max(base, 5.0)
-	case hibpCount >= 10 || a.BannedWordsCount > 0 || a.KeyboardPatternsCount > 0:
-		return math.Max(base, 4.0)
-	case hibpCount > 0 || a.PasswordLength < 8:
-		return math.Max(base, 4.0)
-	case a.PasswordLength < 12:
-		return math.Max(base, 3.5)
-	default:
-		return math.Max(base, 2.0)
-	}
-}
-
-func temporalScore(base float64, days *int, expires string) (temporal, complianceF, expirationF float64) {
-	if days == nil {
-		complianceF = 0.8
-	} else {
-		complianceF = math.Min(1.0, 0.6+0.4*math.Min(1.0, float64(*days)/180.0))
-	}
-	switch expires {
-	case "No":
-		expirationF = 1.0
-	case "Yes":
-		expirationF = 0.85
-	default: // Unknown / unset
-		expirationF = 0.925
-	}
-	temporal = math.Min(10.0, base*complianceF*expirationF)
-	return
-}
-
-func environmentalScore(temporal float64, hasDA bool, controlled *int, shared int, domainRisk string, hibpCount int) (env, privF, shareF, domF, hibpF float64) {
-	privF = 1.0
-	if hasDA {
-		privF += 0.5
-	}
-	if controlled != nil {
-		switch oc := *controlled; {
-		case oc > 1000:
-			privF += 0.5
-		case oc > 500:
-			privF += 0.4
-		case oc > 100:
-			privF += 0.3
-		case oc > 50:
-			privF += 0.2
-		case oc > 10:
-			privF += 0.1
-		}
-	}
-
-	shareF = 1.0
-	if shared > 0 {
-		switch {
-		case shared >= 1000:
-			shareF += 0.5
-		case shared >= 100:
-			shareF += 0.4
-		case shared >= 10:
-			shareF += 0.3
-		default:
-			shareF += 0.2
-		}
-	}
-
-	domF = domainFactor(domainRisk)
-	hibpF = hibp.Factor(hibpCount) // identical tiers to the Python environmental hibp_factor
-
-	env = math.Min(10.0, temporal*privF*shareF*domF*hibpF)
-	return
-}
-
-func domainFactor(level string) float64 {
-	switch level {
-	case "Critical":
-		return 1.3
-	case "High":
-		return 1.2
-	case "Medium":
-		return 1.1
-	default: // Low, Unknown, "", anything else
-		return 1.0
-	}
 }
 
 // Vector returns the CVSS-like risk vector string:
