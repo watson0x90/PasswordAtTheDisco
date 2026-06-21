@@ -830,6 +830,18 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 .chart-legend-item b { color: var(--text); font-weight: 600; }
 .chart-empty { font-size: 13px; color: var(--faint); padding: 24px 4px; line-height: 1.5; }
 
+/* AxisFactorBars: per-tier small multiples of v2 breakdown sub-scores (replaces the radar). */
+.axis-bars { display: flex; flex-direction: column; gap: 18px; }
+.axis-tier { border-top: 1px solid #242e46; padding-top: 12px; }
+.axis-tier:first-child { border-top: none; padding-top: 0; }
+.axis-tier-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.axis-tier-name { font-size: 12px; font-weight: 600; letter-spacing: 0.3px; color: var(--text); }
+.axis-tier-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 20px; }
+.axis-group-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); margin-bottom: 4px; }
+.axis-group-muted .axis-group-label { color: var(--faint); }
+.axis-group-muted { opacity: 0.55; }
+.axis-impact-unknown { font-size: 11px; color: var(--faint); font-style: italic; margin-top: 6px; }
+
 .view-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
 .view-head .section-label { margin: 0; }
 .export-actions { display: flex; gap: 8px; }

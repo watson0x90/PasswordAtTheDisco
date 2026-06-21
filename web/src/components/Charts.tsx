@@ -20,7 +20,7 @@ import {
   YAxis,
   ZAxis,
 } from "recharts"
-import type { Bar as BarDatum, Series, Slice } from "../insights"
+import type { AxisFactor, Bar as BarDatum, Series, Slice, TierFactorBars } from "../insights"
 
 const AXIS = { fill: "#8a96b2", fontSize: 11 }
 const TOOLTIP = {
@@ -140,6 +140,53 @@ export function Bars({ data, color = "#38bdf8", height = 220 }: { data: BarDatum
         <Bar dataKey="value" fill={color} radius={[4, 4, 0, 0]} maxBarSize={56} />
       </BarChart>
     </ResponsiveContainer>
+  )
+}
+
+// AxisGroup: one labelled cluster of horizontal sub-score bars (reuses the HBars
+// recharts pattern). When muted, factor fills are desaturated to a single grey so the
+// chart never implies a real Impact reading for a tier with no enriched accounts.
+function AxisGroup({ label, factors, muted = false }: { label: string; factors: AxisFactor[]; muted?: boolean }) {
+  const height = factors.length * 26 + 8
+  return (
+    <div className={`axis-group${muted ? " axis-group-muted" : ""}`}>
+      <div className="axis-group-label">{label}</div>
+      <ResponsiveContainer width="100%" height={height}>
+        <BarChart data={factors} layout="vertical" margin={{ top: 0, right: 22, left: 0, bottom: 0 }}>
+          <XAxis type="number" domain={[0, 10]} tick={AXIS} tickLine={false} axisLine={false} allowDecimals={false} hide />
+          <YAxis type="category" dataKey="name" tick={AXIS} tickLine={false} axisLine={false} width={84} />
+          <Tooltip {...TOOLTIP} cursor={{ fill: "rgba(255,255,255,0.04)" }} formatter={(v) => Number(v).toFixed(2)} />
+          <Bar dataKey="value" radius={[0, 3, 3, 0]} maxBarSize={14} isAnimationActive={false}>
+            {factors.map((f, i) => (
+              <Cell key={i} fill={muted ? "#3a445e" : f.color} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
+// AxisFactorBars: per-tier small multiples of the v2 breakdown sub-scores. Each tier
+// card pairs an Exposure cluster (always shown) with an Impact cluster (greyed + a
+// caption when no account in the tier was BloodHound-enriched). Replaces the v1 radar.
+export function AxisFactorBars({ data }: { data: TierFactorBars[] }) {
+  return (
+    <div className="axis-bars">
+      {data.map((t) => (
+        <div key={t.tier} className="axis-tier">
+          <div className="axis-tier-head">
+            <span className="chart-legend-dot" style={{ background: t.color }} />
+            <span className="axis-tier-name">{t.tier}</span>
+          </div>
+          <div className="axis-tier-body">
+            <AxisGroup label="Exposure" factors={t.exposure} />
+            <AxisGroup label="Impact" factors={t.impact} muted={!t.impactKnown} />
+          </div>
+          {!t.impactKnown && <div className="axis-impact-unknown">Impact unknown for this tier — no BloodHound-enriched accounts.</div>}
+        </div>
+      ))}
+    </div>
   )
 }
 

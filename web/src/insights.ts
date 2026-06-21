@@ -266,16 +266,61 @@ export function similarityBuckets(accts: Account[]): Bar[] {
   return labels.map((name, i) => ({ name, value: c[i] })).filter((b) => b.value > 0)
 }
 
-export interface RadarDatum { factor: string; value: number }
-export interface RadarSeries { name: string; color: string; data: RadarDatum[] }
+export interface AxisFactor { name: string; value: number; color: string }
+export interface TierFactorBars {
+  tier: string
+  color: string
+  exposure: AxisFactor[]
+  impact: AxisFactor[]
+  impactKnown: boolean // false when no account in this tier is enriched (impact greyed)
+}
 
-// riskFactorsRadar: STUBBED in #C1. The v1 radar read v1 score_breakdown fields
-// (complexity_factor, length_factor, …) that the v2 engine no longer emits, so every
-// input was a structural zero. C2 replaces this with axisFactorBars (per-axis v2
-// sub-score bars). Returning [] makes the Insights radar card render its empty-state.
-// TODO(C2): replace with axisFactorBars (v2 breakdown sub-scores).
-export function riskFactorsRadar(_accts: Account[]): RadarSeries[] {
-  return []
+// Coalesce a possibly-absent (omitempty) breakdown key to 0. Missing = 0, never "unknown".
+const bdv = (a: Account, k: keyof NonNullable<Account["score_breakdown"]>): number => {
+  const v = a.score_breakdown?.[k]
+  return typeof v === "number" ? v : 0
+}
+
+const EXP_FACTORS: [string, keyof NonNullable<Account["score_breakdown"]>, string][] = [
+  ["Weakness", "weakness_score", "#fbbf24"],
+  ["HIBP floor", "hibp_floor", "#fb7185"],
+  ["Cracked floor", "cracked_floor", "#f472b6"],
+  ["Reuse", "reuse_bump", "#a78bfa"],
+  ["Roastable", "roastable_bump", "#38bdf8"],
+]
+const IMP_FACTORS: [string, keyof NonNullable<Account["score_breakdown"]>, string][] = [
+  ["Privilege", "privilege_sub_score", "#22d3ee"],
+  ["DA path", "da_component", "#fb7185"],
+  ["Domain", "domain_modifier", "#a3e635"],
+]
+
+// axisFactorBars: per-tier averaged breakdown SUB-SCORES (already in score-points,
+// commensurable within an axis). Replaces the misleading rescaled radar (v1 read
+// structural zeros). The Impact group is greyed when no account in the tier was
+// BloodHound-enriched (impactKnown=false), since Impact is genuinely Unknown there.
+export function axisFactorBars(accts: Account[]): TierFactorBars[] {
+  const tiers: [string, string][] = [
+    ["Critical", "#fb7185"],
+    ["High", "#fbbf24"],
+    ["Medium", "#a3e635"],
+    ["Low", "#22d3ee"],
+  ]
+  const out: TierFactorBars[] = []
+  for (const [tier, color] of tiers) {
+    const group = accts.filter((a) => a.risk_level === tier && a.score_breakdown)
+    if (group.length === 0) continue
+    const enriched = group.filter((a) => a.impact_known)
+    const avg = (rows: Account[], k: keyof NonNullable<Account["score_breakdown"]>) =>
+      rows.length ? Math.round((rows.reduce((s, a) => s + bdv(a, k), 0) / rows.length) * 100) / 100 : 0
+    out.push({
+      tier,
+      color,
+      exposure: EXP_FACTORS.map(([name, k, c]) => ({ name, value: avg(group, k), color: c })),
+      impact: IMP_FACTORS.map(([name, k, c]) => ({ name, value: avg(enriched, k), color: c })),
+      impactKnown: enriched.length > 0,
+    })
+  }
+  return out
 }
 
 // passwordAgeScatter: pwd_last_set (days ago) vs risk score scatter data.

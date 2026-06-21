@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import type { Account } from "./api"
-import { posture, riskDistribution, hibpSplit, complexityLabel, similarityNetwork } from "./insights"
+import { posture, riskDistribution, hibpSplit, complexityLabel, similarityNetwork, axisFactorBars } from "./insights"
 
 function acct(p: Partial<Account>): Account {
   return {
@@ -107,5 +107,45 @@ describe("similarityNetwork edges", () => {
     expect(edges.length).toBe(1)
     expect(edges[0].weight).toBe(3)
     expect(edges[0].label).toBe("90%")
+  })
+})
+
+// bdAcct builds on the real acct(...) factory (Partial<Account> -> Account); it sets
+// the v2 axis fields + a partial v2 score_breakdown so axisFactorBars has sub-scores
+// to average. impact_score is null when impactKnown is false (load-bearing Unknown).
+const bdAcct = (level: string, impactKnown: boolean, bd: Partial<NonNullable<Account["score_breakdown"]>>): Account =>
+  acct({
+    risk_level: level,
+    impact_known: impactKnown,
+    exposure_score: 5,
+    impact_score: impactKnown ? 5 : null,
+    score_breakdown: bd,
+  })
+
+describe("axisFactorBars", () => {
+  it("groups Exposure + Impact sub-scores per tier, coalescing missing keys to 0", () => {
+    const bars = axisFactorBars([
+      bdAcct("Critical", true, { weakness_score: 8, hibp_floor: 4, privilege_sub_score: 7 }),
+      bdAcct("Critical", true, { weakness_score: 6, hibp_floor: 4, privilege_sub_score: 9 }),
+    ])
+    const crit = bars.find((b) => b.tier === "Critical")!
+    // averaged within the tier; absent factors (cracked_floor, reuse_bump, ...) are 0
+    expect(crit.exposure.find((f) => f.name === "Weakness")!.value).toBe(7) // (8+6)/2
+    expect(crit.exposure.find((f) => f.name === "HIBP floor")!.value).toBe(4)
+    expect(crit.exposure.find((f) => f.name === "Reuse")!.value).toBe(0) // absent => 0, NOT unknown
+    expect(crit.impact.find((f) => f.name === "Privilege")!.value).toBe(8) // (7+9)/2
+    expect(crit.impactKnown).toBe(true)
+  })
+
+  it("greys the Impact group for a tier with no enriched accounts", () => {
+    const bars = axisFactorBars([bdAcct("High", false, { weakness_score: 6 })])
+    const high = bars.find((b) => b.tier === "High")!
+    expect(high.impactKnown).toBe(false) // no enriched account in this tier
+    expect(high.exposure.find((f) => f.name === "Weakness")!.value).toBe(6)
+  })
+
+  it("omits empty tiers", () => {
+    const bars = axisFactorBars([bdAcct("Critical", true, { weakness_score: 5 })])
+    expect(bars.some((b) => b.tier === "Low")).toBe(false)
   })
 })
