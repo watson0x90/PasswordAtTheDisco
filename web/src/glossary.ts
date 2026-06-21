@@ -16,5 +16,7 @@ export const GLOSSARY = {
   exposure_axis: "Exposure (0–10): how easily this credential is compromised — from the dump, HIBP, and password reuse. Always computed.",
   impact_axis: "Impact (0–10, or Unknown): blast radius if this credential is compromised — from BloodHound. 'Unknown' means this account was not enriched and is not the same as low.",
   impact_unknown: "Impact is Unknown because this account has no BloodHound coverage. The level is provisional, computed from Exposure alone — run enrichment to finalize.",
+  provisional: "Provisional level — Impact is Unknown (no BloodHound coverage), so the level was derived from Exposure alone. Run enrichment to finalize.",
+  percentile: "Within-audit triage rank (0–100th) — a sort key, not a score; breaks ties so a large block of Critical accounts still has a strict order.",
   exposure_impact_matrix: "Accounts placed by Exposure (how easily the credential is compromised, rows) × Impact (blast radius if compromised, columns). The Unknown column is accounts with no BloodHound coverage — we don't know their blast radius, which is not the same as low.",
 } as const

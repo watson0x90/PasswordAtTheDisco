@@ -6,7 +6,7 @@ import { useAccountsData } from "../accountsData"
 import { useNav } from "../nav"
 import { hasDA } from "../util"
 import { riskDistribution, hibpSplit, lengthBuckets } from "../insights"
-import { coverageStats, exposureImpactMatrix } from "../matrix"
+import { coverageStats, exposureImpactMatrix, isProvisional } from "../matrix"
 import { Bars, ChartCard, Donut, MatrixHeatmap, PostureGauge } from "./Charts"
 import { ExposureHeadline } from "./ExposureHeadline"
 import { Insights } from "./Insights"
@@ -68,6 +68,11 @@ export function Dashboard() {
   const p = summary?.posture
   const cov = coverageStats(accounts)
   const eiMatrix = exposureImpactMatrix(accounts)
+  // Impact-Unknown count: accounts whose Impact axis is Unknown (no BloodHound
+  // coverage). Surfaced as a first-class KPI so the coverage gap is a number, not
+  // just the C4 banner. Uses matrix.ts isProvisional (impact_known=false) — the
+  // same predicate the per-account provisional badges use, so they can't drift.
+  const impactUnknown = accounts.filter(isProvisional).length
 
   return (
     <>
@@ -93,6 +98,7 @@ export function Dashboard() {
         <Stat label="Cracked" value={cracked} sub={`${crackPct}% of accounts`} delay={0.06} />
         <Stat label="HIBP Breached" value={breached} tip={GLOSSARY.hibp} accent delay={0.12} />
         <Stat label="DA Pathways" value={da} tip={GLOSSARY.da_pathway} crit delay={0.18} />
+        <Stat label="Impact Unknown" value={impactUnknown} sub="no BloodHound coverage" tip={GLOSSARY.impact_unknown} accent delay={0.24} />
       </div>
 
       <ExposureHeadline accounts={accounts} report={report} />
