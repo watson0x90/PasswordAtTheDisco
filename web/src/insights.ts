@@ -266,50 +266,61 @@ export function similarityBuckets(accts: Account[]): Bar[] {
   return labels.map((name, i) => ({ name, value: c[i] })).filter((b) => b.value > 0)
 }
 
-export interface RadarDatum { factor: string; value: number }
-export interface RadarSeries { name: string; color: string; data: RadarDatum[] }
+export interface AxisFactor { name: string; value: number; color: string }
+export interface TierFactorBars {
+  tier: string
+  color: string
+  exposure: AxisFactor[]
+  impact: AxisFactor[]
+  impactKnown: boolean // false when no account in this tier is enriched (impact greyed)
+}
 
-// riskFactorsRadar: average factor values by risk tier (for radar chart).
-// Factors are scaled 0-10 for visualization (inverted where lower=better).
-export function riskFactorsRadar(accts: Account[]): RadarSeries[] {
-  const levels: [string, string][] = [
+// Coalesce a possibly-absent (omitempty) breakdown key to 0. Missing = 0, never "unknown".
+const bdv = (a: Account, k: keyof NonNullable<Account["score_breakdown"]>): number => {
+  const v = a.score_breakdown?.[k]
+  return typeof v === "number" ? v : 0
+}
+
+const EXP_FACTORS: [string, keyof NonNullable<Account["score_breakdown"]>, string][] = [
+  ["Weakness", "weakness_score", "#fbbf24"],
+  ["HIBP floor", "hibp_floor", "#fb7185"],
+  ["Cracked floor", "cracked_floor", "#f472b6"],
+  ["Reuse", "reuse_bump", "#a78bfa"],
+  ["Roastable", "roastable_bump", "#38bdf8"],
+]
+const IMP_FACTORS: [string, keyof NonNullable<Account["score_breakdown"]>, string][] = [
+  ["Privilege", "privilege_sub_score", "#22d3ee"],
+  ["DA path", "da_component", "#fb7185"],
+  ["Domain", "domain_modifier", "#a3e635"],
+]
+
+// axisFactorBars: per-tier averaged breakdown SUB-SCORES (already in score-points,
+// commensurable within an axis). Replaces the misleading rescaled radar (v1 read
+// structural zeros). The Impact group is greyed when no account in the tier was
+// BloodHound-enriched (impactKnown=false), since Impact is genuinely Unknown there.
+export function axisFactorBars(accts: Account[]): TierFactorBars[] {
+  const tiers: [string, string][] = [
     ["Critical", "#fb7185"],
     ["High", "#fbbf24"],
     ["Medium", "#a3e635"],
     ["Low", "#22d3ee"],
   ]
-  const factorNames = ["Complexity", "Length", "Dictionary", "Similarity", "Compliance", "Expiration", "Privilege", "Sharing", "Domain", "HIBP"]
-  const series: RadarSeries[] = []
-
-  for (const [level, color] of levels) {
-    const group = accts.filter((a) => a.risk_level === level && a.score_breakdown)
+  const out: TierFactorBars[] = []
+  for (const [tier, color] of tiers) {
+    const group = accts.filter((a) => a.risk_level === tier && a.score_breakdown)
     if (group.length === 0) continue
-
-    const sums = new Array(10).fill(0)
-    for (const a of group) {
-      const bd = a.score_breakdown!
-      // For complexity & length factors, lower is better (more complex/longer), so invert: (1-val)*10
-      sums[0] += (1 - bd.complexity_factor) * 10
-      sums[1] += (1 - bd.length_factor) * 10
-      // Dictionary & similarity: higher = worse, already 0-1 scale
-      sums[2] += bd.dictionary_factor * 10
-      sums[3] += bd.similarity_factor * 10
-      // Compliance/expiration: these are multipliers 0.6-1.0 where higher = worse
-      sums[4] += Math.min(10, (bd.compliance_factor - 0.6) * 25)
-      sums[5] += Math.min(10, (bd.expiration_factor - 0.85) * 66.7)
-      // Privilege/share/domain/hibp: multipliers 1.0-1.5+, higher = worse
-      sums[6] += Math.min(10, (bd.privilege_factor - 1) * 20)
-      sums[7] += Math.min(10, (bd.share_factor - 1) * 20)
-      sums[8] += Math.min(10, (bd.domain_factor - 1) * 33.3)
-      sums[9] += Math.min(10, (bd.hibp_factor - 1) * 20)
-    }
-    const data: RadarDatum[] = factorNames.map((factor, i) => ({
-      factor,
-      value: Math.round((sums[i] / group.length) * 10) / 10,
-    }))
-    series.push({ name: level, color, data })
+    const enriched = group.filter((a) => a.impact_known)
+    const avg = (rows: Account[], k: keyof NonNullable<Account["score_breakdown"]>) =>
+      rows.length ? Math.round((rows.reduce((s, a) => s + bdv(a, k), 0) / rows.length) * 100) / 100 : 0
+    out.push({
+      tier,
+      color,
+      exposure: EXP_FACTORS.map(([name, k, c]) => ({ name, value: avg(group, k), color: c })),
+      impact: IMP_FACTORS.map(([name, k, c]) => ({ name, value: avg(enriched, k), color: c })),
+      impactKnown: enriched.length > 0,
+    })
   }
-  return series
+  return out
 }
 
 // passwordAgeScatter: pwd_last_set (days ago) vs risk score scatter data.

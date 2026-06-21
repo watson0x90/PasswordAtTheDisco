@@ -6,7 +6,8 @@ import { useAccountsData } from "../accountsData"
 import { useNav } from "../nav"
 import { hasDA } from "../util"
 import { riskDistribution, hibpSplit, lengthBuckets } from "../insights"
-import { Bars, ChartCard, Donut, PostureGauge } from "./Charts"
+import { coverageStats, exposureImpactMatrix, isProvisional } from "../matrix"
+import { Bars, ChartCard, Donut, MatrixHeatmap, PostureGauge } from "./Charts"
 import { ExposureHeadline } from "./ExposureHeadline"
 import { Insights } from "./Insights"
 import { useJobs } from "../jobs"
@@ -65,6 +66,13 @@ export function Dashboard() {
   const crackPct = total ? Math.round((cracked / total) * 100) : 0
 
   const p = summary?.posture
+  const cov = coverageStats(accounts)
+  const eiMatrix = exposureImpactMatrix(accounts)
+  // Impact-Unknown count: accounts whose Impact axis is Unknown (no BloodHound
+  // coverage). Surfaced as a first-class KPI so the coverage gap is a number, not
+  // just the C4 banner. Uses matrix.ts isProvisional (impact_known=false) — the
+  // same predicate the per-account provisional badges use, so they can't drift.
+  const impactUnknown = accounts.filter(isProvisional).length
 
   return (
     <>
@@ -76,11 +84,21 @@ export function Dashboard() {
         </div>
       </div>
       <div className="view-sub">Where do we stand? Org-wide posture at a glance.</div>
+      {cov.partial && (
+        <div className="coverage-banner" role="status">
+          <span className="coverage-banner-dot" aria-hidden="true" />
+          <span className="coverage-banner-text">
+            <b>BloodHound: {cov.enriched}/{cov.total} accounts enriched</b> — Impact is Unknown for the rest.
+          </span>
+          <InfoTip text={GLOSSARY.coverage} />
+        </div>
+      )}
       <div className="stat-grid">
         <Stat label="Accounts" value={total} delay={0} />
         <Stat label="Cracked" value={cracked} sub={`${crackPct}% of accounts`} delay={0.06} />
         <Stat label="HIBP Breached" value={breached} tip={GLOSSARY.hibp} accent delay={0.12} />
         <Stat label="DA Pathways" value={da} tip={GLOSSARY.da_pathway} crit delay={0.18} />
+        <Stat label="Impact Unknown" value={impactUnknown} sub="no BloodHound coverage" tip={GLOSSARY.impact_unknown} accent delay={0.24} />
       </div>
 
       <ExposureHeadline accounts={accounts} report={report} />
@@ -146,6 +164,11 @@ export function Dashboard() {
           </div>
         </>
       )}
+
+      <div className="section-label">Exposure × Impact <InfoTip text={GLOSSARY.exposure_impact_matrix} /></div>
+      <div className="panel matrix-panel">
+        <MatrixHeatmap m={eiMatrix} />
+      </div>
 
       <div className="section-label">Charts</div>
       <div className="chart-grid">

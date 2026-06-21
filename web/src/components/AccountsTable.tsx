@@ -9,6 +9,7 @@ import { WeakCell } from "./AccountDrawer"
 import { AccountLink } from "./AccountLink"
 import { InfoTip } from "./InfoTip"
 import { GLOSSARY } from "../glossary"
+import { impactIsKnown, isProvisional, coverageState } from "../matrix"
 
 export function AccountsTable({ accounts }: { accounts: Account[] }) {
   const { me } = useAuth()
@@ -25,6 +26,11 @@ export function AccountsTable({ accounts }: { accounts: Account[] }) {
     { key: "username", get: (a) => a.username },
     { key: "domain", get: (a) => a.domain },
     { key: "risk", get: (a) => RISK_RANK[a.risk_level] ?? 0, defaultDir: "desc" },
+    { key: "exposure", get: (a) => a.exposure_score, defaultDir: "desc" },
+    // Impact sorts known-desc; Unknown rows return null so sortRows groups them LAST in
+    // BOTH directions (never interleaved as if low-impact), matching the sibling policy
+    // column's null-last idiom. impact_score is never coalesced to 0.
+    { key: "impact", get: (a) => (impactIsKnown(a) ? (a.impact_score as number) : null), defaultDir: "desc" },
     { key: "score", get: (a) => a.risk_score, defaultDir: "desc" },
     { key: "hibp", get: (a) => a.hibp_breach_count, defaultDir: "desc" },
     { key: "policy", get: (a) => (!a.cracked ? null : a.meets_policy ? 1 : 0) },
@@ -76,6 +82,8 @@ export function AccountsTable({ accounts }: { accounts: Account[] }) {
               <SortHeader label="Username" colKey="username" sort={page.sort} onSort={page.setSort} />
               <SortHeader label="Domain" colKey="domain" sort={page.sort} onSort={page.setSort} />
               <SortHeader label="Risk" colKey="risk" sort={page.sort} onSort={page.setSort} />
+              <SortHeader label="Exposure" colKey="exposure" numeric sort={page.sort} onSort={page.setSort} info={<InfoTip text={GLOSSARY.exposure_axis} />} />
+              <SortHeader label="Impact" colKey="impact" numeric sort={page.sort} onSort={page.setSort} info={<InfoTip text={GLOSSARY.impact_axis} />} />
               <SortHeader label="Score" colKey="score" numeric sort={page.sort} onSort={page.setSort} info={<InfoTip text={GLOSSARY.risk_score} />} />
               <SortHeader label="HIBP" colKey="hibp" numeric sort={page.sort} onSort={page.setSort} info={<InfoTip text={GLOSSARY.hibp_count} />} />
               <SortHeader label="Policy" colKey="policy" sort={page.sort} onSort={page.setSort} />
@@ -92,9 +100,25 @@ export function AccountsTable({ accounts }: { accounts: Account[] }) {
                   <AccountLink username={a.username} domain={a.domain} />
                   {!a.enabled && <span className="badge-disabled" title="account disabled in AD">disabled</span>}
                 </td>
-                <td className="muted">{a.domain}</td>
+                <td className="muted">
+                  {a.domain}
+                  {coverageState(a) === "none" && (
+                    <span className="badge-no-bh" title="not BloodHound-enriched — Impact is Unknown">no BH</span>
+                  )}
+                </td>
                 <td>
                   <span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span>
+                  {isProvisional(a) && (
+                    <span className="badge-provisional" title={GLOSSARY.impact_unknown}>provisional</span>
+                  )}
+                </td>
+                <td className="num">{a.exposure_score.toFixed(1)}</td>
+                <td className="num">
+                  {impactIsKnown(a) ? (
+                    (a.impact_score as number).toFixed(1)
+                  ) : (
+                    <span className="badge-provisional" title={GLOSSARY.impact_unknown}>Unknown</span>
+                  )}
                 </td>
                 <td className="num">{a.risk_score.toFixed(1)}</td>
                 <td className="num">

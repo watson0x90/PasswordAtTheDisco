@@ -1,6 +1,8 @@
 import { useEffect, type ReactNode } from "react"
-import type { Account } from "../api"
+import type { Account, ScoreBreakdown } from "../api"
 import { RISK_CLASS, hasDA, weaknessTags } from "../util"
+import { impactIsKnown, isProvisional, coverageState } from "../matrix"
+import { GLOSSARY } from "../glossary"
 
 // WeakCell shows wordlist-weakness badges (common / dictionary / forbidden /
 // keyboard). The matched word itself is never shown — only the category.
@@ -38,6 +40,17 @@ export function AccountDrawer({ account: a, onClose }: { account: Account; onClo
     ["Domain", a.domain],
     ["Status", a.cracked ? "Cracked" : "Uncracked"],
     ["Risk level", <span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span>],
+    ["Exposure", a.exposure_score.toFixed(1)],
+    [
+      "Impact",
+      impactIsKnown(a) ? (
+        (a.impact_score as number).toFixed(1)
+      ) : (
+        <span className="badge-provisional" title={GLOSSARY.impact_unknown}>Unknown</span>
+      ),
+    ],
+    ["Coverage", coverageState(a) === "full" ? "BloodHound-enriched" : "Not enriched"],
+    ...(a.percentile != null ? ([["Triage percentile", `${Math.round(a.percentile * 100)}th`]] as [string, ReactNode][]) : []),
     ["Risk score", a.risk_score.toFixed(1)],
     ["Risk vector", <code className="vector">{a.risk_vector || "—"}</code>],
     ["HIBP breaches", a.hibp_breached ? a.hibp_breach_count.toLocaleString() : "—"],
@@ -61,7 +74,15 @@ export function AccountDrawer({ account: a, onClose }: { account: Account; onClo
     ["Enabled", a.enabled ? "Yes" : "No"],
   ]
 
+  // v2 breakdown reads a.score_breakdown (v2 axis sub-scores). Per D2 every breakdown
+  // field is omitempty, so a missing key is a legitimate 0 (never "unknown"): the v()
+  // safe-accessor coalesces undefined → 0. (impact_score null is the only true Unknown
+  // and is handled separately via impactIsKnown — never coalesced.)
   const bd = a.score_breakdown
+  const v = (k: keyof ScoreBreakdown): number => {
+    const x = bd?.[k]
+    return typeof x === "number" ? x : 0
+  }
   return (
     <>
       <div className="drawer-backdrop" onClick={onClose} />
@@ -80,27 +101,56 @@ export function AccountDrawer({ account: a, onClose }: { account: Account; onClo
             </div>
           ))}
         </dl>
-        {bd && (
+        {(bd || isProvisional(a)) && (
           <div className="drawer-breakdown">
-            <div className="drawer-section-title">Score Breakdown</div>
+            <div className="drawer-section-title">Score breakdown (v2)</div>
             <div className="breakdown-grid">
-              <BreakdownCard title="Base" score={bd.base_score} factors={[
-                ["Complexity", bd.complexity_factor],
-                ["Length", bd.length_factor],
-                ["Dictionary", bd.dictionary_factor],
-                ["Similarity", bd.similarity_factor],
-              ]} />
-              <BreakdownCard title="Temporal" score={bd.temporal_score} factors={[
-                ["Compliance", bd.compliance_factor],
-                ["Expiration", bd.expiration_factor],
-              ]} />
-              <BreakdownCard title="Environmental" score={bd.environmental_score} factors={[
-                ["Privilege", bd.privilege_factor],
-                ["Sharing", bd.share_factor],
-                ["Domain", bd.domain_factor],
-                ["HIBP", bd.hibp_factor],
-              ]} />
+              {/* Per-factor cards exist only for cracked accounts (the Go scoreUncracked
+                  path emits no score_breakdown), so they stay gated on bd. */}
+              {bd && (
+                <BreakdownCard
+                  title="Exposure"
+                  score={a.exposure_score.toFixed(1)}
+                  factors={[
+                    ["Weakness", v("weakness_score")],
+                    ["HIBP floor", v("hibp_floor")],
+                    ["Cracked floor", v("cracked_floor")],
+                    ["Reuse", v("reuse_bump")],
+                    ["Roastable", v("roastable_bump")],
+                  ]}
+                />
+              )}
+              {/* Impact: a known impact with a breakdown gets the factor card; an Unknown
+                  impact gets the Impact-Unknown panel regardless of whether bd exists, so
+                  uncracked+unenriched accounts (no bd) still get the "run enrichment" call. */}
+              {impactIsKnown(a) ? (
+                bd && (
+                  <BreakdownCard
+                    title="Impact"
+                    score={(a.impact_score as number).toFixed(1)}
+                    factors={[
+                      ["Privilege", v("privilege_sub_score")],
+                      ["DA path", v("da_component")],
+                      ["Domain", v("domain_modifier")],
+                    ]}
+                  />
+                )
+              ) : (
+                <div className="bd-card impact-unknown-card">
+                  <div className="bd-card-head">
+                    <span className="bd-card-title">Impact</span>
+                    <span className="badge-provisional" title={GLOSSARY.impact_unknown}>Unknown</span>
+                  </div>
+                  <p className="impact-unknown-note">
+                    Impact Unknown — this account was not BloodHound-enriched, so its blast
+                    radius can't be computed. Run enrichment to finalize the level.
+                  </p>
+                </div>
+              )}
             </div>
+            {bd?.enabled_gated && (
+              <p className="bd-note">Impact was gated because the account is disabled in AD.</p>
+            )}
           </div>
         )}
       </aside>
@@ -108,18 +158,21 @@ export function AccountDrawer({ account: a, onClose }: { account: Account; onClo
   )
 }
 
-function BreakdownCard({ title, score, factors }: { title: string; score: number; factors: [string, number][] }) {
+// BreakdownCard — v2 axis sub-score card (one per axis: Exposure / Impact). Shows the
+// axis score and its per-factor contributions. This is the v2 rewrite of the card #C1
+// removed; it does NOT resurrect the v1 base/temporal/environmental cards.
+function BreakdownCard({ title, score, factors }: { title: string; score: string; factors: [string, number][] }) {
   return (
     <div className="bd-card">
       <div className="bd-card-head">
         <span className="bd-card-title">{title}</span>
-        <span className="bd-card-score">{score.toFixed(1)}</span>
+        <span className="bd-card-score">{score}</span>
       </div>
       <div className="bd-card-factors">
-        {factors.map(([label, val]) => (
-          <div className="bd-factor" key={label}>
-            <span>{label}</span>
-            <span className="mono">{val.toFixed(2)}</span>
+        {factors.map(([name, value]) => (
+          <div className="bd-factor" key={name}>
+            <span>{name}</span>
+            <span className="mono">{value.toFixed(2)}</span>
           </div>
         ))}
       </div>

@@ -218,20 +218,6 @@ type Account struct {
 // populated for cracked accounts (uncracked accounts are scored through the same
 // risk.Score path but do not carry a stored breakdown).
 type ScoreBreakdown struct {
-	BaseScore          float64 `json:"base_score"`
-	ComplexityFactor   float64 `json:"complexity_factor"`
-	LengthFactor       float64 `json:"length_factor"`
-	DictionaryFactor   float64 `json:"dictionary_factor"`
-	SimilarityFactor   float64 `json:"similarity_factor"`
-	TemporalScore      float64 `json:"temporal_score"`
-	ComplianceFactor   float64 `json:"compliance_factor"`
-	ExpirationFactor   float64 `json:"expiration_factor"`
-	EnvironmentalScore float64 `json:"environmental_score"`
-	PrivilegeFactor    float64 `json:"privilege_factor"`
-	ShareFactor        float64 `json:"share_factor"`
-	DomainFactor       float64 `json:"domain_factor"`
-	HIBPFactor         float64 `json:"hibp_factor"`
-
 	// v2 two-axis sub-scores + raw per-factor inputs for the leave-one-out radar.
 	ExposureScore     float64 `json:"exposure_score,omitempty"`
 	WeaknessScore     float64 `json:"weakness_score,omitempty"`

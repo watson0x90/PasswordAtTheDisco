@@ -830,6 +830,111 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 .chart-legend-item b { color: var(--text); font-weight: 600; }
 .chart-empty { font-size: 13px; color: var(--faint); padding: 24px 4px; line-height: 1.5; }
 
+/* AxisFactorBars: per-tier small multiples of v2 breakdown sub-scores (replaces the radar). */
+.axis-bars { display: flex; flex-direction: column; gap: 18px; }
+.axis-tier { border-top: 1px solid var(--glass-border); padding-top: 12px; }
+.axis-tier:first-child { border-top: none; padding-top: 0; }
+.axis-tier-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.axis-tier-name { font-size: 12px; font-weight: 600; letter-spacing: 0.3px; color: var(--text); }
+.axis-tier-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 20px; }
+.axis-group-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); margin-bottom: 4px; }
+.axis-group-muted .axis-group-label { color: var(--faint); }
+.axis-group-muted { opacity: 0.55; }
+.axis-impact-unknown { font-size: 11px; color: var(--faint); font-style: italic; margin-top: 6px; }
+
+/* ---- Exposure × Impact coverage banner + matrix heatmap ---- */
+
+.coverage-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 20px;
+  border: 1px solid var(--high);
+  border-left-width: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--high-bg);
+  font-size: 13px;
+  color: var(--text);
+}
+.coverage-banner-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--high);
+  box-shadow: 0 0 8px rgba(251, 191, 36, 0.6);
+}
+.coverage-banner-text b { font-weight: 600; }
+
+.matrix-panel { padding: 18px 20px; margin-bottom: 38px; }
+
+/* y-axis caption rotated alongside the grid; grid is rows(Exposure) × cols(Impact). */
+.matrix-heatmap { display: flex; align-items: stretch; gap: 8px; }
+.matrix-axis-y {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--dim);
+  padding: 22px 0 0;
+}
+.matrix-grid { flex: 1 1 auto; display: flex; flex-direction: column; gap: 6px; }
+/* 1 row-label column + 5 impact columns (4 tiers + Unknown). */
+.matrix-row { display: grid; grid-template-columns: 92px repeat(5, 1fr); gap: 6px; align-items: stretch; }
+
+.matrix-corner { display: flex; align-items: flex-end; }
+.matrix-corner-imp { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--dim); }
+.matrix-col-head {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--dim);
+  padding-bottom: 4px;
+}
+.matrix-row-head-cell {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  padding-right: 6px;
+}
+
+.matrix-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--glass-border);
+  /* intensity (--cell, 0..1) drives the column-tier tint (--cell-color). */
+  background:
+    color-mix(in srgb, var(--cell-color) calc(var(--cell, 0) * 78%), transparent),
+    var(--glass);
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.matrix-cell-empty { color: var(--faint); font-weight: 400; background: var(--glass); }
+
+/* Unknown column set apart: dashed border + neutral slate, never a low/green tone. */
+.matrix-col-unknown { border-style: dashed; }
+.matrix-col-head.matrix-col-unknown { color: var(--faint); font-style: italic; }
+
+@media (max-width: 720px) {
+  .matrix-axis-y { display: none; }
+  .matrix-row { grid-template-columns: 64px repeat(5, 1fr); }
+  .matrix-cell { min-height: 40px; font-size: 14px; }
+}
+
 .view-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
 .view-head .section-label { margin: 0; }
 .export-actions { display: flex; gap: 8px; }
@@ -873,6 +978,40 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 .bd-card-factors { display: flex; flex-direction: column; gap: 4px; }
 .bd-factor { display: flex; justify-content: space-between; font-size: 11px; color: var(--faint); }
 .bd-factor .mono { font-family: var(--mono); color: var(--body); }
+.bd-note { font-size: 11px; color: var(--faint); font-style: italic; margin: 10px 0 0; }
+
+/* Impact-Unknown drawer card: a dashed, muted panel that reads as a coverage GAP,
+   never as a low-impact value. No number is shown. */
+.impact-unknown-card { border-style: dashed; background: transparent; }
+.impact-unknown-note { font-size: 11px; line-height: 1.5; color: var(--dim); margin: 0; }
+
+/* badge-provisional / badge-no-bh: deliberately NOT a tier color. Dashed, muted, so
+   "Unknown" never reads as a low/safe value — it reads as missing information. */
+.badge-provisional {
+  display: inline-block;
+  font-size: 10px;
+  letter-spacing: 0.3px;
+  color: var(--dim);
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px dashed var(--glass-border);
+  border-radius: 999px;
+  padding: 1px 8px;
+  margin-left: 7px;
+  vertical-align: middle;
+}
+.badge-no-bh {
+  display: inline-block;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--faint);
+  background: transparent;
+  border: 1px dashed var(--glass-border);
+  border-radius: 4px;
+  padding: 0 5px;
+  margin-left: 7px;
+  vertical-align: middle;
+}
 
 /* ---- compare ---- */
 

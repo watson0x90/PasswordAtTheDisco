@@ -100,6 +100,20 @@ export interface Account {
   password_length: number
   risk_level: string
   risk_score: number
+  // --- scoring engine v2 (two-axis Exposure × Impact) ---
+  // exposure_score: 0–10, ALWAYS present (dump+HIBP+reuse derived).
+  exposure_score: number
+  // impact_score: 0–10, or null when Impact is Unknown (no BloodHound coverage).
+  // null is load-bearing — never coalesce it to 0/low.
+  impact_score: number | null
+  // impact_known: false => Impact is Unknown; render "Unknown" + a provisional level badge.
+  impact_known: boolean
+  // coverage: "full" = this account was BloodHound-enriched; "none" = not enriched.
+  // Absent (omitempty) means no enrichment record at all → treat as "none".
+  coverage?: "full" | "none"
+  // percentile: within-audit triage rank [0,1] (sort key, not a displayed score).
+  // Absent (omitempty) means 0th percentile → treat as 0.
+  percentile?: number
   risk_vector: string
   hibp_breached: boolean
   hibp_breach_count: number
@@ -128,20 +142,28 @@ export interface Account {
   score_breakdown?: ScoreBreakdown
 }
 
+// v2 score_breakdown: per-axis sub-scores. Go serializes these with omitempty, so a
+// legitimately-zero factor is ABSENT — readers MUST treat a missing key as 0, never
+// "unknown" (a safe-accessor helper that coalesces undefined→0 is added in a later
+// task). All optional for that reason.
 export interface ScoreBreakdown {
-  base_score: number
-  complexity_factor: number
-  length_factor: number
-  dictionary_factor: number
-  similarity_factor: number
-  temporal_score: number
-  compliance_factor: number
-  expiration_factor: number
-  environmental_score: number
-  privilege_factor: number
-  share_factor: number
-  domain_factor: number
-  hibp_factor: number
+  // Exposure axis
+  exposure_score?: number
+  weakness_score?: number
+  length_penalty?: number
+  complexity_penalty?: number
+  dict_penalty?: number
+  sim_penalty?: number
+  hibp_floor?: number
+  cracked_floor?: number
+  reuse_bump?: number
+  roastable_bump?: number
+  // Impact axis
+  impact_score?: number
+  privilege_sub_score?: number
+  da_component?: number
+  domain_modifier?: number
+  enabled_gated?: boolean
 }
 
 export interface SimilarPeer {

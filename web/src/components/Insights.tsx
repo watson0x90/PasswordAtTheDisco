@@ -1,8 +1,8 @@
 import { useAccountsData } from "../accountsData"
 import { useAudits } from "../auditsData"
-import { complexityCounts, controlledObjectsBuckets, crossDomainReuseGraph, daExposureByDomain, expirationSplit, hibpVsRisk, passwordAgeBuckets, passwordAgeScatter, riskFactorsRadar, scoreBuckets, sharingDistribution, similarityBuckets, topRiskiest } from "../insights"
+import { axisFactorBars, complexityCounts, controlledObjectsBuckets, crossDomainReuseGraph, daExposureByDomain, expirationSplit, hibpVsRisk, passwordAgeBuckets, passwordAgeScatter, scoreBuckets, sharingDistribution, similarityBuckets, topRiskiest } from "../insights"
 import { AccountLink } from "./AccountLink"
-import { Bars, ChartCard, Donut, HBars, RiskRadar, ScatterPlot } from "./Charts"
+import { AxisFactorBars, Bars, ChartCard, Donut, HBars, ScatterPlot } from "./Charts"
 import { NetworkGraph } from "./NetworkGraph"
 import { SimilarityClusters } from "./SimilarityClusters"
 import { RISK_CLASS, hasDA } from "../util"
@@ -21,7 +21,7 @@ export function Insights() {
   const controlledBuckets = controlledObjectsBuckets(accounts)
   const ageBuckets = passwordAgeBuckets(accounts)
   const simBuckets = similarityBuckets(accounts)
-  const radarSeries = riskFactorsRadar(accounts)
+  const axisBars = axisFactorBars(accounts)
   const ageScatter = passwordAgeScatter(accounts)
   const expirSlices = expirationSplit(accounts)
   const crossDomain = crossDomainReuseGraph(accounts)
@@ -86,9 +86,9 @@ export function Insights() {
       </div>
 
       <div className="chart-grid">
-        <ChartCard title="Risk factor contribution (radar)">
-          {radarSeries.length ? (
-            <RiskRadar series={radarSeries} />
+        <ChartCard title="Risk factor contribution by tier">
+          {axisBars.length ? (
+            <AxisFactorBars data={axisBars} />
           ) : (
             <div className="chart-empty">No score breakdown data — re-ingest or re-enrich to populate.</div>
           )}
