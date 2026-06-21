@@ -1713,9 +1713,262 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
 }
 .help-pillar p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--dim); }
 
+/* ── Chapter 2 — "How we score risk" (Exposure × Impact) ─────────────────────
+   The centerpiece: two axis cards, the static Exposure × Impact matrix diagram
+   (mirroring the dashboard MatrixHeatmap), coverage/provisional/percentile
+   concepts, and a two-case worked example. Token-based spacing only. */
+.help-hero-compact { padding: 0 0 var(--space-sm); border-bottom: none; }
+
+/* The two axes, side by side. */
+.score-axes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--space-lg);
+}
+.score-axis {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  border: 1px solid var(--glass-border);
+  border-top: 2px solid var(--accent);
+  border-radius: var(--radius-lg);
+  background: var(--glass);
+  padding: var(--space-xl);
+}
+.score-axis.exposure { border-top-color: var(--high); }
+.score-axis.impact { border-top-color: var(--accent-2); }
+.score-axis-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-sm); }
+.score-axis-tag {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.score-axis-title { font-family: var(--display); font-size: 24px; font-weight: 700; margin: 0; }
+.score-axis.exposure .score-axis-title { color: var(--high); }
+.score-axis.impact .score-axis-title { color: var(--accent-2); }
+.score-axis-range {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--faint);
+}
+.score-axis-lede { margin: 0; font-size: 14px; line-height: 1.6; color: var(--dim); }
+.score-axis-lede strong { color: var(--text); }
+.score-axis-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+.score-axis-list li {
+  position: relative;
+  padding-left: var(--space-lg);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--dim);
+}
+.score-axis-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+}
+.score-axis.exposure .score-axis-list li::before { background: var(--high); }
+.score-axis.impact .score-axis-list li::before { background: var(--accent-2); }
+.score-axis-list li b { color: var(--text); font-weight: 600; }
+
+/* The matrix diagram card. */
+.score-grid-card { padding: var(--space-lg) var(--space-xl) var(--space-xl); }
+.score-grid-caption { margin: 0 0 var(--space-lg); font-size: 13px; line-height: 1.6; color: var(--dim); max-width: 88ch; }
+.score-grid-caption strong { color: var(--text); }
+.score-cut {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+/* CSS grid reusing the MatrixHeatmap row/header classes; 1 label col + 5 cols. */
+.score-grid { display: flex; flex-direction: column; gap: var(--space-sm); }
+.score-grid-corner { display: flex; justify-content: space-between; align-items: flex-end; }
+.score-grid-corner-imp,
+.score-grid-corner-exp {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.score-grid-head .matrix-row,
+.score-grid-body .matrix-row { display: grid; grid-template-columns: 96px repeat(5, 1fr); gap: var(--space-sm); align-items: stretch; }
+.score-grid-head .matrix-row-head { grid-template-columns: 96px repeat(5, 1fr); }
+/* The header row has no row-label cell, so offset it under the data columns. */
+.score-grid-head .matrix-row { grid-template-columns: 96px repeat(5, 1fr); }
+.score-grid-head .matrix-col-head:first-child { grid-column: 2; }
+
+.score-grid-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  min-height: 58px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--glass-border);
+  background:
+    color-mix(in srgb, var(--level-color) 22%, transparent),
+    var(--glass);
+}
+.score-grid-level {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--level-color);
+  letter-spacing: 0.2px;
+}
+.score-grid-cell-unknown {
+  border-style: dashed;
+  border-color: var(--faint);
+  background: rgba(86, 96, 118, 0.1);
+}
+.score-grid-cell-unknown .score-grid-level { color: var(--dim); }
+.score-grid-prov {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.score-grid-notes { display: flex; flex-direction: column; gap: var(--space-sm); margin-top: var(--space-lg); }
+.score-grid-note { margin: 0; font-size: 12px; line-height: 1.55; color: var(--dim); }
+.score-grid-note strong { color: var(--text); }
+.score-grid-note-k {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+  margin-right: var(--space-xs);
+}
+.score-grid-note-k.unknown { color: var(--faint); border: 1px dashed var(--faint); }
+.score-grid-note-k.override { color: var(--crit); background: var(--crit-bg); }
+
+/* Coverage / provisional / percentile concepts. */
+.score-concepts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-lg);
+}
+.score-concept {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  border: 1px solid var(--glass-border);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--glass);
+  padding: var(--space-lg);
+}
+.score-concept-k { font-family: var(--display); font-size: 15px; font-weight: 700; color: var(--text); }
+.score-concept p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--dim); }
+.score-concept p strong { color: var(--text); }
+
+/* Worked example — two cases, input → Exposure → Impact → Level. */
+.score-example { display: flex; flex-direction: column; gap: var(--space-lg); }
+.score-example-head { display: flex; flex-direction: column; gap: var(--space-xs); }
+.score-example-eyebrow {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.score-example-title { font-family: var(--display); font-size: 22px; font-weight: 700; margin: 0; }
+.score-example-sub { margin: 0; font-size: 13px; color: var(--faint); }
+.score-example-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--space-lg); }
+
+.score-case {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  background: var(--glass);
+  padding: var(--space-xl);
+}
+.score-case.crit { border-color: rgba(251, 113, 133, 0.4); }
+.score-case.prov { border-color: var(--faint); border-style: dashed; }
+.score-case-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); }
+.score-case-acct { font-family: var(--mono); font-size: 13px; color: var(--text); }
+.score-case-result {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+.score-case-result.crit { color: var(--crit); border: 1px solid rgba(251, 113, 133, 0.4); background: var(--crit-bg); }
+.score-case-result.prov { color: var(--high); border: 1px dashed rgba(251, 191, 36, 0.5); background: var(--high-bg); }
+
+.score-case-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-md); }
+.score-case-steps li {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: var(--space-md);
+  align-items: baseline;
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--hairline);
+}
+.score-case-steps li:first-child { padding-top: 0; border-top: none; }
+.score-case-step-k {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.score-case-step-v { font-size: 13px; line-height: 1.55; color: var(--dim); }
+.score-case-step-v b { color: var(--text); }
+
+/* Small tier pill used inside the worked example. */
+.tier-pill {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  padding: 1px 7px;
+}
+.tier-pill.crit { color: var(--crit); background: var(--crit-bg); }
+.tier-pill.high { color: var(--high); background: var(--high-bg); }
+.tier-pill.med { color: var(--med); background: var(--med-bg); }
+.tier-pill.low { color: var(--low); background: var(--low-bg); }
+.tier-pill.unknown { color: var(--faint); border: 1px dashed var(--faint); }
+
 @media (max-width: 880px) {
   .help-shell { grid-template-columns: minmax(0, 1fr); gap: var(--space-lg); }
   .help-nav { position: static; flex-direction: row; flex-wrap: wrap; }
   .help-contrast { grid-template-columns: minmax(0, 1fr); }
   .help-contrast-arrow { transform: rotate(90deg); }
+}
+
+@media (max-width: 720px) {
+  .score-grid-head .matrix-row,
+  .score-grid-body .matrix-row { grid-template-columns: 70px repeat(5, 1fr); gap: var(--space-xs); }
+  .score-grid-cell { min-height: 48px; }
+  .score-grid-level { font-size: 11px; }
 }
