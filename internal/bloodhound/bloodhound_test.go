@@ -1,6 +1,7 @@
 package bloodhound
 
 import (
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
@@ -375,5 +376,15 @@ func TestControllablesLimitDefault(t *testing.T) {
 	c2 := New(Config{ControllablesLimit: 25})
 	if c2.controllablesLimit != 25 {
 		t.Errorf("explicit controllablesLimit = %d, want 25", c2.controllablesLimit)
+	}
+}
+
+func TestUserPropsRoastableDecode(t *testing.T) {
+	var p UserProps
+	if err := json.Unmarshal([]byte(`{"hasspn":true,"dontreqpreauth":true,"enabled":true}`), &p); err != nil {
+		t.Fatal(err)
+	}
+	if !p.HasSPN || !p.DontReqPreauth {
+		t.Errorf("roastable flags not decoded: hasspn=%v dontreqpreauth=%v", p.HasSPN, p.DontReqPreauth)
 	}
 }

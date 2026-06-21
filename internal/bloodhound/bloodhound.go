@@ -345,6 +345,8 @@ type UserProps struct {
 	LastLogon          json.Number `json:"lastlogon"`
 	LastLogonTimestamp json.Number `json:"lastlogontimestamp"`
 	PasswordCantChange bool        `json:"passwordcantchange"`
+	HasSPN             bool        `json:"hasspn"`         // Kerberoastable — SPN set
+	DontReqPreauth     bool        `json:"dontreqpreauth"` // AS-REP roastable
 }
 
 // GetUserFull returns the detailed user properties for an object ID.

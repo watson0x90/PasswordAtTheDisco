@@ -1,9 +1,16 @@
 package engine
 
 import (
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"testing"
 	"time"
 
+	"github.com/watson0x90/PasswordAtTheDisco/internal/bloodhound"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/pwanalysis"
@@ -271,5 +278,42 @@ func TestSimilarPeers(t *testing.T) {
 	red := by["alice"].Redacted()
 	if len(red.SimilarPeers) != 2 || red.Password != "" {
 		t.Errorf("redacted alice = %+v (peers should survive, password cleared)", red)
+	}
+}
+
+func TestBloodhoundEnricherSurfacesRoastable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		switch {
+		case r.URL.Path == "/api/v2/available-domains":
+			_, _ = io.WriteString(w, `{"data":[{"name":"CORP.INT","id":"D1","collected":true,"type":"Domain"}]}`)
+		case r.URL.Path == "/api/v2/search" && q.Get("type") == "User":
+			_, _ = io.WriteString(w, `{"data":[{"name":"svc@CORP.INT","objectid":"S-1-5-SVC"}]}`)
+		case r.URL.Path == "/api/v2/search" && q.Get("type") == "Group":
+			_, _ = io.WriteString(w, `{"data":[{"name":"DOMAIN ADMINS@CORP.INT","objectid":"S-1-5-DA"}]}`)
+		case len(r.URL.Path) > len("/controllables") && r.URL.Path[len(r.URL.Path)-len("/controllables"):] == "/controllables":
+			_, _ = io.WriteString(w, `{"count":0,"data":[]}`)
+		case r.URL.Path == "/api/v2/users/S-1-5-SVC":
+			_, _ = io.WriteString(w, `{"data":{"props":{"enabled":true,"pwdneverexpires":false,"hasspn":true,"dontreqpreauth":true,"pwdlastset":133000000000000000}}}`)
+		case r.URL.Path == "/api/v2/graphs/shortest-path":
+			w.WriteHeader(http.StatusNotFound)
+		default:
+			t.Errorf("unexpected request: %s", r.URL.RequestURI())
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	u, _ := url.Parse(srv.URL)
+	host, portStr, _ := net.SplitHostPort(u.Host)
+	port, _ := strconv.Atoi(portStr)
+	cl := bloodhound.New(bloodhound.Config{Scheme: "http", Host: host, Port: port, TokenID: "tid", TokenKey: "tkey"})
+
+	enr := BloodhoundEnricher{Client: cl}.Enrich("svc@CORP.INT")
+	if enr.HasSPN == nil || !*enr.HasSPN {
+		t.Errorf("HasSPN not surfaced on live path: %v", enr.HasSPN)
+	}
+	if enr.DontReqPreauth == nil || !*enr.DontReqPreauth {
+		t.Errorf("DontReqPreauth not surfaced on live path: %v", enr.DontReqPreauth)
 	}
 }

@@ -555,11 +555,15 @@ func (b BloodhoundEnricher) Enrich(username string) Enrichment {
 	count := bloodhound.ExtractControllableCount(ud)
 	enabled := ud.Props.Enabled
 	never := ud.Props.PwdNeverExpires
+	hasSPN := ud.Props.HasSPN
+	dontReqPreauth := ud.Props.DontReqPreauth
 	enr := Enrichment{
 		DADomains:         bloodhound.ExtractDADomains(ud),
 		ControlledObjects: &count,
 		PwdNeverExpires:   &never,
 		Enabled:           &enabled,
+		HasSPN:            &hasSPN,
+		DontReqPreauth:    &dontReqPreauth,
 	}
 	if v, err := ud.Props.PwdLastSet.Int64(); err == nil && v > 0 {
 		enr.PwdLastSet = &v
