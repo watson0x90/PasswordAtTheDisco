@@ -3,6 +3,7 @@ package model
 
 import (
 	"math"
+	"sort"
 	"strings"
 	"time"
 )
@@ -159,12 +160,14 @@ type Account struct {
 	Coverage string `json:"coverage,omitempty"`
 	// v2 two-axis scoring. ExposureScore (always computed). ImpactScore is nil when
 	// Impact is Unknown (no BloodHound enrichment); ImpactKnown mirrors that. Percentile
-	// is the within-audit triage rank [0,1] assigned by ComputePercentiles. All are
-	// descriptive, not credentials — they survive Redacted().
+	// is the within-audit triage rank [0,1] assigned by ComputePercentiles; it is
+	// always computed for every account in a loaded audit, so 0.0 is a valid lowest
+	// rank and must serialize (no omitempty). All are descriptive, not credentials —
+	// they survive Redacted().
 	ExposureScore float64  `json:"exposure_score"`
 	ImpactScore   *float64 `json:"impact_score"`
 	ImpactKnown   bool     `json:"impact_known"`
-	Percentile    float64  `json:"percentile,omitempty"`
+	Percentile    float64  `json:"percentile"`
 	MeetsPolicy   bool     `json:"meets_policy"`
 	Complexity    string   `json:"complexity,omitempty"`
 	// Wordlist weakness signals (cracked accounts only). Counts/booleans are
@@ -336,6 +339,59 @@ func EscalateSharedWithDA(accts []Account) {
 			a.RiskVector += "/SHARED-DA"
 		}
 		a.EscalatedBySharedDA = true
+		// v2: inherit MAX Impact — cracking a hash shared with a DA-reachable account
+		// IS a DA compromise. Force Impact known + 10 (a fresh local per iteration, no
+		// aliasing); Level stays Critical (set above; the matrix at Impact=10 over any
+		// Exposure is at least High, and the shared-DA signal is the flagship
+		// lateral-movement escalation -> Critical).
+		max := 10.0
+		a.ImpactScore = &max
+		a.ImpactKnown = true
+	}
+}
+
+// ComputePercentiles assigns each account a within-audit triage percentile in [0,1]
+// from its RiskScore (ties share a rank), so a large block of same-Level accounts
+// still yields a strict order. A SORT KEY, not a displayed score. Idempotent: it
+// depends only on RiskScore, never on a prior Percentile. Empty/one-account sets get 0.
+//
+// O(n log n): collect (score, index), sort by score, then walk assigning each run of
+// equal scores a rank = number of accounts with a strictly lower score, advancing the
+// rank past each run so ties share it. Percentile = rank/(n-1).
+func ComputePercentiles(accts []Account) {
+	n := len(accts)
+	if n == 0 {
+		return
+	}
+	if n == 1 {
+		accts[0].Percentile = 0
+		return
+	}
+	type sc struct {
+		score float64
+		idx   int
+	}
+	order := make([]sc, n)
+	for i := range accts {
+		order[i] = sc{score: accts[i].RiskScore, idx: i}
+	}
+	sort.SliceStable(order, func(i, j int) bool {
+		return order[i].score < order[j].score
+	})
+	denom := float64(n - 1)
+	// Walk ascending: each run of equal scores shares rank = #strictly-lower scores,
+	// which equals the index of the first element in the run.
+	for i := 0; i < n; {
+		j := i
+		for j < n && order[j].score == order[i].score {
+			j++
+		}
+		rank := float64(i) // count of strictly-lower scores
+		p := rank / denom
+		for k := i; k < j; k++ {
+			accts[order[k].idx].Percentile = p
+		}
+		i = j
 	}
 }
 

@@ -488,3 +488,43 @@ func TestReplaceDomainScoped(t *testing.T) {
 		t.Fatalf("ReplaceDomain on missing audit should error, got %v", err)
 	}
 }
+
+// TestAuditLevelPassesAfterReplace proves the store runs the audit-level B5 passes
+// (ComputePercentiles + Impact-inheriting EscalateSharedWithDA) after a Replace:
+// every account gets a Percentile, and a helpdesk account sharing a DA's NT hash
+// inherits max Impact (10) + Critical even though it was unenriched.
+func TestAuditLevelPassesAfterReplace(t *testing.T) {
+	s := New()
+	idm, _ := s.CreateAudit("b5", "")
+	id := idm.ID
+	if err := s.Replace(id, model.Dataset{Accounts: []model.Account{
+		{Username: "da", Domain: "CORP", NTHash: "SHARED", DADomains: "CORP",
+			RiskLevel: "Critical", RiskScore: 9.5, ImpactScore: ptrf(9.0), ImpactKnown: true, ExposureScore: 6.0},
+		{Username: "helpdesk", Domain: "CORP", NTHash: "SHARED", DADomains: "None",
+			RiskLevel: "Low", RiskScore: 2.0, ImpactKnown: false, ExposureScore: 7.0}, // shares DA hash
+		{Username: "lowuser", Domain: "CORP", NTHash: "OTHER", DADomains: "None",
+			RiskLevel: "Low", RiskScore: 1.0, ExposureScore: 1.0},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	accts, _ := s.Accounts(id, false)
+	byName := map[string]model.Account{}
+	for _, a := range accts {
+		byName[a.Username] = a
+	}
+	hd := byName["helpdesk"]
+	if hd.RiskLevel != "Critical" || !hd.EscalatedBySharedDA {
+		t.Fatalf("helpdesk not escalated: level=%q escalated=%v", hd.RiskLevel, hd.EscalatedBySharedDA)
+	}
+	if !hd.ImpactKnown || hd.ImpactScore == nil || *hd.ImpactScore != 10.0 {
+		t.Fatalf("helpdesk must inherit Impact 10: known=%v ptr=%v", hd.ImpactKnown, hd.ImpactScore)
+	}
+	// Percentiles must be assigned across the audit and monotonic on RiskScore.
+	// After escalation helpdesk RiskScore >= 9.0, so lowuser (lowest) must rank below it.
+	if !(byName["lowuser"].Percentile < hd.Percentile) {
+		t.Fatalf("percentiles not assigned/monotonic: lowuser=%v helpdesk=%v",
+			byName["lowuser"].Percentile, hd.Percentile)
+	}
+}
+
+func ptrf(v float64) *float64 { return &v }
