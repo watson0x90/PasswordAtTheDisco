@@ -269,47 +269,13 @@ export function similarityBuckets(accts: Account[]): Bar[] {
 export interface RadarDatum { factor: string; value: number }
 export interface RadarSeries { name: string; color: string; data: RadarDatum[] }
 
-// riskFactorsRadar: average factor values by risk tier (for radar chart).
-// Factors are scaled 0-10 for visualization (inverted where lower=better).
-export function riskFactorsRadar(accts: Account[]): RadarSeries[] {
-  const levels: [string, string][] = [
-    ["Critical", "#fb7185"],
-    ["High", "#fbbf24"],
-    ["Medium", "#a3e635"],
-    ["Low", "#22d3ee"],
-  ]
-  const factorNames = ["Complexity", "Length", "Dictionary", "Similarity", "Compliance", "Expiration", "Privilege", "Sharing", "Domain", "HIBP"]
-  const series: RadarSeries[] = []
-
-  for (const [level, color] of levels) {
-    const group = accts.filter((a) => a.risk_level === level && a.score_breakdown)
-    if (group.length === 0) continue
-
-    const sums = new Array(10).fill(0)
-    for (const a of group) {
-      const bd = a.score_breakdown!
-      // For complexity & length factors, lower is better (more complex/longer), so invert: (1-val)*10
-      sums[0] += (1 - bd.complexity_factor) * 10
-      sums[1] += (1 - bd.length_factor) * 10
-      // Dictionary & similarity: higher = worse, already 0-1 scale
-      sums[2] += bd.dictionary_factor * 10
-      sums[3] += bd.similarity_factor * 10
-      // Compliance/expiration: these are multipliers 0.6-1.0 where higher = worse
-      sums[4] += Math.min(10, (bd.compliance_factor - 0.6) * 25)
-      sums[5] += Math.min(10, (bd.expiration_factor - 0.85) * 66.7)
-      // Privilege/share/domain/hibp: multipliers 1.0-1.5+, higher = worse
-      sums[6] += Math.min(10, (bd.privilege_factor - 1) * 20)
-      sums[7] += Math.min(10, (bd.share_factor - 1) * 20)
-      sums[8] += Math.min(10, (bd.domain_factor - 1) * 33.3)
-      sums[9] += Math.min(10, (bd.hibp_factor - 1) * 20)
-    }
-    const data: RadarDatum[] = factorNames.map((factor, i) => ({
-      factor,
-      value: Math.round((sums[i] / group.length) * 10) / 10,
-    }))
-    series.push({ name: level, color, data })
-  }
-  return series
+// riskFactorsRadar: STUBBED in #C1. The v1 radar read v1 score_breakdown fields
+// (complexity_factor, length_factor, …) that the v2 engine no longer emits, so every
+// input was a structural zero. C2 replaces this with axisFactorBars (per-axis v2
+// sub-score bars). Returning [] makes the Insights radar card render its empty-state.
+// TODO(C2): replace with axisFactorBars (v2 breakdown sub-scores).
+export function riskFactorsRadar(_accts: Account[]): RadarSeries[] {
+  return []
 }
 
 // passwordAgeScatter: pwd_last_set (days ago) vs risk score scatter data.

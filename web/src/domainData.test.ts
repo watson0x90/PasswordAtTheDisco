@@ -14,7 +14,7 @@ const acct = (o: Partial<Account>): Account => ({
   username: "u", domain: "A", cracked: true, password_length: 6, risk_level: "Low",
   risk_score: 1, risk_vector: "", hibp_breached: false, hibp_breach_count: 0,
   da_domains: "None", controlled_object_count: 0, shared_with: 0, enabled: true,
-  meets_policy: true, complexity: "ok", ...o,
+  meets_policy: true, complexity: "ok", exposure_score: 0, impact_score: null, impact_known: true, ...o,
 })
 const report = (o: Partial<Report>): Report => ({
   total_accounts: 0, cracked_count: 0, uncracked_count: 0, da_pathways: [], cracked: [],

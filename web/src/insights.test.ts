@@ -19,6 +19,9 @@ function acct(p: Partial<Account>): Account {
     enabled: true,
     meets_policy: true,
     complexity: "",
+    exposure_score: 0,
+    impact_score: null,
+    impact_known: true,
     ...p,
   }
 }

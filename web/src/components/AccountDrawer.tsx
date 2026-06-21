@@ -61,7 +61,7 @@ export function AccountDrawer({ account: a, onClose }: { account: Account; onClo
     ["Enabled", a.enabled ? "Yes" : "No"],
   ]
 
-  const bd = a.score_breakdown
+  // TODO(C5): v2 breakdown reads a.score_breakdown (v2 sub-scores) here.
   return (
     <>
       <div className="drawer-backdrop" onClick={onClose} />
@@ -80,49 +80,16 @@ export function AccountDrawer({ account: a, onClose }: { account: Account; onClo
             </div>
           ))}
         </dl>
-        {bd && (
-          <div className="drawer-breakdown">
-            <div className="drawer-section-title">Score Breakdown</div>
-            <div className="breakdown-grid">
-              <BreakdownCard title="Base" score={bd.base_score} factors={[
-                ["Complexity", bd.complexity_factor],
-                ["Length", bd.length_factor],
-                ["Dictionary", bd.dictionary_factor],
-                ["Similarity", bd.similarity_factor],
-              ]} />
-              <BreakdownCard title="Temporal" score={bd.temporal_score} factors={[
-                ["Compliance", bd.compliance_factor],
-                ["Expiration", bd.expiration_factor],
-              ]} />
-              <BreakdownCard title="Environmental" score={bd.environmental_score} factors={[
-                ["Privilege", bd.privilege_factor],
-                ["Sharing", bd.share_factor],
-                ["Domain", bd.domain_factor],
-                ["HIBP", bd.hibp_factor],
-              ]} />
-            </div>
-          </div>
-        )}
+        {/* TODO(C5): v2 breakdown — the v1 Score Breakdown cards read v1 score_breakdown
+            fields (base_score, temporal_score, environmental_score, …) that the v2 engine
+            no longer emits. C5 rewrites this as Exposure/Impact axis cards (v2 sub-scores,
+            provisional handling). Stubbed to {null} in #C1 to keep the tree green. */}
+        {null}
       </aside>
     </>
   )
 }
 
-function BreakdownCard({ title, score, factors }: { title: string; score: number; factors: [string, number][] }) {
-  return (
-    <div className="bd-card">
-      <div className="bd-card-head">
-        <span className="bd-card-title">{title}</span>
-        <span className="bd-card-score">{score.toFixed(1)}</span>
-      </div>
-      <div className="bd-card-factors">
-        {factors.map(([label, val]) => (
-          <div className="bd-factor" key={label}>
-            <span>{label}</span>
-            <span className="mono">{val.toFixed(2)}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
+// TODO(C5): v2 breakdown — BreakdownCard (Exposure/Impact axis sub-score cards) was
+// removed in #C1 along with the v1 Score Breakdown block (noUnusedLocals would flag it
+// while unused). C5 restores it to render the v2 Exposure/Impact axis cards.
