@@ -26,17 +26,9 @@ func createToken(path, role, label, expires string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var exp *time.Time
-	if expires != "" {
-		if d, derr := time.ParseDuration(expires); derr == nil {
-			t := time.Now().Add(d).UTC()
-			exp = &t
-		} else if t, terr := time.Parse(time.RFC3339, expires); terr == nil {
-			tu := t.UTC()
-			exp = &tu
-		} else {
-			return "", fmt.Errorf("--expires %q: want a duration (e.g. 720h) or RFC3339 timestamp", expires)
-		}
+	exp, err := auth.ParseExpiry(expires)
+	if err != nil {
+		return "", err
 	}
 	full, _, err := st.Issue(auth.Role(role), label, exp)
 	return full, err

@@ -141,6 +141,31 @@ func TestListTokensAnalystForbidden(t *testing.T) {
 	}
 }
 
+func TestCreateTokenWithDurationExpiry(t *testing.T) {
+	s, _, _ := mcpTestServer(t)
+	req := withSession(httptest.NewRequest("POST", "/api/mcp/tokens", strings.NewReader(`{"label":"exp","role":"analyst","expires":"720h"}`)), auth.RoleLead)
+	rec := httptest.NewRecorder()
+	s.handleCreateMCPToken(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create with 720h expiry status = %d, want 201", rec.Code)
+	}
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if body["expires"] == nil {
+		t.Fatal("expected a non-null expires in the response")
+	}
+}
+
+func TestCreateTokenBadExpiry(t *testing.T) {
+	s, _, _ := mcpTestServer(t)
+	req := withSession(httptest.NewRequest("POST", "/api/mcp/tokens", strings.NewReader(`{"label":"x","role":"analyst","expires":"nonsense"}`)), auth.RoleLead)
+	rec := httptest.NewRecorder()
+	s.handleCreateMCPToken(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("create with bad expiry status = %d, want 400", rec.Code)
+	}
+}
+
 func TestRevokeToken(t *testing.T) {
 	s, _, _ := mcpTestServer(t)
 	_, rec0, _ := s.MCPTokens.Issue(auth.RoleAnalyst, "doomed", nil)

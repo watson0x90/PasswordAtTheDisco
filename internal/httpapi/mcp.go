@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/audit"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/auth"
@@ -101,15 +100,20 @@ func (s *Server) handleCreateMCPToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Label   string     `json:"label"`
-		Role    auth.Role  `json:"role"`
-		Expires *time.Time `json:"expires"`
+		Label   string    `json:"label"`
+		Role    auth.Role `json:"role"`
+		Expires string    `json:"expires"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
 		return
 	}
-	full, rec, err := s.MCPTokens.Issue(body.Role, body.Label, body.Expires)
+	exp, perr := auth.ParseExpiry(body.Expires)
+	if perr != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": perr.Error()})
+		return
+	}
+	full, rec, err := s.MCPTokens.Issue(body.Role, body.Label, exp)
 	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "token_create", Target: rec.ID, Source: r.RemoteAddr, Result: okOr(err)})
 	if err != nil {
 		status := http.StatusInternalServerError

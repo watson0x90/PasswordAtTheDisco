@@ -197,7 +197,7 @@ func (s *TokenStore) Verify(full string) (APIToken, bool) {
 		want = rec.SecretHash
 	}
 	match := verifySecret(secret, want)
-	if !found || !match || rec.Disabled || (rec.Expires != nil && rec.Expires.Before(time.Now())) {
+	if !found || !match || rec.Disabled || (rec.Expires != nil && rec.Expires.Before(time.Now().UTC())) {
 		return APIToken{}, false
 	}
 	return s.touchLastUsed(id), true
@@ -264,6 +264,25 @@ func (s *TokenStore) persistLocked() error {
 		return err
 	}
 	return fsutil.WriteFileAtomic(s.path, b, 0o600)
+}
+
+// ParseExpiry parses an optional token-expiry string: "" → nil (never expires); a Go
+// duration like "720h" → now+duration; otherwise an RFC3339 timestamp. Shared by the
+// CLI and the HTTP create handler so both accept the same formats.
+func ParseExpiry(s string) (*time.Time, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, nil
+	}
+	if d, err := time.ParseDuration(s); err == nil {
+		t := time.Now().Add(d).UTC()
+		return &t, nil
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		tu := t.UTC()
+		return &tu, nil
+	}
+	return nil, fmt.Errorf("expires %q: want a duration (e.g. 720h) or an RFC3339 timestamp", s)
 }
 
 // setDisabledForTest is a test seam (no production caller).

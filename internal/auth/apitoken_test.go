@@ -129,6 +129,21 @@ func TestTokenStoreListRedactedAndRevoke(t *testing.T) {
 	}
 }
 
+func TestParseExpiry(t *testing.T) {
+	if got, err := ParseExpiry(""); err != nil || got != nil {
+		t.Fatalf("empty: got %v err %v, want nil,nil", got, err)
+	}
+	if got, err := ParseExpiry("720h"); err != nil || got == nil || !got.After(time.Now()) {
+		t.Fatalf("duration: got %v err %v", got, err)
+	}
+	if got, err := ParseExpiry("2030-01-02T15:04:05Z"); err != nil || got == nil {
+		t.Fatalf("rfc3339: got %v err %v", got, err)
+	}
+	if _, err := ParseExpiry("nonsense"); err == nil {
+		t.Fatal("expected error for unparseable expiry")
+	}
+}
+
 func TestTokenStorePersistReload(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "mcp_tokens.json")
 	s := NewTokenStore(path, nil)
