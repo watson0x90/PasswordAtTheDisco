@@ -156,9 +156,17 @@ type Account struct {
 	// Coverage is the per-account BloodHound coverage state: "full" (enriched) or
 	// "none" (not enriched). Drives the Unknown-Impact state and the coverage
 	// banner. Descriptive, not a credential — survives Redacted().
-	Coverage    string `json:"coverage,omitempty"`
-	MeetsPolicy bool   `json:"meets_policy"`
-	Complexity  string `json:"complexity,omitempty"`
+	Coverage string `json:"coverage,omitempty"`
+	// v2 two-axis scoring. ExposureScore (always computed). ImpactScore is nil when
+	// Impact is Unknown (no BloodHound enrichment); ImpactKnown mirrors that. Percentile
+	// is the within-audit triage rank [0,1] assigned by ComputePercentiles. All are
+	// descriptive, not credentials — they survive Redacted().
+	ExposureScore float64  `json:"exposure_score"`
+	ImpactScore   *float64 `json:"impact_score"`
+	ImpactKnown   bool     `json:"impact_known"`
+	Percentile    float64  `json:"percentile,omitempty"`
+	MeetsPolicy   bool     `json:"meets_policy"`
+	Complexity    string   `json:"complexity,omitempty"`
 	// Wordlist weakness signals (cracked accounts only). Counts/booleans are
 	// redacted-safe; the matched substrings live in BannedWords / KeyboardPatterns
 	// below (see their comment) and are stripped by Redacted().
@@ -219,6 +227,23 @@ type ScoreBreakdown struct {
 	ShareFactor        float64 `json:"share_factor"`
 	DomainFactor       float64 `json:"domain_factor"`
 	HIBPFactor         float64 `json:"hibp_factor"`
+
+	// v2 two-axis sub-scores + raw per-factor inputs for the leave-one-out radar.
+	ExposureScore     float64 `json:"exposure_score,omitempty"`
+	WeaknessScore     float64 `json:"weakness_score,omitempty"`
+	LengthPenalty     float64 `json:"length_penalty,omitempty"`
+	ComplexityPenalty float64 `json:"complexity_penalty,omitempty"`
+	DictPenalty       float64 `json:"dict_penalty,omitempty"`
+	SimPenalty        float64 `json:"sim_penalty,omitempty"`
+	HIBPFloor         float64 `json:"hibp_floor,omitempty"`
+	CrackedFloor      float64 `json:"cracked_floor,omitempty"`
+	ReuseBump         float64 `json:"reuse_bump,omitempty"`
+	RoastableBump     float64 `json:"roastable_bump,omitempty"`
+	ImpactScore       float64 `json:"impact_score,omitempty"`
+	PrivilegeSubScore float64 `json:"privilege_sub_score,omitempty"`
+	DAComponent       float64 `json:"da_component,omitempty"`
+	DomainModifier    float64 `json:"domain_modifier,omitempty"`
+	EnabledGated      bool    `json:"enabled_gated,omitempty"`
 }
 
 // IsWeak reports whether the password matched any wordlist signal (common,

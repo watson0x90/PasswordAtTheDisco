@@ -116,3 +116,15 @@ func TestCoverageSurvivesRedaction(t *testing.T) {
 		t.Errorf("credentials not cleared: pw=%q hash=%q", red.Password, red.NTHash)
 	}
 }
+
+func TestAxisFieldsRedactionSafe(t *testing.T) {
+	imp := 7.0
+	a := Account{ExposureScore: 5.0, ImpactScore: &imp, ImpactKnown: true, Percentile: 0.9, Password: "secret"}
+	r := a.Redacted()
+	if r.Password != "" {
+		t.Fatal("password must be redacted")
+	}
+	if r.ExposureScore != 5.0 || r.ImpactScore == nil || *r.ImpactScore != 7.0 || !r.ImpactKnown || r.Percentile != 0.9 {
+		t.Fatalf("axis fields must survive Redacted(): %+v", r)
+	}
+}
