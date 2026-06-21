@@ -1,12 +1,16 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/watson0x90/PasswordAtTheDisco/internal/audit"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/auth"
 )
 
@@ -15,7 +19,7 @@ func mcpTestServer(t *testing.T) (*Server, string, string) {
 	ts := auth.NewTokenStore("", nil)
 	analystTok, _, _ := ts.Issue(auth.RoleAnalyst, "analyst-agent", nil)
 	leadTok, _, _ := ts.Issue(auth.RoleLead, "lead-agent", nil)
-	s := &Server{MCPTokens: ts, MCPLimiter: auth.NewLimiter(20, time.Minute)}
+	s := &Server{MCPTokens: ts, MCPLimiter: auth.NewLimiter(20, time.Minute), Audit: audit.New(io.Discard)}
 	return s, analystTok, leadTok
 }
 
@@ -82,5 +86,66 @@ func TestWhoamiRateLimited(t *testing.T) {
 	}
 	if rec.Header().Get("Retry-After") == "" {
 		t.Error("want Retry-After header on 429")
+	}
+}
+
+func withSession(req *http.Request, role auth.Role) *http.Request {
+	sess := auth.Session{Username: "boss", Role: role, CSRF: "x"}
+	return req.WithContext(context.WithValue(req.Context(), sessionKey, sess))
+}
+
+func TestCreateTokenLeadOnlyReturnsOnce(t *testing.T) {
+	s, _, _ := mcpTestServer(t)
+	req := withSession(httptest.NewRequest("POST", "/api/mcp/tokens", strings.NewReader(`{"label":"x","role":"analyst"}`)), auth.RoleAnalyst)
+	rec := httptest.NewRecorder()
+	s.handleCreateMCPToken(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("analyst create status = %d, want 403", rec.Code)
+	}
+	req = withSession(httptest.NewRequest("POST", "/api/mcp/tokens", strings.NewReader(`{"label":"gemini","role":"analyst"}`)), auth.RoleLead)
+	rec = httptest.NewRecorder()
+	s.handleCreateMCPToken(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("lead create status = %d, want 201", rec.Code)
+	}
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if tok, _ := body["token"].(string); !strings.HasPrefix(tok, "patdmcp_") {
+		t.Fatalf("create did not return the full token: %v", body)
+	}
+}
+
+func TestListTokensNeverLeaksHash(t *testing.T) {
+	s, _, _ := mcpTestServer(t)
+	req := withSession(httptest.NewRequest("GET", "/api/mcp/tokens", nil), auth.RoleLead)
+	rec := httptest.NewRecorder()
+	s.handleListMCPTokens(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list status = %d", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), "secret_hash") {
+		t.Fatal("token list leaked secret_hash")
+	}
+}
+
+func TestListTokensAnalystForbidden(t *testing.T) {
+	s, _, _ := mcpTestServer(t)
+	req := withSession(httptest.NewRequest("GET", "/api/mcp/tokens", nil), auth.RoleAnalyst)
+	rec := httptest.NewRecorder()
+	s.handleListMCPTokens(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("analyst list status = %d, want 403", rec.Code)
+	}
+}
+
+func TestRevokeToken(t *testing.T) {
+	s, _, _ := mcpTestServer(t)
+	_, rec0, _ := s.MCPTokens.Issue(auth.RoleAnalyst, "doomed", nil)
+	req := withSession(httptest.NewRequest("DELETE", "/api/mcp/tokens/"+rec0.ID, nil), auth.RoleLead)
+	req.SetPathValue("id", rec0.ID)
+	rec := httptest.NewRecorder()
+	s.handleRevokeMCPToken(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("revoke status = %d, want 204", rec.Code)
 	}
 }

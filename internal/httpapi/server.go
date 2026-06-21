@@ -108,6 +108,9 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/ingest", s.requireIngestToken(s.requireUnlocked(http.HandlerFunc(s.handleIngest))))
 	// MCP / programmatic API: bearer token, role-scoped, no session required
 	mux.Handle("GET /api/mcp/whoami", s.requireMCPToken(http.HandlerFunc(s.handleMCPWhoami)))
+	mux.Handle("GET /api/mcp/tokens", s.requireAuth(http.HandlerFunc(s.handleListMCPTokens)))
+	mux.Handle("POST /api/mcp/tokens", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleCreateMCPToken))))
+	mux.Handle("DELETE /api/mcp/tokens/{id}", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleRevokeMCPToken))))
 	// Authenticated operators (any role) -- redacted data only
 	mux.Handle("POST /api/logout", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleLogout))))
 	mux.Handle("GET /api/me", http.HandlerFunc(s.handleMe))
