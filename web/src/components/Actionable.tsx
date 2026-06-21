@@ -4,7 +4,9 @@ import { useAccountsData } from "../accountsData"
 import { useAudits } from "../auditsData"
 import { useAuth } from "../auth"
 import { RISK_CLASS, RISK_RANK, weaknessTags } from "../util"
-import { priorityWorklist } from "../worklist"
+import { priorityWorklist, segmentWorklist } from "../worklist"
+import { coverageState } from "../matrix"
+import { GLOSSARY } from "../glossary"
 import { useSortablePaged, type SortColumn } from "../sortPage"
 import { AccountLink } from "./AccountLink"
 import { BarChart } from "./BarChart"
@@ -86,6 +88,8 @@ export function Actionable() {
         <Stat n={report.hibp_exposed.length} label="in HIBP" tone="high" />
         <Stat n={report.weak_passwords.length} label="weak (wordlist)" tone="high" />
       </div>
+
+      <NeedsEnrichment accounts={accounts ?? []} />
 
       <PriorityWorklist accounts={accounts ?? []} />
 
@@ -296,6 +300,78 @@ export function Actionable() {
         />
       </Section>
     </>
+  )
+}
+
+// NeedsEnrichment surfaces the accounts whose Impact is Unknown (no BloodHound
+// coverage). They are deliberately segregated from the Impact-ordered worklist —
+// we cannot rank their blast radius, so blending them in would mis-triage them as
+// if low-impact. The fix is to ENRICH (run BloodHound), not to rotate first.
+// Ordered by Exposure desc so the most-exposed unknowns are enriched first.
+function NeedsEnrichment({ accounts }: { accounts: Account[] }) {
+  const needs = useMemo(() => {
+    const { needsEnrichment } = segmentWorklist(accounts)
+    return needsEnrichment.slice().sort((a, b) => b.exposure_score - a.exposure_score)
+  }, [accounts])
+  const COLS: SortColumn<Account>[] = [
+    { key: "account", get: (a) => a.username },
+    { key: "domain", get: (a) => a.domain },
+    { key: "risk", get: (a) => RISK_RANK[a.risk_level] ?? 0, defaultDir: "desc" },
+    { key: "exposure", get: (a) => a.exposure_score, defaultDir: "desc" },
+  ]
+  const page = useSortablePaged(needs, COLS, { defaultSort: { key: "exposure", dir: "desc" }, pageSize: 50 })
+  if (needs.length === 0) return null
+  return (
+    <div className="action-section">
+      <div className="section-label">
+        Needs enrichment — Impact unknown, run BloodHound{" "}
+        <InfoTip text={GLOSSARY.impact_unknown} />
+      </div>
+      <div className="view-sub">
+        {needs.length.toLocaleString()} account{needs.length === 1 ? "" : "s"} have no BloodHound coverage — their level is
+        provisional (from Exposure alone). Enrich to learn blast radius before prioritizing; Unknown is not the same as low.
+      </div>
+      <div className="table-wrap action-table">
+        <table className="accounts">
+          <thead>
+            <tr>
+              <SortHeader label="Account" colKey="account" sort={page.sort} onSort={page.setSort} />
+              <SortHeader label="Domain" colKey="domain" sort={page.sort} onSort={page.setSort} />
+              <SortHeader label="Risk" colKey="risk" sort={page.sort} onSort={page.setSort} />
+              <SortHeader label="Exposure" colKey="exposure" numeric sort={page.sort} onSort={page.setSort} info={<InfoTip text={GLOSSARY.exposure_axis} />} />
+              <th>
+                Impact <InfoTip text={GLOSSARY.impact_axis} />
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {page.rows.map((a) => (
+              <tr key={`${a.domain}/${a.username}`}>
+                <td>
+                  <AccountLink username={a.username} domain={a.domain} />
+                  {a.enabled === false && (
+                    <span className="badge-disabled" title="account disabled in AD">disabled</span>
+                  )}
+                  {coverageState(a) === "none" && (
+                    <span className="badge-no-bh" title="not BloodHound-enriched — Impact is Unknown">no BH</span>
+                  )}
+                </td>
+                <td className="muted">{a.domain}</td>
+                <td>
+                  <span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span>{" "}
+                  <span className="badge-provisional" title={GLOSSARY.impact_unknown}>provisional</span>
+                </td>
+                <td className="num">{a.exposure_score.toFixed(1)}</td>
+                <td>
+                  <span className="badge-provisional" title={GLOSSARY.impact_unknown}>Unknown</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <Pager page={page} />
+      </div>
+    </div>
   )
 }
 

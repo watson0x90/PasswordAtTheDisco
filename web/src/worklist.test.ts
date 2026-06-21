@@ -1,10 +1,11 @@
 import { describe, it, expect } from "vitest"
-import { priorityWorklist } from "./worklist"
+import { priorityWorklist, segmentWorklist } from "./worklist"
 import type { Account } from "./api"
 const acct = (o: Partial<Account>): Account => ({
   username: "u", domain: "D", cracked: false, hibp_breached: false, hibp_breach_count: 0,
   shared_with: 0, da_domains: "None", escalated_by_shared_da: false, pwd_never_expires: false,
   risk_score: 0, risk_level: "Low", enabled: true,
+  exposure_score: 0, impact_score: null, impact_known: true,
   ...o,
 } as Account)
 describe("priorityWorklist", () => {
@@ -41,5 +42,43 @@ describe("priorityWorklist", () => {
     const [w] = priorityWorklist([acct({ shared_with: 4 })])
     expect(w.action).toBe("Rotate (shared password)")
     expect(w.reasons).toContain("Shared 4")
+  })
+})
+
+describe("segmentWorklist", () => {
+  it("segregates Unknown-impact accounts and orders the rest by Level -> Impact -> Exposure", () => {
+    const seg = segmentWorklist([
+      acct({ username: "lowexp", risk_level: "High", impact_known: true, impact_score: 6, exposure_score: 4 }),
+      acct({ username: "hiexp", risk_level: "High", impact_known: true, impact_score: 6, exposure_score: 7 }),
+      acct({ username: "crit", risk_level: "Critical", impact_known: true, impact_score: 9, exposure_score: 9 }),
+      acct({ username: "unk", risk_level: "High", impact_known: false, impact_score: null, exposure_score: 8 }),
+    ])
+    expect(seg.ranked.map((a) => a.username)).toEqual(["crit", "hiexp", "lowexp"])
+    expect(seg.needsEnrichment.map((a) => a.username)).toEqual(["unk"])
+  })
+
+  it("uses percentile as the final tie-break when present", () => {
+    const seg = segmentWorklist([
+      acct({ username: "p1", risk_level: "High", impact_known: true, impact_score: 6, exposure_score: 6, percentile: 0.4 }),
+      acct({ username: "p2", risk_level: "High", impact_known: true, impact_score: 6, exposure_score: 6, percentile: 0.9 }),
+    ])
+    expect(seg.ranked[0].username).toBe("p2") // higher percentile first
+  })
+
+  it("keeps ties stable (input order) when all sort keys are equal", () => {
+    const seg = segmentWorklist([
+      acct({ username: "first", risk_level: "High", impact_known: true, impact_score: 6, exposure_score: 6 }),
+      acct({ username: "second", risk_level: "High", impact_known: true, impact_score: 6, exposure_score: 6 }),
+    ])
+    expect(seg.ranked.map((a) => a.username)).toEqual(["first", "second"])
+  })
+
+  it("orders provisional (Unknown-impact) accounts only into needsEnrichment, never the ranked list", () => {
+    const seg = segmentWorklist([
+      acct({ username: "u1", risk_level: "Critical", impact_known: false, impact_score: null, exposure_score: 9 }),
+      acct({ username: "k1", risk_level: "Low", impact_known: true, impact_score: 2, exposure_score: 2 }),
+    ])
+    expect(seg.ranked.map((a) => a.username)).toEqual(["k1"])
+    expect(seg.needsEnrichment.map((a) => a.username)).toEqual(["u1"])
   })
 })
