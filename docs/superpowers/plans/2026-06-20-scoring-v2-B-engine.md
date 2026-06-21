@@ -49,7 +49,7 @@ govulncheck ./...              # must be clean
 **Exposure (0–10):**
 - weakness weights: `w_len=0.30`, `w_cx=0.20`, `w_dict=0.35`, `w_sim=0.15` (sum 1.0).
 - `lengthPenalty` = existing sigmoid `1/(1+e^((len−10)/2))` (verbatim, [0,1]).
-- `complexityPenalty` = `(1.0 − complexityF)/0.8`, clamped [0,1]; `complexityF∈[0.2,1.0]` → penalty `[0,1]`.
+- `complexityPenalty` = `(complexityF − 0.2)/0.8`, clamped [0,1]; `complexityF∈[0.2,1.0]` → penalty `[0,1]`. NOTE: in `complexityFactors`, LOWER = stronger (`mixedalphaspecialnum=0.2` strongest, `numeric=1.0` weakest), so the weakest password (cf=1.0) maps to penalty 1.0 and the strongest (cf=0.2) to 0.0. (Corrected during B1 — the earlier `(1.0−cf)/0.8` was sign-inverted.)
 - `dictPenalty` = existing additive dictionary term, clamped [0,1].
 - `simPenalty` = `similarityFactor(simMax)/0.6` (max raw 0.6 → 1.0), clamped [0,1].
 - `hibpExposureFloor(n)`: ≥1e6→9.0, ≥1e5→8.5, ≥1e4→8.0, ≥1e3→7.0, ≥100→6.0, ≥10→5.0, ≥1→4.5, else 0.
@@ -228,13 +228,15 @@ govulncheck ./...              # must be clean
   	return 1.0 / (1.0 + math.Exp(float64(length-10)/2.0))
   }
 
-  // complexityPenalty maps complexityF in [0.2,1.0] -> [0,1] (higher = less complex = worse).
+  // complexityPenalty maps complexityF in [0.2,1.0] -> [0,1]. In complexityFactors
+  // LOWER = stronger (0.2 strongest, 1.0 weakest), so the WEAKEST password gets the
+  // max penalty 1.0 and the strongest gets 0.0.
   func complexityPenalty(label string) float64 {
   	cf := 1.0
   	if v, ok := complexityFactors[label]; ok {
   		cf = v
   	}
-  	p := (1.0 - cf) / 0.8
+  	p := (cf - 0.2) / 0.8
   	return clamp01(p)
   }
 

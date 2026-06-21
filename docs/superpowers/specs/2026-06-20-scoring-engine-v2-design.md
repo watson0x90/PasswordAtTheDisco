@@ -33,7 +33,7 @@ Computed from the **dump + HIBP + cross-account reuse**, so it is *always* trust
 
 - **Weakness sub-score (cracked accounts):** a **weighted sum of bounded [0,1] penalties**, scaled ×10 — not a product. Each penalty is independent so complexity is no longer nullified by length:
   - `lengthPenalty` = the existing logistic `1/(1+e^((len−10)/2))` (already [0,1], higher = shorter = worse) — kept verbatim; it is the one well-designed piece.
-  - `complexityPenalty` = `(1.0 − complexityF)/0.8`, mapping `complexityF∈[0.2,1.0]` → `[0,1]` (higher = less complex = worse).
+  - `complexityPenalty` = `(complexityF − 0.2)/0.8`, mapping `complexityF∈[0.2,1.0]` → `[0,1]` (higher complexityF = less complex = worse; in `complexityFactors`, lower = stronger, so the weakest password maps to penalty 1.0).
   - `dictPenalty` = the existing additive dictionary/common/banned/keyboard term, clamped [0,1].
   - `simPenalty` = the existing similarity term normalized to [0,1].
   - `weaknessScore = 10 · (w_len·lengthPenalty + w_cx·complexityPenalty + w_dict·dictPenalty + w_sim·simPenalty)`, weights summing to 1 (proposed `0.30/0.20/0.35/0.15`; **exact weights locked with golden tests in the sub-project B plan**).
