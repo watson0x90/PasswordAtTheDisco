@@ -611,18 +611,34 @@ func ExtractDADomains(ud *UserData) []string {
 }
 
 // tier0Names are case-insensitive name fragments whose control is DA-equivalent.
+// Substring matching is intentional here: each fragment is a unique, well-known
+// AD token, so substring favors recall and this is only an additive Impact signal
+// (never a gate). NOTE: "ADMINISTRATORS" is deliberately NOT in this slice —
+// substring-matching it over-matches benign delegated groups (e.g. "Backup
+// Administrators", "SQL Administrators"), so isTier0Name handles the built-in
+// Administrators group as an exact local-part match instead.
 var tier0Names = []string{
 	"DOMAIN ADMINS",
 	"ENTERPRISE ADMINS",
-	"ADMINISTRATORS",
 	"DOMAIN CONTROLLERS",
 	"KRBTGT",
 	"ADMINSDHOLDER",
 }
 
 // isTier0Name reports whether an object name matches a Tier-0 / DA-equivalent
-// object by case-insensitive substring (best-effort name heuristic).
+// object. The tier0Names fragments are matched as case-insensitive substrings
+// (unique tokens, recall-favoring). The built-in "Administrators" group is
+// matched as an EXACT local part (the portion before '@', or the whole name when
+// there is no '@') to avoid over-matching delegated "* Administrators" groups.
 func isTier0Name(name string) bool {
+	// Built-in Administrators: exact local-part match only.
+	localPart := name
+	if i := strings.IndexByte(name, '@'); i >= 0 {
+		localPart = name[:i]
+	}
+	if strings.EqualFold(strings.TrimSpace(localPart), "Administrators") {
+		return true
+	}
 	u := strings.ToUpper(name)
 	for _, t := range tier0Names {
 		if strings.Contains(u, t) {

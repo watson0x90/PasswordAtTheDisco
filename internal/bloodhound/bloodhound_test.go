@@ -331,6 +331,34 @@ func TestExtractControlsTier0(t *testing.T) {
 			t.Errorf("name %q should be Tier-0", name)
 		}
 	}
+	// The built-in Administrators group (exact local part) is Tier-0.
+	udAdministrators := &UserData{Controllables: []DomainControllables{
+		{Domain: "CORP.LOCAL", Items: []ControllableItem{
+			{Label: "Group", Name: "Administrators@CORP.LOCAL"},
+		}},
+	}}
+	if !ExtractControlsTier0(udAdministrators) {
+		t.Error("control of the built-in Administrators group must be Tier-0")
+	}
+	// Delegated "* Administrators" groups must NOT over-match as Tier-0.
+	udBackupAdmins := &UserData{Controllables: []DomainControllables{
+		{Domain: "CORP.LOCAL", Items: []ControllableItem{
+			{Label: "Group", Name: "Backup Administrators@CORP.LOCAL"},
+		}},
+	}}
+	if ExtractControlsTier0(udBackupAdmins) {
+		t.Error("control of a delegated 'Backup Administrators' group must NOT be Tier-0")
+	}
+	// Control of the Domain object itself is DCSync (DA-equivalent) — matched
+	// purely by Label, with no Tier-0 name.
+	udDomain := &UserData{Controllables: []DomainControllables{
+		{Domain: "CORP.LOCAL", Items: []ControllableItem{
+			{Label: "Domain", Name: "CORP.LOCAL"},
+		}},
+	}}
+	if !ExtractControlsTier0(udDomain) {
+		t.Error("control of the Domain object (DCSync) must be Tier-0")
+	}
 	if ExtractControlsTier0(nil) {
 		t.Error("nil UserData must not be Tier-0")
 	}
