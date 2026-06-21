@@ -21,7 +21,7 @@ function acct(p: Partial<Account>): Account {
     complexity: "",
     exposure_score: 0,
     impact_score: null,
-    impact_known: true,
+    impact_known: false,
     ...p,
   }
 }

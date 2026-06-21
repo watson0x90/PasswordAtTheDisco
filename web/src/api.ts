@@ -144,7 +144,8 @@ export interface Account {
 
 // v2 score_breakdown: per-axis sub-scores. Go serializes these with omitempty, so a
 // legitimately-zero factor is ABSENT — readers MUST treat a missing key as 0, never
-// "unknown" (see the bd() helper in matrix.ts). All optional for that reason.
+// "unknown" (a safe-accessor helper that coalesces undefined→0 is added in a later
+// task). All optional for that reason.
 export interface ScoreBreakdown {
   // Exposure axis
   exposure_score?: number
