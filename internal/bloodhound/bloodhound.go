@@ -383,17 +383,20 @@ func (c *Client) computerDomain(objectID string) string {
 }
 
 // GetUserControllables returns the objects controllable by a user, grouped as
-// domain -> (controllable label -> count).
-func (c *Client) GetUserControllables(objectID string) (map[string]map[string]int, error) {
+// domain -> (controllable label -> count), plus the API's TRUE total controlled
+// count from the envelope (env.Count). The label map is only the sampled page
+// (bounded by controllablesLimit); total is the real magnitude and is not capped.
+func (c *Client) GetUserControllables(objectID string) (byDomain map[string]map[string]int, total int, err error) {
 	out := map[string]map[string]int{}
 
-	// Single call with the configured limit (avoids double round-trip).
+	// Single call with the configured limit (avoids double round-trip). limit now
+	// bounds only the display/label sample; env.Count carries the true total.
 	env, status, err := c.get(fmt.Sprintf("/api/v2/base/%s/controllables?skip=0&limit=%d&type=list", objectID, c.controllablesLimit))
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if status != http.StatusOK || env.Count == 0 {
-		return out, nil
+		return out, 0, nil
 	}
 
 	var items []struct {
@@ -401,7 +404,7 @@ func (c *Client) GetUserControllables(objectID string) (map[string]map[string]in
 		Name  string `json:"name"`
 	}
 	if err := json.Unmarshal(env.Data, &items); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	for _, it := range items {
 		domain := domainFromName(it.Name)
@@ -421,7 +424,7 @@ func (c *Client) GetUserControllables(objectID string) (map[string]map[string]in
 		}
 		out[domain][label]++
 	}
-	return out, nil
+	return out, env.Count, nil
 }
 
 // domainFromName extracts a domain from an object name: "user@DOMAIN" -> DOMAIN,
@@ -513,6 +516,9 @@ type UserData struct {
 	ObjectID      string
 	Props         UserProps
 	Controllables []DomainControllables
+	// ControllableTotal is the API's TRUE count of controlled objects (env.Count),
+	// independent of the sampled label map. 0 means absent/unknown.
+	ControllableTotal int
 }
 
 // GetUserData fetches and aggregates a user's BHE enrichment: properties,
@@ -539,7 +545,7 @@ func (c *Client) GetUserData(username string) (*UserData, error) {
 	}
 	sid := user.ObjectID
 
-	byCount, err := c.GetUserControllables(sid)
+	byCount, total, err := c.GetUserControllables(sid)
 	if err != nil {
 		return nil, err
 	}
@@ -552,6 +558,7 @@ func (c *Client) GetUserData(username string) (*UserData, error) {
 	}
 
 	ud := &UserData{Username: user.Name, ObjectID: sid, Props: props}
+	ud.ControllableTotal = total
 
 	// Controllables, in deterministic (sorted) domain order.
 	domainsSorted := make([]string, 0, len(byCount))
@@ -592,10 +599,15 @@ func ExtractDADomains(ud *UserData) []string {
 	return out
 }
 
-// ExtractControllableCount returns the total number of controlled objects.
+// ExtractControllableCount returns the TRUE number of controlled objects: the
+// API's env.Count (ControllableTotal) when present, falling back to the summed
+// sampled label map only when the total is 0/absent.
 func ExtractControllableCount(ud *UserData) int {
 	if ud == nil {
 		return 0
+	}
+	if ud.ControllableTotal > 0 {
+		return ud.ControllableTotal
 	}
 	total := 0
 	for _, dc := range ud.Controllables {
