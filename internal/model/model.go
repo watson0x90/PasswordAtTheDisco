@@ -153,8 +153,12 @@ type Account struct {
 	Controlled      int     `json:"controlled_object_count"`
 	SharedWith      int     `json:"shared_with"`
 	Enabled         bool    `json:"enabled"`
-	MeetsPolicy     bool    `json:"meets_policy"`
-	Complexity      string  `json:"complexity,omitempty"`
+	// Coverage is the per-account BloodHound coverage state: "full" (enriched) or
+	// "none" (not enriched). Drives the Unknown-Impact state and the coverage
+	// banner. Descriptive, not a credential — survives Redacted().
+	Coverage    string `json:"coverage,omitempty"`
+	MeetsPolicy bool   `json:"meets_policy"`
+	Complexity  string `json:"complexity,omitempty"`
 	// Wordlist weakness signals (cracked accounts only). Counts/booleans are
 	// redacted-safe; the matched substrings live in BannedWords / KeyboardPatterns
 	// below (see their comment) and are stripped by Redacted().

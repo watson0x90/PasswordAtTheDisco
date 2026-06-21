@@ -105,3 +105,14 @@ func TestRedactedStripsMatchedWords(t *testing.T) {
 		t.Fatalf("Redacted dropped safe metadata: %+v", r)
 	}
 }
+
+func TestCoverageSurvivesRedaction(t *testing.T) {
+	a := Account{Username: "alice", Domain: "CORP", Password: "secret", NTHash: "ABC", Coverage: "full"}
+	red := a.Redacted()
+	if red.Coverage != "full" {
+		t.Errorf("Coverage = %q after Redacted(), want full (descriptive, not a credential)", red.Coverage)
+	}
+	if red.Password != "" || red.NTHash != "" {
+		t.Errorf("credentials not cleared: pw=%q hash=%q", red.Password, red.NTHash)
+	}
+}

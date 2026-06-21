@@ -281,6 +281,34 @@ func TestSimilarPeers(t *testing.T) {
 	}
 }
 
+func TestCoverageFromEnriched(t *testing.T) {
+	e := newEngine()
+	e.Enricher = fakeEnricher{
+		"alice@CORP": {Enriched: true, ControlledObjects: ipv(20), Enabled: bp(true)},
+	}
+	cracked := []secretsdump.ParsedAccount{
+		{Username: "alice", Domain: "CORP", Hash: "H1", Password: "Str0ng&Unique!Pass", Cracked: true},
+		{Username: "ghost", Domain: "CORP", Hash: "H2", Password: "Another!Pass99", Cracked: true}, // no enrichment entry
+	}
+	out := e.ProcessDomain("CORP", cracked, nil)
+	by := map[string]model.Account{}
+	for _, a := range out {
+		by[a.Username] = a
+	}
+	if by["alice"].Coverage != "full" {
+		t.Errorf("alice coverage = %q, want full", by["alice"].Coverage)
+	}
+	if by["ghost"].Coverage != "none" {
+		t.Errorf("ghost (no enrichment) coverage = %q, want none", by["ghost"].Coverage)
+	}
+	// Uncracked path too.
+	e.Enricher = fakeEnricher{"svc@CORP": {Enriched: true, Enabled: bp(true)}}
+	u := e.ProcessDomain("CORP", nil, []secretsdump.ParsedAccount{{Username: "svc", Domain: "CORP", Hash: "UH"}})[0]
+	if u.Coverage != "full" {
+		t.Errorf("uncracked svc coverage = %q, want full", u.Coverage)
+	}
+}
+
 func TestBloodhoundEnricherSurfacesRoastable(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
