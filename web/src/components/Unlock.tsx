@@ -3,7 +3,7 @@ import { api, ApiError } from "../api"
 import { useAuth } from "../auth"
 import { Logo } from "./Logo"
 
-export function Unlock() {
+export function Unlock({ onShowHelp }: { onShowHelp?: () => void }) {
   const { me, autoLocked, refresh, logout } = useAuth()
   const firstRun = me ? !me.store_initialized : false
   const isLead = me?.role === "lead"
@@ -53,6 +53,11 @@ export function Unlock() {
               Sign out
             </button>
           </div>
+          {onShowHelp && (
+            <button type="button" className="link-btn unlock-signout" onClick={onShowHelp}>
+              How it works
+            </button>
+          )}
         </div>
       </div>
     )
@@ -103,6 +108,11 @@ export function Unlock() {
         <button type="button" className="link-btn unlock-signout" onClick={() => void logout()}>
           sign out
         </button>
+        {onShowHelp && (
+          <button type="button" className="link-btn unlock-signout" onClick={onShowHelp}>
+            How it works
+          </button>
+        )}
       </form>
     </div>
   )

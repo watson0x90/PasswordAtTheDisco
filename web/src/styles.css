@@ -1480,3 +1480,82 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
 .simbreak-reveal { margin: 8px 0 4px; }
 .simbreak-score { font-family: var(--mono); font-size: 12px; color: var(--accent); }
 .simbreak-note { margin-top: 14px; }
+
+/* ── Help / Methodology surface ──────────────────────────────────────────────
+   Pure static explainer. Standalone (pre-auth/locked) wraps in a full-screen
+   shell with the brand lockup + Back; embedded (post-auth) renders inside the
+   app shell's <main>. Both share the .help-shell two-column (sub-nav | content)
+   layout. Token-based — no literal inline spacing (styleguard). */
+.login-help { display: block; width: 100%; text-align: center; margin-top: var(--space-lg); }
+
+.help-standalone {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: radial-gradient(120% 80% at 50% -10%, rgba(56, 189, 248, 0.06), transparent 60%);
+  animation: rise 0.4s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.help-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-lg) var(--space-xl);
+  border-bottom: 1px solid var(--glass-border);
+}
+.help-topbar .brand { display: flex; align-items: center; gap: var(--space-md); }
+.help-topbar .word { font-family: var(--display); font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
+.help-topbar .word b { background: linear-gradient(90deg, #67e8f9, #a5b4fc); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+.help-shell {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: var(--space-xl);
+  width: 100%;
+  max-width: var(--main-max-width);
+  margin: 0 auto;
+  padding: var(--space-xl);
+  flex: 1;
+}
+
+.help-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  align-self: start;
+  position: sticky;
+  top: var(--space-xl);
+}
+.help-nav-item {
+  font-family: var(--sans);
+  font-size: 14px;
+  text-align: left;
+  color: var(--dim);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm) var(--space-md);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.help-nav-item:hover { color: var(--text); background: rgba(255, 255, 255, 0.04); }
+.help-nav-item.active {
+  color: var(--text);
+  background: var(--glass);
+  border-color: var(--glass-border);
+}
+
+.help-content {
+  min-width: 0;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-2xl);
+}
+.help-content h2 { font-family: var(--display); margin: 0; }
+
+.help-back { flex: none; }
+
+@media (max-width: 880px) {
+  .help-shell { grid-template-columns: minmax(0, 1fr); gap: var(--space-lg); }
+  .help-nav { position: static; flex-direction: row; flex-wrap: wrap; }
+}

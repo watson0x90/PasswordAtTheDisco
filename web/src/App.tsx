@@ -20,6 +20,9 @@ import { Reports } from "./components/Reports"
 import { Search } from "./components/Search"
 import { Unlock } from "./components/Unlock"
 import { CommandPalette } from "./components/CommandPalette"
+// Help is a small, pure static surface and MUST load pre-auth (login/locked
+// screens), so it is imported eagerly — never behind the recharts lazy chunk.
+import { Help } from "./components/help/Help"
 
 // Recharts is heavy (~180KB). Lazy-load Dashboard and Domains so the charting
 // chunk is deferred until after auth, not on the login screen. (Insights renders
@@ -59,6 +62,8 @@ function viewFor(view: View) {
       return <Exposure />
     case "search":
       return <Search />
+    case "help":
+      return <Help />
     default:
       return <Dashboard />
   }
@@ -67,6 +72,11 @@ function viewFor(view: View) {
 function Routed() {
   const { status, me } = useAuth()
   const [view, setView] = useState<View>("overview")
+  // Pre-auth / locked reachability for the Help surface. Seeded from the hash so
+  // a cold `#help/<slug>` URL (an emailed chapter link) auto-opens Help even
+  // before login. useState initializer runs once, so toggling does not re-read
+  // the (possibly stale) hash.
+  const [showHelp, setShowHelp] = useState(() => location.hash.startsWith("#help"))
 
   if (status === "loading") {
     return (
@@ -75,9 +85,10 @@ function Routed() {
       </div>
     )
   }
-  if (status === "anonymous") return <Login />
+  if (showHelp) return <Help onClose={() => setShowHelp(false)} />
+  if (status === "anonymous") return <Login onShowHelp={() => setShowHelp(true)} />
   // Authenticated but the encrypted store is locked: gate behind the unlock screen.
-  if (me && !me.store_unlocked) return <Unlock />
+  if (me && !me.store_unlocked) return <Unlock onShowHelp={() => setShowHelp(true)} />
 
   return (
     <NavProvider value={setView}>

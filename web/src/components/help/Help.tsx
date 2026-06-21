@@ -1,0 +1,59 @@
+import { CHAPTERS } from "./chapters"
+import { useChapterHash } from "./useChapterHash"
+import { Logo } from "../Logo"
+
+// Help / Methodology surface — a PURE STATIC explainer of how the tool works.
+// It makes NO authenticated API calls and imports NO data provider (useAuth,
+// api, accountsData, …); a later review asserts this. The only thing it renders
+// is static copy + diagrams (added in T2–T5).
+//
+// Mode is driven by `onClose`:
+//   - present  → standalone full-screen shell with a brand lockup + "← Back"
+//                (reachable pre-auth from Login and while locked from Unlock).
+//   - absent   → embedded inside the app shell's <main> (post-auth).
+
+export function Help({ onClose }: { onClose?: () => void }) {
+  const [chapter, setChapter] = useChapterHash("thesis")
+  const active = CHAPTERS.find((c) => c.id === chapter) ?? CHAPTERS[0]
+
+  const body = (
+    <div className="help-shell">
+      <nav className="help-nav" aria-label="Help chapters">
+        {CHAPTERS.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            className={c.id === chapter ? "help-nav-item active" : "help-nav-item"}
+            aria-current={c.id === chapter ? "page" : undefined}
+            onClick={() => setChapter(c.id)}
+          >
+            {c.label}
+          </button>
+        ))}
+      </nav>
+      <section className="help-content" aria-live="polite">
+        {/* Placeholder — real chapter sections land in T2–T5. */}
+        <h2>{active.label}</h2>
+      </section>
+    </div>
+  )
+
+  if (!onClose) return body
+
+  return (
+    <div className="help-standalone">
+      <header className="help-topbar">
+        <div className="brand">
+          <Logo size={28} />
+          <span className="word">
+            Password<b>!AtTheDisco</b>
+          </span>
+        </div>
+        <button type="button" className="btn help-back" onClick={onClose}>
+          ← Back
+        </button>
+      </header>
+      {body}
+    </div>
+  )
+}
