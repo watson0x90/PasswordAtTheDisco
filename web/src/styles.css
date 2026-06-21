@@ -832,7 +832,7 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 
 /* AxisFactorBars: per-tier small multiples of v2 breakdown sub-scores (replaces the radar). */
 .axis-bars { display: flex; flex-direction: column; gap: 18px; }
-.axis-tier { border-top: 1px solid #242e46; padding-top: 12px; }
+.axis-tier { border-top: 1px solid var(--glass-border); padding-top: 12px; }
 .axis-tier:first-child { border-top: none; padding-top: 0; }
 .axis-tier-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .axis-tier-name { font-size: 12px; font-weight: 600; letter-spacing: 0.3px; color: var(--text); }

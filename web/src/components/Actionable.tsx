@@ -308,6 +308,9 @@ export function Actionable() {
 // we cannot rank their blast radius, so blending them in would mis-triage them as
 // if low-impact. The fix is to ENRICH (run BloodHound), not to rotate first.
 // Ordered by Exposure desc so the most-exposed unknowns are enriched first.
+// NOTE: an account with a known weakness (cracked / DA / HIBP / etc.) may ALSO
+// appear in the Priority worklist below — that double-listing is intended: the two
+// lists answer different questions (Impact-unknown here vs known-weakness there).
 function NeedsEnrichment({ accounts }: { accounts: Account[] }) {
   const needs = useMemo(() => {
     const { needsEnrichment } = segmentWorklist(accounts)

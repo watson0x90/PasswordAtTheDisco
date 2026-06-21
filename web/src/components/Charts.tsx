@@ -6,10 +6,6 @@ import {
   Pie,
   PieChart,
   PolarAngleAxis,
-  PolarGrid,
-  PolarRadiusAxis,
-  Radar,
-  RadarChart,
   RadialBar,
   RadialBarChart,
   ResponsiveContainer,
@@ -281,56 +277,6 @@ export function PostureGauge({ score, color, rating }: { score: number; color: s
           {rating}
         </div>
         <div className="gauge-of">of 100</div>
-      </div>
-    </div>
-  )
-}
-
-export interface RadarDatum {
-  factor: string
-  value: number
-}
-
-export interface RadarSeries {
-  name: string
-  color: string
-  data: RadarDatum[]
-}
-
-// RiskRadar: radar chart showing average factor contribution by risk tier.
-export function RiskRadar({ series }: { series: RadarSeries[] }) {
-  if (!series.length) return null
-  // Merge all factor names (should be identical across series)
-  const factors = series[0].data.map((d) => d.factor)
-  // Build a combined data array: [{factor, Critical, High, ...}]
-  const combined = factors.map((f) => {
-    const row: Record<string, string | number> = { factor: f }
-    for (const s of series) {
-      const match = s.data.find((d) => d.factor === f)
-      row[s.name] = match?.value ?? 0
-    }
-    return row
-  })
-  return (
-    <div>
-      <ResponsiveContainer width="100%" height={280}>
-        <RadarChart data={combined} outerRadius="78%">
-          <PolarGrid stroke="#242e46" />
-          <PolarAngleAxis dataKey="factor" tick={{ fill: "#8a96b2", fontSize: 11 }} />
-          <PolarRadiusAxis tick={false} axisLine={false} domain={[0, 10]} />
-          {series.map((s) => (
-            <Radar key={s.name} name={s.name} dataKey={s.name} stroke={s.color} fill={s.color} fillOpacity={0.15} />
-          ))}
-          <Tooltip {...TOOLTIP} />
-        </RadarChart>
-      </ResponsiveContainer>
-      <div className="chart-legend">
-        {series.map((s) => (
-          <span key={s.name} className="chart-legend-item">
-            <span className="chart-legend-dot" style={{ background: s.color }} />
-            {s.name}
-          </span>
-        ))}
       </div>
     </div>
   )
