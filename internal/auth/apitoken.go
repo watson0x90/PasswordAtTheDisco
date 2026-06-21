@@ -3,6 +3,7 @@ package auth
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base32"
 	"encoding/hex"
 	"strings"
@@ -55,6 +56,13 @@ func parseToken(s string) (id, secret string, ok bool) {
 func hashSecret(secret string) string {
 	sum := sha256.Sum256([]byte(secret))
 	return hex.EncodeToString(sum[:])
+}
+
+// verifySecret reports whether secret hashes to storedHash, using a constant-time
+// comparison to avoid a timing oracle on the hash bytes. This is the single point
+// where a presented secret is checked against a stored hash.
+func verifySecret(secret, storedHash string) bool {
+	return subtle.ConstantTimeCompare([]byte(hashSecret(secret)), []byte(storedHash)) == 1
 }
 
 // APIToken is one stored credential. The secret itself is never stored.

@@ -23,8 +23,11 @@ func TestNewTokenFormatAndParse(t *testing.T) {
 	if !ok || gotID != id || gotSecret != secret {
 		t.Fatalf("parseToken round-trip failed: %q %q %v", gotID, gotSecret, ok)
 	}
-	if len(secret) < 40 {
-		t.Fatalf("secret too short (%d), want >=40 chars of entropy", len(secret))
+	if len(secret) != 52 {
+		t.Fatalf("secret length = %d, want 52 (32 bytes base32 no-pad)", len(secret))
+	}
+	if len(id) != 16 {
+		t.Fatalf("id length = %d, want 16 (10 bytes base32 no-pad)", len(id))
 	}
 }
 
@@ -45,5 +48,22 @@ func TestHashSecretDeterministic(t *testing.T) {
 	}
 	if len(hashSecret("abc")) != 64 {
 		t.Fatal("hashSecret not 64 hex chars")
+	}
+}
+
+func TestVerifySecretRoundTrip(t *testing.T) {
+	_, secret, _, err := newToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := hashSecret(secret)
+	if !verifySecret(secret, h) {
+		t.Fatal("verifySecret rejected the correct secret")
+	}
+	if verifySecret(secret+"x", h) {
+		t.Fatal("verifySecret accepted a wrong secret")
+	}
+	if len(h) != 64 {
+		t.Fatalf("hash length = %d, want 64", len(h))
 	}
 }
