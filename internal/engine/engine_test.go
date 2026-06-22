@@ -148,7 +148,7 @@ func TestProcessDomainUncracked(t *testing.T) {
 		t.Errorf("uncracked score = %v, want 7.0", a.RiskScore)
 	}
 	// v2 standard risk.Vector (no more "UNCRACKED/..." form); ends with the two axes.
-	want := "C:C10/L:VS/D:N/SM:N/CM:U/EX:U/DA:N/CO:U/S:0/DR:U/HIBP:VH/EXP:H/IMP:U"
+	want := "C:C10/L:VS/D:N/SM:N/CM:U/EX:U/DA:N/CO:U/T0:N/S:0/RO:N/DR:U/HIBP:VH/EXP:H/IMP:U"
 	if a.RiskVector != want {
 		t.Errorf("uncracked vector = %q, want %q", a.RiskVector, want)
 	}
