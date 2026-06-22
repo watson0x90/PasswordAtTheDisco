@@ -246,9 +246,7 @@ func (s *Server) mcpToolset() []mcpTool {
 				"domain":   map[string]any{"type": "string"},
 			}, "required": []string{"username", "domain"}},
 			Role: auth.RoleLead, NeedsUnlock: true,
-			Handler: func(s *Server, c *mcpCall) (any, string, error) {
-				return nil, "", fmt.Errorf("not implemented") // Task 6
-			},
+			Handler: mcpRevealPassword,
 		},
 	}
 }
@@ -461,6 +459,31 @@ func mcpPasswordInUse(s *Server, c *mcpCall) (any, string, error) {
 	}
 	// audit target is the COUNT only - never the candidate password.
 	return map[string]any{"count": len(matches), "matches": matches}, fmt.Sprintf("matches=%d", len(matches)), nil
+}
+
+// mcpRevealPassword returns the cleartext for ONE account. Lead-only (enforced by the
+// dispatch BEFORE this runs), audit-logged via the dispatch (target = username@domain,
+// never the password). Mirrors the REST handleReveal's store path.
+func mcpRevealPassword(s *Server, c *mcpCall) (any, string, error) {
+	var a struct {
+		AuditID  string `json:"audit_id"`
+		Username string `json:"username"`
+		Domain   string `json:"domain"`
+	}
+	_ = json.Unmarshal(c.Args, &a)
+	if a.Username == "" || a.Domain == "" {
+		return nil, "", fmt.Errorf("username and domain are required")
+	}
+	id, err := s.resolveAuditID(a.AuditID)
+	if err != nil {
+		return nil, "", err
+	}
+	target := a.Username + "@" + a.Domain
+	acct, found := s.Store.FindByDomain(id, a.Username, a.Domain)
+	if !found {
+		return nil, target, fmt.Errorf("account not found: %s", target)
+	}
+	return map[string]any{"username": acct.Username, "domain": acct.Domain, "password": acct.Password}, target, nil
 }
 
 func mcpDiffAudits(s *Server, c *mcpCall) (any, string, error) {

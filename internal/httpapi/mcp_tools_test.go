@@ -265,3 +265,36 @@ func TestDiffAudits(t *testing.T) {
 		t.Fatalf("diff happy path errored: %s", ok.Body.String())
 	}
 }
+
+func TestRevealPasswordLeadOnly(t *testing.T) {
+	var buf bytes.Buffer
+	ts := auth.NewTokenStore("", nil)
+	analyst, _, _ := ts.Issue(auth.RoleAnalyst, "a", nil)
+	lead, _, _ := ts.Issue(auth.RoleLead, "l", nil)
+	s := &Server{MCPTokens: ts, MCPLimiter: auth.NewLimiter(50, time.Minute), Audit: audit.New(&buf)}
+	seedMCPStore(t, s)
+	revealAlice := func(tok string) *httptest.ResponseRecorder {
+		return rpc(t, s, tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"reveal_password","arguments":{"username":"alice","domain":"CORP"}}}`)
+	}
+	// analyst -> denied
+	if an := revealAlice(analyst); !strings.Contains(an.Body.String(), "lead") {
+		t.Fatalf("analyst reveal must be denied: %s", an.Body.String())
+	}
+	// lead -> cleartext
+	ld := revealAlice(lead)
+	if strings.Contains(ld.Body.String(), "isError") || !strings.Contains(toolText(t, ld), "Summer2024!") {
+		t.Fatalf("lead reveal must return cleartext: %s", ld.Body.String())
+	}
+	// audit: the reveal is logged with the account, NEVER the password.
+	if !strings.Contains(buf.String(), "mcp_tool:reveal_password") || !strings.Contains(buf.String(), "alice@CORP") {
+		t.Fatalf("reveal must be audited with the account: %s", buf.String())
+	}
+	if strings.Contains(buf.String(), "Summer2024!") {
+		t.Fatalf("audit log leaked the cleartext password: %s", buf.String())
+	}
+	// unknown account -> tool error
+	nf := rpc(t, s, lead, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"reveal_password","arguments":{"username":"ghost","domain":"CORP"}}}`)
+	if !strings.Contains(nf.Body.String(), "isError") {
+		t.Fatalf("missing account must be a tool error: %s", nf.Body.String())
+	}
+}
