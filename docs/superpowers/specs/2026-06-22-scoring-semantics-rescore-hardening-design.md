@@ -51,13 +51,25 @@ the eventual tag should note "scoring refined — Recalculate existing audits to
   `imp := math.Min(10.0, math.Max(priv, da)+domainModifier(...))` to
   `imp := math.Min(10.0, math.Max(priv, da)*domainFactor(c.DomainRiskLevel))`.
   The disabled cap (`if !c.Enabled { imp = min(imp, 2.0) }`) stays AFTER, unchanged.
-- `Breakdown.DomainModifier` (risk.go:131) becomes the **additive-equivalent contribution** so the
-  drawer's "Domain" factor row keeps showing a positive number:
-  `domainContribution := math.Min(10, math.Max(priv,da)*domainFactor) - math.Min(10, math.Max(priv,da))`
-  (i.e. how much the domain factor added, post-cap). Store that in `Breakdown.DomainModifier`.
-- The `DR:` vector token (`domainCode`, uses the level string) is unchanged in format.
+- `Breakdown.DomainModifier` (risk.go:131) becomes the **pre-cap additive-equivalent contribution**
+  `domainContribution := math.Max(priv,da) * (domainFactor - 1.0)`. **Use the pre-cap form, NOT the
+  post-cap delta** `min(10,base·f)-min(10,base)` — the expert math review showed the post-cap delta
+  is *non-monotonic in privilege* (it rises then collapses to 0 as the base saturates the 10 cap, so
+  a MORE-privileged account would show a SMALLER "Domain" contribution than a less-privileged peer in
+  the same domain — a misleading factor attribution). `base·(factor-1)` is monotone in base and ≥0;
+  the drawer's "Domain" row stays a sensible, order-preserving contribution. (It may slightly overstate
+  when the total Impact is capped at 10, which is acceptable for an illustrative factor row.)
+- **`DR:` vector token — fix the dead-token inconsistency (expert framework review):** today `DR:`
+  shows the domain level (e.g. `DR:C`) even for unenriched accounts where it contributes nothing,
+  asserting a contribution the score doesn't reflect. Change `domainCode` so it returns **`U`
+  (pending) when `Coverage=="none"`**, parallel to how `IMP:` already collapses to `U`. (Pass the
+  Context/coverage into the token; format otherwise unchanged.) This keeps the vector decode-faithful.
 - Because Impact is Unknown when `Coverage=="none"` (impactScore returns early), unenriched
   accounts are unaffected — exactly the intended semantics.
+- **Saturation note (state in DoD):** the factor multiplies `max(priv,da)`, so for an account already
+  at Impact 10 (own DA path, Tier-0, or shared-DA escalation) `min(10, 10·1.3)=10` — domain risk is a
+  **no-op on already-maxed accounts by construction**; #11 only re-ranks mid-tier accounts. Expected,
+  not a bug.
 
 ### #6 — Level-first triage percentile
 `internal/model/model.go`, `ComputePercentiles`:
@@ -73,6 +85,11 @@ the eventual tag should note "scoring refined — Recalculate existing audits to
   rank/(n-1)`; 0/1-account sets get 0. `RiskScore` is no longer the sort key but is otherwise
   unchanged (still displayed, still used by the shared-DA 9.0 floor).
 - Idempotent: depends only on level + axes, never on a prior `Percentile`.
+- **Vestigial-`RiskScore` note (expert framework review):** after #6, `EscalateSharedWithDA`'s
+  `RiskScore >= 9.0` floor no longer drives triage (the percentile does). Add a one-line comment at
+  that floor and at `ComputePercentiles` noting `RiskScore` is now display/back-compat only, so a
+  future reader doesn't assume it orders the worklist. Runs AFTER escalation at all three store
+  sites (`store.go:465/485/512`), so the percentile sees the escalated Critical/Impact-10 state.
 
 ### #4 — HIBP-floor guard on rescore
 `internal/secretsdump` + `internal/engine`:
@@ -95,6 +112,10 @@ the eventual tag should note "scoring refined — Recalculate existing audits to
 - Net: a rescore never LOWERS a breached account's Exposure just because HIBP was momentarily
   unavailable (nil index or lookup error); a genuinely-fresh zero (index up, hash truly absent)
   still clears it; initial upload (prior 0) is unchanged.
+- **Sticky-per-hash note (expert review):** the fallback preserves the breach count keyed to the
+  account's NT hash. A *rotated* password = a different hash = a different account row, so a real
+  credential rotation is never masked by the fallback; the floor is "sticky per hash," not "per
+  account." Document this so it isn't mistaken for hiding a de-escalation.
 
 ---
 
@@ -121,8 +142,10 @@ the eventual tag should note "scoring refined — Recalculate existing audits to
   unaffected (Impact stays Unknown). Update the domain-level goldens.
 - **#6:** percentile is level-monotone — for any two accounts, a higher-level one always gets a
   `Percentile >= ` a lower-level one; within a level the Impact-weighted scalar orders them; ties
-  share rank; the worst account → highest percentile. A regression fixture: a cracked-disabled
-  high-Exposure/low-Impact account must NOT outrank a near-DA High account.
+  share rank; the worst account → highest percentile. Regression fixtures: (a) a cracked-disabled
+  high-Exposure/low-Impact account must NOT outrank a near-DA High account; (b) an
+  `EscalateSharedWithDA`-escalated **uncracked** account (low Exposure, forced Impact 10 / Critical)
+  must sort at/near the TOP of the Critical band despite its low Exposure (scalar = 0.4·Exp + 6.0).
 - **#4:** rescore with `e.HIBP == nil` preserves a stored `HIBPBreachCount` (Exposure floor intact);
   rescore with the index loaded refreshes it; initial upload with no index yields 0 (unchanged). A
   lookup-error path also preserves the prior count.
