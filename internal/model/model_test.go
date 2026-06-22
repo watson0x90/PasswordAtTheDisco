@@ -188,6 +188,29 @@ func TestControlsTier0RoundTripsAndSurvivesRedaction(t *testing.T) {
 	}
 }
 
+func ptr10() *float64 { v := 10.0; return &v }
+
+func TestEscalateSharedWithDASyncsBreakdownImpact(t *testing.T) {
+	da := Account{Username: "admin", Domain: "CORP", NTHash: "AA", DADomains: "CORP.LOCAL",
+		Cracked: true, ImpactScore: ptr10(), ImpactKnown: true}
+	victim := Account{Username: "bob", Domain: "CORP", NTHash: "AA", Cracked: true,
+		ScoreBreakdown: &ScoreBreakdown{ImpactScore: 3.0, PrivilegeSubScore: 1.0}}
+	accts := []Account{da, victim}
+	EscalateSharedWithDA(accts)
+	var bob Account
+	for _, a := range accts {
+		if a.Username == "bob" {
+			bob = a
+		}
+	}
+	if bob.ImpactScore == nil || *bob.ImpactScore != 10 {
+		t.Fatalf("victim ImpactScore = %v, want 10", bob.ImpactScore)
+	}
+	if bob.ScoreBreakdown == nil || bob.ScoreBreakdown.ImpactScore != 10 {
+		t.Fatalf("breakdown ImpactScore must be synced to 10, got %v", bob.ScoreBreakdown)
+	}
+}
+
 func TestComputePercentiles(t *testing.T) {
 	mk := func(score float64) Account { return Account{RiskScore: score} }
 	accts := []Account{mk(2), mk(5), mk(8), mk(8)} // ties share rank
@@ -210,5 +233,32 @@ func TestComputePercentiles(t *testing.T) {
 	ComputePercentiles(accts)
 	if accts[2].Percentile != first {
 		t.Fatal("ComputePercentiles must be idempotent")
+	}
+}
+
+func TestUnicodeAndPolicyViolationsRoundTripAndSurviveRedaction(t *testing.T) {
+	a := Account{
+		Username: "u", Domain: "CORP",
+		Password: "s3cret", NTHash: "ABCD",
+		ContainsUnicode:  true,
+		PolicyViolations: []string{"No uppercase", "Length < 14"},
+	}
+	b, err := json.Marshal(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got Account
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.ContainsUnicode || len(got.PolicyViolations) != 2 || got.PolicyViolations[0] != "No uppercase" {
+		t.Fatalf("lost on round-trip: %+v", got)
+	}
+	red := a.Redacted()
+	if !red.ContainsUnicode || len(red.PolicyViolations) != 2 {
+		t.Fatalf("ContainsUnicode/PolicyViolations must survive Redacted() (non-secret descriptors)")
+	}
+	if red.Password != "" || red.NTHash != "" {
+		t.Fatalf("Redacted() must still strip Password/NTHash")
 	}
 }

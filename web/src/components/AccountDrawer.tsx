@@ -3,6 +3,7 @@ import type { Account, ScoreBreakdown } from "../api"
 import { RISK_CLASS, hasDA, weaknessTags } from "../util"
 import { impactIsKnown, isProvisional, coverageState } from "../matrix"
 import { GLOSSARY } from "../glossary"
+import { weaknessSubFactors, policyViolationText } from "../drawerFactors"
 
 // WeakCell shows wordlist-weakness badges (common / dictionary / forbidden /
 // keyboard). The matched word itself is never shown — only the category.
@@ -56,15 +57,17 @@ export function AccountDrawer({ account: a, onClose }: { account: Account; onClo
     ["HIBP breaches", a.hibp_breached ? a.hibp_breach_count.toLocaleString() : "—"],
     ["Complexity", a.cracked ? a.complexity : "—"],
     ["Password length", a.cracked ? a.password_length : "—"],
-    ["Meets policy", a.cracked ? (a.meets_policy ? "Yes" : "No") : "—"],
+    ["Meets policy", a.cracked ? policyViolationText(a) : "—"],
     [
       "Weaknesses",
       !a.cracked ? "—" : weaknessTags(a).length ? <WeakCell a={a} /> : <span className="muted">none</span>,
     ],
+    ...(a.cracked && a.contains_unicode ? ([["Contains Unicode", "Yes ⚠ — non-ASCII characters"]] as [string, ReactNode][]) : []),
     ["Similarity", a.cracked && (a.similarity_score ?? 0) > 0 ? `${((a.similarity_score ?? 0) * 100).toFixed(0)}% match to another password` : "—"],
     ["Shared with", a.shared_with],
     ["DA pathway", hasDA(a.da_domains) ? a.da_domains : "—"],
     ["Controlled objects", a.controlled_object_count],
+    ...(a.controls_tier0 ? ([["Controls Tier-0", "Yes ⚠ — DA-equivalent asset"]] as [string, ReactNode][]) : []),
     ["Password last set", fmtAge(a.pwd_last_set)],
     ["Password never expires", a.pwd_never_expires === true ? "Yes ⚠" : a.pwd_never_expires === false ? "No" : "Unknown"],
     ["Days out of compliance", a.days_out_of_compliance ? `${a.days_out_of_compliance}d overdue` : "—"],
@@ -105,14 +108,16 @@ export function AccountDrawer({ account: a, onClose }: { account: Account; onClo
           <div className="drawer-breakdown">
             <div className="drawer-section-title">Score breakdown (v2)</div>
             <div className="breakdown-grid">
-              {/* Per-factor cards exist only for cracked accounts (the Go scoreUncracked
-                  path emits no score_breakdown), so they stay gated on bd. */}
+              {/* Uncracked accounts DO carry a score_breakdown (engine scoreUncracked emits
+                  one); its weakness sub-scores are 0 (password unknown). The Exposure card
+                  still gates on `bd`, which is present for them. */}
               {bd && (
                 <BreakdownCard
                   title="Exposure"
                   score={a.exposure_score.toFixed(1)}
                   factors={[
                     ["Weakness", v("weakness_score")],
+                    ...weaknessSubFactors(bd).map(([label, val]) => [`· ${label}`, val] as [string, number]),
                     ["HIBP floor", v("hibp_floor")],
                     ["Cracked floor", v("cracked_floor")],
                     ["Reuse", v("reuse_bump")],
@@ -150,6 +155,12 @@ export function AccountDrawer({ account: a, onClose }: { account: Account; onClo
             </div>
             {bd?.enabled_gated && (
               <p className="bd-note">Impact was gated because the account is disabled in AD.</p>
+            )}
+            {a.escalated_by_shared_da && (
+              <p className="bd-note">Impact forced to 10 — shares a password with a Domain-Admin account.</p>
+            )}
+            {a.controls_tier0 && (
+              <p className="bd-note">Privilege pinned to 10 — controls a Tier-0 / DA-equivalent asset.</p>
             )}
           </div>
         )}

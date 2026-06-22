@@ -266,7 +266,7 @@ func TestScoreDAHardOverride(t *testing.T) {
 func TestVectorV2(t *testing.T) {
 	got := Vector(strong(), Context{Cracked: true, Coverage: "none", PasswordExpires: "Unknown"})
 	// EXP: strong cracked exposure=3.0 -> Low tier 'L'; IMP:U (unknown).
-	if want := "C:C1/L:VL/D:N/SM:N/CM:U/EX:U/DA:N/CO:U/S:0/DR:U/HIBP:N/EXP:L/IMP:U"; got != want {
+	if want := "C:C1/L:VL/D:N/SM:N/CM:U/EX:U/DA:N/CO:U/T0:N/S:0/RO:N/DR:U/HIBP:N/EXP:L/IMP:U"; got != want {
 		t.Errorf("v2 strong vector = %q, want %q", got, want)
 	}
 	// Enriched privileged: CO from real count, IMP tier present.
@@ -275,7 +275,7 @@ func TestVectorV2(t *testing.T) {
 	// derived from the real impactScore here).
 	got = Vector(strong(), Context{Cracked: true, Coverage: "full", Enabled: true, ControlledObjects: ip(101),
 		DomainRiskLevel: "Critical", PasswordExpires: "Unknown"})
-	if want := "C:C1/L:VL/D:N/SM:N/CM:U/EX:U/DA:N/CO:H/S:0/DR:C/HIBP:N/EXP:L/IMP:C"; got != want {
+	if want := "C:C1/L:VL/D:N/SM:N/CM:U/EX:U/DA:N/CO:H/T0:N/S:0/RO:N/DR:C/HIBP:N/EXP:L/IMP:C"; got != want {
 		t.Errorf("v2 enriched vector = %q, want %q", got, want)
 	}
 }

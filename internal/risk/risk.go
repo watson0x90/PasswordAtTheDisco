@@ -398,7 +398,7 @@ func impactScore(c Context) (score float64, known bool) {
 }
 
 // Vector returns the CVSS-like risk vector string:
-// "C:.../L:.../D:.../SM:.../CM:.../EX:.../DA:.../CO:.../S:.../DR:.../HIBP:...".
+// "C:.../L:.../D:.../SM:.../CM:.../EX:.../DA:.../CO:.../T0:.../S:.../RO:.../DR:.../HIBP:...".
 func Vector(a Analysis, c Context) string {
 	parts := []string{
 		"C:" + complexityCode(a.ComplexityLabel),
@@ -409,7 +409,9 @@ func Vector(a Analysis, c Context) string {
 		"EX:" + expireCode(c.PasswordExpires),
 		"DA:" + daCode(c.DADomains),
 		"CO:" + controlledCode(c.ControlledObjects),
+		"T0:" + tier0Code(c),
 		"S:" + shareCode(c.SharedWith),
+		"RO:" + roastableCode(c),
 		"DR:" + domainCode(c.DomainRiskLevel),
 		"HIBP:" + hibpCode(c.HIBPBreachCount),
 		"EXP:" + axisCode(exposureScore(a, c)),
@@ -586,6 +588,31 @@ func shareCode(n int) string {
 		scale = 4
 	}
 	return strconv.Itoa(scale)
+}
+
+// tier0Code marks an account that controls a Tier-0 / DA-equivalent asset (forces
+// privilege=10). The CO: code can read CO:U/CO:L for a Tier-0 controller with a small
+// controlled-object count, so T0: is the unambiguous signal.
+func tier0Code(c Context) string {
+	if c.ControlsTier0 {
+		return "Y"
+	}
+	return "N"
+}
+
+// roastableCode encodes Kerberoast (SPN) / AS-REP roastability, the +0.5 Exposure bumps
+// that otherwise have no vector token. K=SPN only, A=AS-REP only, KA=both, N=neither.
+func roastableCode(c Context) string {
+	switch {
+	case c.HasSPN && c.DontReqPreauth:
+		return "KA"
+	case c.HasSPN:
+		return "K"
+	case c.DontReqPreauth:
+		return "A"
+	default:
+		return "N"
+	}
 }
 
 func domainCode(level string) string {

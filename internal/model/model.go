@@ -183,6 +183,12 @@ type Account struct {
 	// audited terms endpoint.
 	BannedWords      []string `json:"banned_words,omitempty"`
 	KeyboardPatterns []string `json:"keyboard_patterns,omitempty"`
+	// ContainsUnicode flags a cracked password containing non-ASCII runes; PolicyViolations
+	// is the list of failed policy rules ("No uppercase", "Length < 14"). Both are descriptive
+	// (reveal nothing beyond the already-exposed length/complexity) -- not credentials -- so
+	// they survive Redacted().
+	ContainsUnicode  bool     `json:"contains_unicode,omitempty"`
+	PolicyViolations []string `json:"policy_violations,omitempty"`
 
 	// Enrichment-derived temporal/privilege signals. Stored so the UI can surface
 	// them without decoding the risk vector. PwdLastSet is Unix epoch seconds (or 0
@@ -348,6 +354,9 @@ func EscalateSharedWithDA(accts []Account) {
 		max := 10.0
 		a.ImpactScore = &max
 		a.ImpactKnown = true
+		if a.ScoreBreakdown != nil {
+			a.ScoreBreakdown.ImpactScore = max
+		}
 	}
 }
 

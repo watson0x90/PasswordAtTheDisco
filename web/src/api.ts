@@ -128,6 +128,8 @@ export interface Account {
   is_dictionary_word?: boolean
   banned_word_count?: number
   keyboard_pattern_count?: number
+  contains_unicode?: boolean
+  policy_violations?: string[]
   // Enrichment-derived temporal/privilege signals
   pwd_last_set?: number
   pwd_never_expires?: boolean
