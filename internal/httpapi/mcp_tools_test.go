@@ -152,3 +152,33 @@ func TestEmptyStoreNoAudits(t *testing.T) {
 		t.Fatalf("empty store must yield a 'no audits' tool error: %s", rec.Body.String())
 	}
 }
+
+func TestListAndSearchAccounts(t *testing.T) {
+	s, analyst, _ := mcpToolServer(t)
+	seedMCPStore(t, s)
+	// limit cap: ask 9999 -> capped, total echoed (2 seeded accounts)
+	rec := rpc(t, s, analyst, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_accounts","arguments":{"limit":9999}}}`)
+	if strings.Contains(rec.Body.String(), "isError") {
+		t.Fatalf("list_accounts errored: %s", rec.Body.String())
+	}
+	if lt := toolText(t, rec); !strings.Contains(lt, `"total":2`) {
+		t.Fatalf("list_accounts total wrong: %s", lt)
+	}
+	// filter cracked:true -> only alice
+	cr := rpc(t, s, analyst, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_accounts","arguments":{"cracked":true}}}`)
+	ct := toolText(t, cr)
+	if !strings.Contains(ct, `"total":1`) || !strings.Contains(ct, "alice") || strings.Contains(ct, "bob") {
+		t.Fatalf("cracked filter wrong: %s", ct)
+	}
+	// search
+	se := rpc(t, s, analyst, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"search_accounts","arguments":{"query":"ali"}}}`)
+	st := toolText(t, se)
+	if !strings.Contains(st, "alice") || strings.Contains(st, "bob") {
+		t.Fatalf("search wrong: %s", st)
+	}
+	// search missing query -> tool error
+	bad := rpc(t, s, analyst, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"search_accounts","arguments":{"query":""}}}`)
+	if !strings.Contains(bad.Body.String(), "isError") {
+		t.Fatalf("empty query must be a tool error: %s", bad.Body.String())
+	}
+}

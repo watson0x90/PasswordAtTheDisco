@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/audit"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/auth"
@@ -171,6 +172,33 @@ func (s *Server) mcpToolset() []mcpTool {
 			},
 		},
 		{
+			Name:        "list_accounts",
+			Description: "List redacted accounts in an audit with optional filtering, sorting, and cursor pagination (max 200 per page). Filters: risk_level, cracked, domain, hibp_breached, has_da. Sort: risk_score (default, desc) or username.",
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
+				"audit_id":      map[string]any{"type": "string"},
+				"risk_level":    map[string]any{"type": "string", "enum": []string{"Critical", "High", "Medium", "Low"}},
+				"cracked":       map[string]any{"type": "boolean"},
+				"domain":        map[string]any{"type": "string"},
+				"hibp_breached": map[string]any{"type": "boolean"},
+				"has_da":        map[string]any{"type": "boolean"},
+				"sort":          map[string]any{"type": "string", "enum": []string{"risk_score", "username"}},
+				"limit":         map[string]any{"type": "integer", "description": "1-200 (default 50)"},
+				"cursor":        map[string]any{"type": "string", "description": "next_cursor from a prior page"},
+			}},
+			Role: auth.RoleAnalyst, NeedsUnlock: true,
+			Handler: mcpListAccounts,
+		},
+		{
+			Name:        "search_accounts",
+			Description: "Find redacted accounts whose username or domain contains the query (case-insensitive), capped at 200 results.",
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
+				"audit_id": map[string]any{"type": "string"},
+				"query":    map[string]any{"type": "string"},
+			}, "required": []string{"query"}},
+			Role: auth.RoleAnalyst, NeedsUnlock: true,
+			Handler: mcpSearchAccounts,
+		},
+		{
 			Name:        "reveal_password",
 			Description: "Reveal the cleartext password for ONE account (username + domain) in an audit. Lead token only; every reveal is audit-logged (the account, never the password).",
 			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
@@ -256,4 +284,108 @@ func mcpToolResult(v any) map[string]any {
 // mcpToolError is an MCP tool error result (isError:true) so the model sees the message.
 func mcpToolError(msg string) map[string]any {
 	return map[string]any{"isError": true, "content": []map[string]any{{"type": "text", "text": msg}}}
+}
+
+const mcpMaxPage = 200
+
+func mcpListAccounts(s *Server, c *mcpCall) (any, string, error) {
+	var a struct {
+		AuditID      string `json:"audit_id"`
+		RiskLevel    string `json:"risk_level"`
+		Cracked      *bool  `json:"cracked"`
+		Domain       string `json:"domain"`
+		HIBPBreached *bool  `json:"hibp_breached"`
+		HasDA        *bool  `json:"has_da"`
+		Sort         string `json:"sort"`
+		Limit        int    `json:"limit"`
+		Cursor       string `json:"cursor"`
+	}
+	_ = json.Unmarshal(c.Args, &a)
+	id, err := s.resolveAuditID(a.AuditID)
+	if err != nil {
+		return nil, "", err
+	}
+	accts, err := s.Store.Accounts(id, false)
+	if err != nil {
+		return nil, id, fmt.Errorf("accounts unavailable: %w", err)
+	}
+	var out []model.Account
+	for _, x := range accts {
+		if a.RiskLevel != "" && !strings.EqualFold(x.RiskLevel, a.RiskLevel) {
+			continue
+		}
+		if a.Cracked != nil && x.Cracked != *a.Cracked {
+			continue
+		}
+		if a.Domain != "" && !strings.EqualFold(x.Domain, a.Domain) {
+			continue
+		}
+		if a.HIBPBreached != nil && x.HIBPBreached != *a.HIBPBreached {
+			continue
+		}
+		if a.HasDA != nil && x.HasDAPathway() != *a.HasDA {
+			continue
+		}
+		out = append(out, x)
+	}
+	switch a.Sort {
+	case "username":
+		sort.Slice(out, func(i, j int) bool { return out[i].Username < out[j].Username })
+	default:
+		sort.Slice(out, func(i, j int) bool { return out[i].RiskScore > out[j].RiskScore })
+	}
+	total := len(out)
+	limit := a.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > mcpMaxPage {
+		limit = mcpMaxPage
+	}
+	offset := 0
+	if a.Cursor != "" {
+		fmt.Sscanf(a.Cursor, "%d", &offset)
+	}
+	if offset < 0 || offset > total {
+		offset = total
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+	res := map[string]any{"accounts": out[offset:end], "total": total}
+	if end < total {
+		res["next_cursor"] = fmt.Sprintf("%d", end)
+	}
+	return res, id, nil
+}
+
+func mcpSearchAccounts(s *Server, c *mcpCall) (any, string, error) {
+	var a struct {
+		AuditID string `json:"audit_id"`
+		Query   string `json:"query"`
+	}
+	_ = json.Unmarshal(c.Args, &a)
+	if strings.TrimSpace(a.Query) == "" {
+		return nil, "", fmt.Errorf("query is required")
+	}
+	id, err := s.resolveAuditID(a.AuditID)
+	if err != nil {
+		return nil, "", err
+	}
+	accts, err := s.Store.Accounts(id, false)
+	if err != nil {
+		return nil, id, fmt.Errorf("accounts unavailable: %w", err)
+	}
+	q := strings.ToLower(a.Query)
+	matches := []model.Account{}
+	for _, x := range accts {
+		if strings.Contains(strings.ToLower(x.Username), q) || strings.Contains(strings.ToLower(x.Domain), q) {
+			matches = append(matches, x)
+			if len(matches) >= mcpMaxPage {
+				break
+			}
+		}
+	}
+	return map[string]any{"matches": matches, "count": len(matches), "truncated": len(matches) >= mcpMaxPage}, id, nil
 }
