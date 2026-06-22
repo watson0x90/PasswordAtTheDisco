@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -100,6 +101,23 @@ func seedMCPStore(t *testing.T, s *Server) {
 	s.Store = st
 }
 
+// toolText extracts the inner JSON text of a successful tools/call result so tests
+// can assert on actual values (the result.content[0].text block).
+func toolText(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	var resp struct {
+		Result struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil || len(resp.Result.Content) == 0 {
+		t.Fatalf("no tool content: %s", rec.Body.String())
+	}
+	return resp.Result.Content[0].Text
+}
+
 func TestGetPostureAndDomainBreakdown(t *testing.T) {
 	s, analyst, _ := mcpToolServer(t)
 	seedMCPStore(t, s)
@@ -107,13 +125,30 @@ func TestGetPostureAndDomainBreakdown(t *testing.T) {
 	if strings.Contains(post.Body.String(), "isError") {
 		t.Fatalf("get_posture errored: %s", post.Body.String())
 	}
-	dom := rpc(t, s, analyst, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"domain_breakdown","arguments":{}}}`)
-	if strings.Contains(dom.Body.String(), "isError") || !strings.Contains(dom.Body.String(), "domains") {
-		t.Fatalf("domain_breakdown wrong: %s", dom.Body.String())
+	if pt := toolText(t, post); !strings.Contains(pt, `"total_accounts":2`) {
+		t.Fatalf("posture total wrong: %s", pt)
 	}
-	// audit_id defaulting + unknown id
+	dom := rpc(t, s, analyst, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"domain_breakdown","arguments":{}}}`)
+	if strings.Contains(dom.Body.String(), "isError") {
+		t.Fatalf("domain_breakdown errored: %s", dom.Body.String())
+	}
+	// CORP: cracked+critical+breached account; GHOST: a DA-pathway account.
+	dt := toolText(t, dom)
+	if !strings.Contains(dt, `"critical":1`) || !strings.Contains(dt, `"da_paths":1`) || !strings.Contains(dt, `"hibp_breached":1`) {
+		t.Fatalf("domain_breakdown counts wrong: %s", dt)
+	}
+	// unknown audit_id -> tool error
 	bad := rpc(t, s, analyst, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_posture","arguments":{"audit_id":"nope"}}}`)
 	if !strings.Contains(bad.Body.String(), "isError") {
 		t.Fatalf("unknown audit_id must be a tool error: %s", bad.Body.String())
+	}
+}
+
+func TestEmptyStoreNoAudits(t *testing.T) {
+	s, analyst, _ := mcpToolServer(t)
+	s.Store = store.New() // unlocked, zero audits
+	rec := rpc(t, s, analyst, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_posture","arguments":{}}}`)
+	if !strings.Contains(rec.Body.String(), "isError") || !strings.Contains(rec.Body.String(), "no audits") {
+		t.Fatalf("empty store must yield a 'no audits' tool error: %s", rec.Body.String())
 	}
 }

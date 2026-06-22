@@ -114,7 +114,12 @@ func domainBreakdown(accts []model.Account) []domainStat {
 	for _, d := range by {
 		out = append(out, *d)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Accounts > out[j].Accounts })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Accounts != out[j].Accounts {
+			return out[i].Accounts > out[j].Accounts
+		}
+		return out[i].Domain < out[j].Domain // deterministic tiebreaker
+	})
 	return out
 }
 
