@@ -327,6 +327,14 @@ func (m *Manager) Status() JobStatus {
 	return st
 }
 
+// Running reports whether a job is currently in the running phase. Used by the
+// rescore endpoint to refuse starting while enrichment is mid-rewrite of the audit.
+func (m *Manager) Running() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.phase == PhaseRunning
+}
+
 func (m *Manager) setMessage(msg string) {
 	m.mu.Lock()
 	m.message = msg
