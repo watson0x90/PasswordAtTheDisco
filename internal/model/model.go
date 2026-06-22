@@ -195,6 +195,12 @@ type Account struct {
 	HasSPN         *bool `json:"has_spn,omitempty"`          // Kerberoastable — SPN set
 	DontReqPreauth *bool `json:"dont_req_preauth,omitempty"` // AS-REP roastable
 
+	// ControlsTier0 marks an account with a BloodHound control edge onto a Tier-0
+	// asset (a high-Impact privilege signal consumed by risk scoring). Persisted so
+	// it survives store reloads and can be re-derived without re-running BloodHound.
+	// Descriptive boolean, not a credential -- survives Redacted().
+	ControlsTier0 bool `json:"controls_tier0,omitempty"`
+
 	// SimilarityScore is the max Levenshtein similarity (0–1) to another cracked
 	// password in the same domain. Zero means not computed or no similarity.
 	SimilarityScore float64 `json:"similarity_score,omitempty"`

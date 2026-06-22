@@ -184,3 +184,10 @@ func TestEnrichDoesNotClobberMidRunUpload(t *testing.T) {
 		t.Fatalf("alice lost enrichment: DADomains=%q, want CORP", aliceDA)
 	}
 }
+
+func TestManagerRunningReportsIdle(t *testing.T) {
+	m := NewManager(nil, nil) // no Start called
+	if m.Running() {
+		t.Fatal("a freshly constructed manager must not report Running")
+	}
+}

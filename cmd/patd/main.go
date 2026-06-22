@@ -34,6 +34,7 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/hibp"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/httpapi"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/pwned"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/rescore"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/store"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/vault"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/webui"
@@ -177,6 +178,7 @@ func main() {
 	}
 	enrichMgr := enrich.NewManager(eng, st)
 	enrichMgr.Concurrency = enrichConc
+	rescoreMgr := rescore.NewManager(eng, st)
 
 	api := &httpapi.Server{
 		Store:              st,
@@ -202,12 +204,17 @@ func main() {
 		BHEPath:            bhePath,
 		Downloads:          downloads,
 		Enrich:             enrichMgr,
+		Rescore:            rescoreMgr,
 		Build:              httpapi.BuildInfo{Version: version, Commit: commit, BuildDate: buildDate},
 	}
 
 	// Wire the enrichment manager's activity hook so a running job holds the
 	// idle auto-lock open for its duration.
 	enrichMgr.ActivityHook = func() func() {
+		api.HoldActivity()
+		return func() { api.ReleaseActivity() }
+	}
+	rescoreMgr.ActivityHook = func() func() {
 		api.HoldActivity()
 		return func() { api.ReleaseActivity() }
 	}

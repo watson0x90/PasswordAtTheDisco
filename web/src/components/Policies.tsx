@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { api, ApiError, type PolicyRule } from "../api"
 import { useAuth } from "../auth"
+import { RecalcNudge } from "./RecalcNudge"
 
 const CLASS_FIELDS: [keyof PolicyRule, string][] = [
   ["require_lowercase", "a–z"],
@@ -156,6 +157,7 @@ export function Policies() {
 
         {error && <div className="error">{error}</div>}
         {okMsg && <div className="ingest-ok">✓ {okMsg}</div>}
+        <RecalcNudge saved={!!okMsg} />
 
         <div className="policy-actions">
           <button type="button" className="btn" onClick={addRow}>
@@ -235,6 +237,7 @@ function ForbiddenWords({ csrf }: { csrf: string }) {
           <div className="field-hint">{words.length} word(s)</div>
           {err && <div className="error">{err}</div>}
           {okMsg && <div className="ingest-ok">✓ {okMsg}</div>}
+          <RecalcNudge saved={!!okMsg} />
           <button type="button" className="btn btn-primary" onClick={save} disabled={busy}>
             {busy ? "Saving…" : "Save forbidden words"}
           </button>

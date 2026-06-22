@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -153,6 +154,37 @@ func TestEscalateSharedWithDAImpact(t *testing.T) {
 	// movement report with false positives.
 	if accts[0].EscalatedBySharedDA {
 		t.Fatal("the DA account itself must not be flagged EscalatedBySharedDA")
+	}
+}
+
+func TestControlsTier0RoundTripsAndSurvivesRedaction(t *testing.T) {
+	a := Account{Username: "svc", Domain: "CORP", ControlsTier0: true, Password: "s3cret"}
+	b, err := json.Marshal(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got Account
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.ControlsTier0 {
+		t.Fatalf("ControlsTier0 lost on JSON round-trip: %+v", got)
+	}
+	red := a.Redacted()
+	if !red.ControlsTier0 {
+		t.Fatalf("ControlsTier0 must survive Redacted() (boolean signal, not a credential)")
+	}
+	if red.Password != "" {
+		t.Fatalf("Redacted() must still strip Password")
+	}
+	// false must round-trip silently: omitempty suppresses the key, and the default
+	// false is semantically "does not control a Tier-0 asset" (no three-state needed).
+	bFalse, err := json.Marshal(Account{Username: "svc2", Domain: "CORP", ControlsTier0: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(bFalse), "controls_tier0") {
+		t.Fatalf("ControlsTier0:false must be omitted by omitempty, got %s", bFalse)
 	}
 }
 

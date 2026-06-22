@@ -33,6 +33,7 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/pwanalysis"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/pwned"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/report"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/rescore"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/secretsdump"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/store"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/vault"
@@ -52,20 +53,21 @@ type Server struct {
 	Logins             *auth.LoginTracker // per-account lockout + login history (may be nil)
 	Sessions           *auth.SessionStore
 	Audit              *audit.Logger
-	AuditPath          string          // on-disk audit log path, for the lead Activity view (empty = none)
-	LoginLimiter       *auth.Limiter   // per-IP failed-login throttle
-	UnlockLimiter      *auth.Limiter   // per-IP failed-unlock throttle (brute-force guard)
-	RekeyLimiter       *auth.Limiter   // per-IP failed-rekey throttle (separate so it can't lock out unlock)
-	Engine             *engine.Engine  // optional: enables lead web uploads (POST /api/upload)
-	Policies           *policy.Set     // shared with Engine; exposed/edited via /api/policies
-	PolicyPath         string          // where to persist policy edits (empty = in-memory only)
-	ForbiddenWordsPath string          // where to persist forbidden-words edits (empty = in-memory only)
-	PwnedDir           string          // PwnedPasswordsDownloader source dir (HIBP NTLM tool)
-	HIBPPath           string          // configured HIBP NTLM index path (for the Pwned page status)
-	BHEPath            string          // BloodHound config path (config/bloodhound.json) for the BHE settings page
-	Downloads          *pwned.Manager  // background HIBP download/index job runner (may be nil)
-	Enrich             *enrich.Manager // background BloodHound enrichment job (may be nil)
-	Build              BuildInfo       // compile-time build identity, surfaced at GET /api/version
+	AuditPath          string           // on-disk audit log path, for the lead Activity view (empty = none)
+	LoginLimiter       *auth.Limiter    // per-IP failed-login throttle
+	UnlockLimiter      *auth.Limiter    // per-IP failed-unlock throttle (brute-force guard)
+	RekeyLimiter       *auth.Limiter    // per-IP failed-rekey throttle (separate so it can't lock out unlock)
+	Engine             *engine.Engine   // optional: enables lead web uploads (POST /api/upload)
+	Policies           *policy.Set      // shared with Engine; exposed/edited via /api/policies
+	PolicyPath         string           // where to persist policy edits (empty = in-memory only)
+	ForbiddenWordsPath string           // where to persist forbidden-words edits (empty = in-memory only)
+	PwnedDir           string           // PwnedPasswordsDownloader source dir (HIBP NTLM tool)
+	HIBPPath           string           // configured HIBP NTLM index path (for the Pwned page status)
+	BHEPath            string           // BloodHound config path (config/bloodhound.json) for the BHE settings page
+	Downloads          *pwned.Manager   // background HIBP download/index job runner (may be nil)
+	Enrich             *enrich.Manager  // background BloodHound enrichment job (may be nil)
+	Rescore            *rescore.Manager // background re-scoring job (may be nil)
+	Build              BuildInfo        // compile-time build identity, surfaced at GET /api/version
 
 	lastActivity atomic.Int64 // unix-nano of the last unlocked data access (auto-lock)
 	inFlight     atomic.Int64 // in-flight data requests; auto-lock waits for zero
@@ -132,6 +134,10 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/enrich", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleEnrichStart)))))
 	mux.Handle("GET /api/enrich/job", s.requireAuth(http.HandlerFunc(s.handleEnrichJob)))
 	mux.Handle("POST /api/enrich/cancel", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleEnrichCancel))))
+	// Re-scoring job (lead): start / poll / cancel
+	mux.Handle("POST /api/rescore", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleRescoreStart)))))
+	mux.Handle("GET /api/rescore/job", s.requireAuth(http.HandlerFunc(s.handleRescoreJob)))
+	mux.Handle("POST /api/rescore/cancel", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleRescoreCancel))))
 	// Operator management (lead): live add/update/remove, no restart
 	mux.Handle("GET /api/users", s.requireAuth(http.HandlerFunc(s.handleListUsers)))
 	mux.Handle("POST /api/users", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleCreateUser))))
@@ -762,6 +768,69 @@ func (s *Server) handleEnrichCancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.Enrich.Status())
+}
+
+// handleRescoreStart kicks off a background re-scoring job over the active audit
+// using current policy/wordlists/HIBP, preserving BloodHound Impact (lead).
+func (s *Server) handleRescoreStart(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	if s.Rescore == nil || s.Engine == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "re-scoring is not available"})
+		return
+	}
+	auditID, ok := s.activeAudit(w, sess)
+	if !ok {
+		return
+	}
+	// Coordination: an Enrich job rewrites the same audit -- refuse to run both.
+	if s.Enrich != nil && s.Enrich.Running() {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "enrichment in progress; recalculate after it finishes"})
+		return
+	}
+	if err := s.Rescore.Start(auditID); err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "rescore_start", Target: auditID, Source: r.RemoteAddr, Result: "ok"})
+	writeJSON(w, http.StatusOK, s.Rescore.Status())
+}
+
+// handleRescoreJob reports the current re-scoring job status (lead); polled by the UI.
+func (s *Server) handleRescoreJob(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	if s.Rescore == nil {
+		writeJSON(w, http.StatusOK, rescore.JobStatus{Phase: rescore.PhaseIdle})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.Rescore.Status())
+}
+
+// handleRescoreCancel stops an in-progress re-scoring job (lead).
+func (s *Server) handleRescoreCancel(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	if sess.Role != auth.RoleLead {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	if s.Rescore == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "re-scoring is not available"})
+		return
+	}
+	err := s.Rescore.Cancel()
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "rescore_cancel", Source: r.RemoteAddr, Result: okOr(err)})
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.Rescore.Status())
 }
 
 // okOr returns "ok" for a nil error else "failed", for audit results.

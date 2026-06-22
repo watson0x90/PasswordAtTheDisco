@@ -138,6 +138,8 @@ export interface Account {
   // Kerberos attack surface
   has_spn?: boolean
   dont_req_preauth?: boolean
+  // controls_tier0: BloodHound control edge onto a Tier-0 asset (privilege signal).
+  controls_tier0?: boolean
   // Full score breakdown (cracked accounts only)
   score_breakdown?: ScoreBreakdown
 }
@@ -572,6 +574,12 @@ export const api = {
   enrichCancel: (csrf: string) =>
     request<EnrichJob>("/enrich/cancel", { method: "POST", headers: { "X-CSRF-Token": csrf } }),
 
+  rescore: (csrf: string) =>
+    request<RescoreJob>("/rescore", { method: "POST", headers: { "X-CSRF-Token": csrf } }),
+  rescoreJob: () => request<RescoreJob>("/rescore/job"),
+  rescoreCancel: (csrf: string) =>
+    request<RescoreJob>("/rescore/cancel", { method: "POST", headers: { "X-CSRF-Token": csrf } }),
+
   auditLog: (params: AuditQuery) => request<AuditEvent[]>(`/audit-log${auditQuery(params)}`),
 
   // full /api URL for an <a download> (the browser sends the session cookie)
@@ -730,7 +738,7 @@ export interface BHEUsersResult {
 
 export interface IngestEvent {
   filename: string
-  kind: "dump" | "cracks" | "domain_delete" | "enrich"
+  kind: "dump" | "cracks" | "domain_delete" | "enrich" | "rescore"
   domain?: string
   accounts_loaded?: number
   hashes_matched?: number
@@ -745,6 +753,17 @@ export interface EnrichJob {
   processed: number
   total: number
   enriched: number
+  started_at?: string
+  elapsed_sec: number
+  error?: string
+  message?: string
+}
+
+export interface RescoreJob {
+  phase: "idle" | "running" | "done" | "failed" | "cancelled"
+  audit_id?: string
+  processed: number
+  total: number
   started_at?: string
   elapsed_sec: number
   error?: string
