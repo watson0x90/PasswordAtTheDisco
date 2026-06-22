@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/audit"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/auth"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 )
 
 // mcpTool is one registered MCP tool.
@@ -36,6 +38,86 @@ func roleAtLeast(have, need auth.Role) bool {
 	return have == auth.RoleAnalyst || have == auth.RoleLead
 }
 
+// latestAuditID returns the id of the most-recently-updated audit, or ("",false) if none.
+func (s *Server) latestAuditID() (string, bool) {
+	list := s.Store.List()
+	if len(list) == 0 {
+		return "", false
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].UpdatedAt.After(list[j].UpdatedAt) })
+	return list[0].ID, true
+}
+
+// resolveAuditID returns the requested audit id (validated) or the latest when blank.
+func (s *Server) resolveAuditID(want string) (string, error) {
+	if want != "" {
+		if !s.Store.Has(want) {
+			return "", fmt.Errorf("unknown audit_id %q", want)
+		}
+		return want, nil
+	}
+	if id, ok := s.latestAuditID(); ok {
+		return id, nil
+	}
+	return "", fmt.Errorf("no audits exist yet")
+}
+
+// auditIDSchema is the shared JSON Schema for tools taking an optional audit_id.
+func auditIDSchema(desc string) map[string]any {
+	return map[string]any{"type": "object", "properties": map[string]any{
+		"audit_id": map[string]any{"type": "string", "description": desc},
+	}}
+}
+
+// argAuditID extracts an optional "audit_id" from a tool's raw arguments.
+func argAuditID(raw json.RawMessage) string {
+	var a struct {
+		AuditID string `json:"audit_id"`
+	}
+	_ = json.Unmarshal(raw, &a)
+	return a.AuditID
+}
+
+type domainStat struct {
+	Domain   string `json:"domain"`
+	Accounts int    `json:"accounts"`
+	Cracked  int    `json:"cracked"`
+	Breached int    `json:"hibp_breached"`
+	Critical int    `json:"critical"`
+	DAPaths  int    `json:"da_paths"`
+}
+
+// domainBreakdown groups REDACTED accounts into per-domain stats, sorted by count desc.
+func domainBreakdown(accts []model.Account) []domainStat {
+	by := map[string]*domainStat{}
+	for _, a := range accts {
+		d := by[a.Domain]
+		if d == nil {
+			d = &domainStat{Domain: a.Domain}
+			by[a.Domain] = d
+		}
+		d.Accounts++
+		if a.Cracked {
+			d.Cracked++
+		}
+		if a.HIBPBreached {
+			d.Breached++
+		}
+		if a.RiskLevel == "Critical" {
+			d.Critical++
+		}
+		if a.HasDAPathway() {
+			d.DAPaths++
+		}
+	}
+	out := make([]domainStat, 0, len(by))
+	for _, d := range by {
+		out = append(out, *d)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Accounts > out[j].Accounts })
+	return out
+}
+
 // mcpToolset is the full registry. Handlers for most tools are added in later tasks;
 // reveal_password is declared lead-only now (handler implemented in Task 6).
 func (s *Server) mcpToolset() []mcpTool {
@@ -47,6 +129,40 @@ func (s *Server) mcpToolset() []mcpTool {
 			Role:        auth.RoleAnalyst, NeedsUnlock: true,
 			Handler: func(s *Server, c *mcpCall) (any, string, error) {
 				return map[string]any{"audits": s.Store.List()}, "", nil
+			},
+		},
+		{
+			Name:        "get_posture",
+			Description: "Org-wide posture for an audit: account/cracked/breached counts, risk-level distribution, posture score, breach-impact, and BloodHound coverage. Optional audit_id (defaults to the latest).",
+			InputSchema: auditIDSchema("Audit id; omit for the most recently updated audit."),
+			Role:        auth.RoleAnalyst, NeedsUnlock: true,
+			Handler: func(s *Server, c *mcpCall) (any, string, error) {
+				id, err := s.resolveAuditID(argAuditID(c.Args))
+				if err != nil {
+					return nil, "", err
+				}
+				sum, err := s.Store.Summary(id)
+				if err != nil {
+					return nil, id, fmt.Errorf("summary unavailable: %w", err)
+				}
+				return sum, id, nil
+			},
+		},
+		{
+			Name:        "domain_breakdown",
+			Description: "Per-domain stats for an audit: accounts, cracked, HIBP-breached, critical, and DA-pathway counts. Optional audit_id.",
+			InputSchema: auditIDSchema("Audit id; omit for the most recently updated audit."),
+			Role:        auth.RoleAnalyst, NeedsUnlock: true,
+			Handler: func(s *Server, c *mcpCall) (any, string, error) {
+				id, err := s.resolveAuditID(argAuditID(c.Args))
+				if err != nil {
+					return nil, "", err
+				}
+				accts, err := s.Store.Accounts(id, false)
+				if err != nil {
+					return nil, id, fmt.Errorf("accounts unavailable: %w", err)
+				}
+				return map[string]any{"domains": domainBreakdown(accts)}, id, nil
 			},
 		},
 		{

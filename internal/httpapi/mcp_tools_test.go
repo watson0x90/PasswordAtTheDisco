@@ -10,6 +10,9 @@ import (
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/audit"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/auth"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/hibp"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/store"
 )
 
 // TestToolsCallAuditsDenied confirms a role-denied tool call emits an audit event
@@ -71,5 +74,46 @@ func TestToolsCallUnknownAndRole(t *testing.T) {
 	rec = rpc(t, s, analyst, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"reveal_password","arguments":{"username":"x","domain":"Y"}}}`)
 	if !strings.Contains(rec.Body.String(), "lead") {
 		t.Fatalf("analyst reveal must be denied: %s", rec.Body.String())
+	}
+}
+
+// seedMCPStore attaches an unlocked in-memory store with one audit, two domains, and a
+// known cracked account (alice@CORP / "Summer2024!") for the data-tool tests.
+func seedMCPStore(t *testing.T, s *Server) {
+	t.Helper()
+	st := store.New()
+	meta, err := st.CreateAudit("MCP Test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pw := "Summer2024!"
+	if err := st.ReplaceDomain(meta.ID, "CORP", []model.Account{
+		{Username: "alice", Domain: "CORP", Cracked: true, Password: pw, NTHash: hibp.NTLMHash(pw), RiskLevel: "Critical", HIBPBreached: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ReplaceDomain(meta.ID, "GHOST", []model.Account{
+		{Username: "bob", Domain: "GHOST", Cracked: false, RiskLevel: "Low", DADomains: "GHOST"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.Store = st
+}
+
+func TestGetPostureAndDomainBreakdown(t *testing.T) {
+	s, analyst, _ := mcpToolServer(t)
+	seedMCPStore(t, s)
+	post := rpc(t, s, analyst, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_posture","arguments":{}}}`)
+	if strings.Contains(post.Body.String(), "isError") {
+		t.Fatalf("get_posture errored: %s", post.Body.String())
+	}
+	dom := rpc(t, s, analyst, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"domain_breakdown","arguments":{}}}`)
+	if strings.Contains(dom.Body.String(), "isError") || !strings.Contains(dom.Body.String(), "domains") {
+		t.Fatalf("domain_breakdown wrong: %s", dom.Body.String())
+	}
+	// audit_id defaulting + unknown id
+	bad := rpc(t, s, analyst, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_posture","arguments":{"audit_id":"nope"}}}`)
+	if !strings.Contains(bad.Body.String(), "isError") {
+		t.Fatalf("unknown audit_id must be a tool error: %s", bad.Body.String())
 	}
 }
