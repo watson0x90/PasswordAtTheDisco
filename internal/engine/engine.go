@@ -368,6 +368,7 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 		SimilarPeers:        peersCache[pw],
 		HasSPN:              enrData.HasSPN,
 		DontReqPreauth:      enrData.DontReqPreauth,
+		ControlsTier0:       enrData.ControlsTier0,
 		// Score breakdown (v2 two-axis sub-scores + raw per-factor inputs).
 		ScoreBreakdown: &model.ScoreBreakdown{
 			ExposureScore:     res.Breakdown.ExposureScore,
@@ -444,6 +445,7 @@ func (e *Engine) scoreUncracked(domain string, a secretsdump.ParsedAccount, shar
 		PwdNeverExpires: enrData.PwdNeverExpires,
 		HasSPN:          enrData.HasSPN,
 		DontReqPreauth:  enrData.DontReqPreauth,
+		ControlsTier0:   enrData.ControlsTier0,
 		// Uncracked accounts still carry the full axis breakdown: their Exposure
 		// (HIBP/reuse/roastable floors) and Impact sub-scores are meaningful even
 		// without weakness penalties, so they appear in the axis-factor dashboard.
