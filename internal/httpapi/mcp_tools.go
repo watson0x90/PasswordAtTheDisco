@@ -9,7 +9,9 @@ import (
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/audit"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/auth"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/hibp"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/report"
 )
 
 // mcpTool is one registered MCP tool.
@@ -197,6 +199,43 @@ func (s *Server) mcpToolset() []mcpTool {
 			}, "required": []string{"query"}},
 			Role: auth.RoleAnalyst, NeedsUnlock: true,
 			Handler: mcpSearchAccounts,
+		},
+		{
+			Name:        "password_in_use",
+			Description: "Check which accounts in an audit use a specific password (matched by NTLM hash server-side, including uncracked accounts). The candidate is never stored or logged; only redacted matches and a count are returned.",
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
+				"audit_id": map[string]any{"type": "string"},
+				"password": map[string]any{"type": "string"},
+			}, "required": []string{"password"}},
+			Role: auth.RoleAnalyst, NeedsUnlock: true,
+			Handler: mcpPasswordInUse,
+		},
+		{
+			Name:        "get_report",
+			Description: "The actionable report for an audit (cracked accounts, password-reuse groups, HIBP-exposed, DA pathways, escalations, weak/never-expires/stale, roastable). Redacted - no cleartext. Optional audit_id.",
+			InputSchema: auditIDSchema("Audit id; omit for the latest."),
+			Role:        auth.RoleAnalyst, NeedsUnlock: true,
+			Handler: func(s *Server, c *mcpCall) (any, string, error) {
+				id, err := s.resolveAuditID(argAuditID(c.Args))
+				if err != nil {
+					return nil, "", err
+				}
+				accts, err := s.Store.Accounts(id, true) // unredacted to group by NT hash; BuildReport redacts
+				if err != nil {
+					return nil, id, fmt.Errorf("accounts unavailable: %w", err)
+				}
+				return model.BuildReport(accts), id, nil
+			},
+		},
+		{
+			Name:        "diff_audits",
+			Description: "Compare two audits: accounts newly cracked, remediated, regressed, and newly breached. Requires audit_id_a and audit_id_b.",
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{
+				"audit_id_a": map[string]any{"type": "string"},
+				"audit_id_b": map[string]any{"type": "string"},
+			}, "required": []string{"audit_id_a", "audit_id_b"}},
+			Role: auth.RoleAnalyst, NeedsUnlock: true,
+			Handler: mcpDiffAudits,
 		},
 		{
 			Name:        "reveal_password",
@@ -394,4 +433,57 @@ func mcpSearchAccounts(s *Server, c *mcpCall) (any, string, error) {
 		}
 	}
 	return map[string]any{"matches": matches, "count": len(matches), "truncated": len(matches) >= mcpMaxPage}, id, nil
+}
+
+func mcpPasswordInUse(s *Server, c *mcpCall) (any, string, error) {
+	var a struct {
+		AuditID  string `json:"audit_id"`
+		Password string `json:"password"`
+	}
+	_ = json.Unmarshal(c.Args, &a)
+	if a.Password == "" {
+		return nil, "", fmt.Errorf("password is required")
+	}
+	id, err := s.resolveAuditID(a.AuditID)
+	if err != nil {
+		return nil, "", err
+	}
+	full, err := s.Store.Accounts(id, true) // includeSecrets to read NTHash
+	if err != nil {
+		return nil, id, fmt.Errorf("accounts unavailable: %w", err)
+	}
+	candidate := hibp.NTLMHash(a.Password)
+	matches := []model.Account{}
+	for _, x := range full {
+		if x.NTHash != "" && strings.EqualFold(x.NTHash, candidate) {
+			matches = append(matches, x.Redacted())
+		}
+	}
+	// audit target is the COUNT only - never the candidate password.
+	return map[string]any{"count": len(matches), "matches": matches}, fmt.Sprintf("matches=%d", len(matches)), nil
+}
+
+func mcpDiffAudits(s *Server, c *mcpCall) (any, string, error) {
+	var a struct {
+		A string `json:"audit_id_a"`
+		B string `json:"audit_id_b"`
+	}
+	_ = json.Unmarshal(c.Args, &a)
+	if a.A == "" || a.B == "" {
+		return nil, "", fmt.Errorf("audit_id_a and audit_id_b are required")
+	}
+	if !s.Store.Has(a.A) || !s.Store.Has(a.B) {
+		return nil, "", fmt.Errorf("unknown audit_id_a or audit_id_b")
+	}
+	accA, err := s.Store.Accounts(a.A, false)
+	if err != nil {
+		return nil, a.A + ".." + a.B, fmt.Errorf("accounts A unavailable: %w", err)
+	}
+	accB, err := s.Store.Accounts(a.B, false)
+	if err != nil {
+		return nil, a.A + ".." + a.B, fmt.Errorf("accounts B unavailable: %w", err)
+	}
+	metaA, _ := s.Store.Meta(a.A)
+	metaB, _ := s.Store.Meta(a.B)
+	return map[string]any{"a": metaA, "b": metaB, "diff": report.ComputeDiff(accA, accB)}, a.A + ".." + a.B, nil
 }

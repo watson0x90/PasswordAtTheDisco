@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http/httptest"
 	"strings"
@@ -204,5 +205,55 @@ func TestListAccountsPagination(t *testing.T) {
 	bad := rpc(t, s, analyst, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_accounts","arguments":{"limit":1,"cursor":"garbage"}}}`)
 	if strings.Contains(bad.Body.String(), "isError") {
 		t.Fatalf("garbage cursor must be tolerated, not error: %s", bad.Body.String())
+	}
+}
+
+func TestProbeAndReport(t *testing.T) {
+	s, analyst, _ := mcpToolServer(t)
+	seedMCPStore(t, s)
+	// password_in_use with the known seeded cracked password -> matches alice
+	pr := rpc(t, s, analyst, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"password_in_use","arguments":{"password":"Summer2024!"}}}`)
+	pt := toolText(t, pr)
+	if !strings.Contains(pt, `"count":1`) || !strings.Contains(pt, "alice") {
+		t.Fatalf("password_in_use should match alice: %s", pt)
+	}
+	// a non-matching password -> count 0
+	zero := rpc(t, s, analyst, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"password_in_use","arguments":{"password":"nope-nope"}}}`)
+	if !strings.Contains(toolText(t, zero), `"count":0`) {
+		t.Fatalf("non-matching password should be count 0")
+	}
+	// missing password -> tool error
+	bad := rpc(t, s, analyst, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"password_in_use","arguments":{"password":""}}}`)
+	if !strings.Contains(bad.Body.String(), "isError") {
+		t.Fatalf("empty password must be a tool error: %s", bad.Body.String())
+	}
+	// get_report
+	rp := rpc(t, s, analyst, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_report","arguments":{}}}`)
+	if strings.Contains(rp.Body.String(), "isError") {
+		t.Fatalf("get_report errored: %s", rp.Body.String())
+	}
+}
+
+func TestDiffAudits(t *testing.T) {
+	s, analyst, _ := mcpToolServer(t)
+	seedMCPStore(t, s)
+	id1 := s.Store.List()[0].ID
+	meta2, err := s.Store.CreateAudit("v2", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Store.ReplaceDomain(meta2.ID, "CORP", []model.Account{{Username: "alice", Domain: "CORP", Cracked: false}}); err != nil {
+		t.Fatal(err)
+	}
+	// missing ids -> tool error
+	miss := rpc(t, s, analyst, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"diff_audits","arguments":{}}}`)
+	if !strings.Contains(miss.Body.String(), "isError") {
+		t.Fatalf("diff without ids must error: %s", miss.Body.String())
+	}
+	// happy path
+	args := fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"diff_audits","arguments":{"audit_id_a":%q,"audit_id_b":%q}}}`, id1, meta2.ID)
+	ok := rpc(t, s, analyst, args)
+	if strings.Contains(ok.Body.String(), "isError") {
+		t.Fatalf("diff happy path errored: %s", ok.Body.String())
 	}
 }
