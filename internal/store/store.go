@@ -464,7 +464,7 @@ func (s *Store) ReplaceDomain(id, domain string, accounts []model.Account) error
 	merged := append(kept, accounts...)
 	model.RecomputeSharing(merged)     // cross-domain reuse counts over the whole audit
 	model.EscalateSharedWithDA(merged) // cross-domain DA-share escalation
-	model.ComputePercentiles(merged)   // within-audit triage rank on post-escalation RiskScore
+	model.ComputePercentiles(merged)   // within-audit triage rank, level-first then Impact-weighted (post-escalation)
 	now := s.now()
 	meta := cur.meta
 	meta.UpdatedAt = now
@@ -484,7 +484,7 @@ func (s *Store) Replace(id string, ds model.Dataset) error {
 	}
 	model.RecomputeSharing(ds.Accounts)
 	model.EscalateSharedWithDA(ds.Accounts)
-	model.ComputePercentiles(ds.Accounts) // within-audit triage rank on post-escalation RiskScore
+	model.ComputePercentiles(ds.Accounts) // within-audit triage rank, level-first then Impact-weighted (post-escalation)
 	ds.Ingests = cur.ds.Ingests           // preserve existing history; callers never set it
 	ds.Name = cur.ds.Name                 // preserve the dataset label; re-score callers needn't repeat it
 	meta := cur.meta
@@ -511,7 +511,7 @@ func (s *Store) Mutate(id string, fn func(current []model.Account) []model.Accou
 	now := s.now()
 	model.RecomputeSharing(next)
 	model.EscalateSharedWithDA(next)
-	model.ComputePercentiles(next) // within-audit triage rank on post-escalation RiskScore
+	model.ComputePercentiles(next) // within-audit triage rank, level-first then Impact-weighted (post-escalation)
 	ds := cur.ds
 	ds.Accounts = next
 	ds.GeneratedAt = now
