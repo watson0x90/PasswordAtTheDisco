@@ -70,18 +70,10 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 	case "ping":
 		writeJSON(w, http.StatusOK, rpcOK(req.ID, map[string]any{}))
 	case "tools/list":
-		writeJSON(w, http.StatusOK, s.mcpToolsList(req))
+		writeJSON(w, http.StatusOK, s.mcpToolsList(r, req))
 	case "tools/call":
 		writeJSON(w, http.StatusOK, s.mcpToolsCall(r, req))
 	default:
 		writeJSON(w, http.StatusOK, rpcErr(req.ID, rpcMethodNotFound, "method not found: "+req.Method))
 	}
-}
-
-// TEMPORARY stubs — REPLACED in Task 2 (tool registry). Do not rely on these.
-func (s *Server) mcpToolsList(req rpcRequest) rpcResponse {
-	return rpcOK(req.ID, map[string]any{"tools": []any{}})
-}
-func (s *Server) mcpToolsCall(r *http.Request, req rpcRequest) rpcResponse {
-	return rpcErr(req.ID, rpcMethodNotFound, "tools not wired yet")
 }
