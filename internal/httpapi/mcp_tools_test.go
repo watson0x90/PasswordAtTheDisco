@@ -217,6 +217,10 @@ func TestProbeAndReport(t *testing.T) {
 	if !strings.Contains(pt, `"count":1`) || !strings.Contains(pt, "alice") {
 		t.Fatalf("password_in_use should match alice: %s", pt)
 	}
+	// redaction: the response must never echo the candidate password or its NT hash.
+	if strings.Contains(pr.Body.String(), "Summer2024!") || strings.Contains(pr.Body.String(), hibp.NTLMHash("Summer2024!")) {
+		t.Fatalf("probe response leaked the candidate password or NT hash: %s", pr.Body.String())
+	}
 	// a non-matching password -> count 0
 	zero := rpc(t, s, analyst, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"password_in_use","arguments":{"password":"nope-nope"}}}`)
 	if !strings.Contains(toolText(t, zero), `"count":0`) {
@@ -231,6 +235,10 @@ func TestProbeAndReport(t *testing.T) {
 	rp := rpc(t, s, analyst, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_report","arguments":{}}}`)
 	if strings.Contains(rp.Body.String(), "isError") {
 		t.Fatalf("get_report errored: %s", rp.Body.String())
+	}
+	// redaction: the report must never contain cleartext or NT hashes.
+	if strings.Contains(rp.Body.String(), "Summer2024!") || strings.Contains(rp.Body.String(), hibp.NTLMHash("Summer2024!")) {
+		t.Fatalf("get_report leaked cleartext or NT hash: %s", rp.Body.String())
 	}
 }
 
