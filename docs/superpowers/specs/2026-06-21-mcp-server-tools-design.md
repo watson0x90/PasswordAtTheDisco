@@ -54,7 +54,7 @@ call role-checked and audit-logged.
 ### Endpoint & transport
 `mux.Handle("POST /api/mcp", s.requireMCPToken(http.HandlerFunc(s.handleMCP)))`.
 The handler reads the token (and its role) from context (A's `mcpTokenFrom`), decodes a
-single JSON-RPC request (or a batch), dispatches, and writes a JSON-RPC response with
+single JSON-RPC request (MCP rev 2025-06-18 removed batching), dispatches, and writes a JSON-RPC response with
 `Content-Type: application/json`. No `requireUnlocked` at the endpoint level — locked
 state is reported per-tool (so `initialize`/`tools/list`/`ping` work while locked).
 
@@ -96,7 +96,7 @@ ONLY through `reveal_password`.
 | `search_accounts` | analyst | yes | `audit_id?, query` | redacted accounts matching username/domain (capped) |
 | `domain_breakdown` | analyst | yes | `audit_id?` | per-domain stats (accounts, cracked, breached, critical, DA paths) |
 | `password_in_use` | analyst | yes | `audit_id?, password` | `{count, matches:[redacted]}` — candidate matched by NT hash server-side, **never stored/logged** |
-| `get_report` | analyst | yes | `audit_id?, section?` | the actionable report, or one named section; large sub-lists capped with counts |
+| `get_report` | analyst | yes | `audit_id?` | the full actionable report (redacted; bounded by audit size). A `section?` selector is a deferred follow-up, not in the v1 surface |
 | `diff_audits` | analyst | yes | `audit_id_a, audit_id_b` | the audit diff (newly cracked / remediated / regressed / newly breached) |
 | `reveal_password` | **lead** | yes | `audit_id?, username, domain` | `{username, domain, password}` — cleartext for ONE account |
 
