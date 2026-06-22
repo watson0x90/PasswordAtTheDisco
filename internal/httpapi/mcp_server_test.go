@@ -62,7 +62,7 @@ func TestMCPPing(t *testing.T) {
 func TestMCPNotificationNoBody(t *testing.T) {
 	s, tok := mcpServer(t)
 	rec := rpc(t, s, tok, `{"jsonrpc":"2.0","method":"notifications/initialized"}`)
-	if rec.Code != http.StatusAccepted && rec.Body.Len() != 0 {
+	if rec.Code != http.StatusAccepted || rec.Body.Len() != 0 {
 		t.Fatalf("a notification must get an empty/202 response, got %d %q", rec.Code, rec.Body.String())
 	}
 }
@@ -74,5 +74,8 @@ func TestMCPParseAndMethodErrors(t *testing.T) {
 	}
 	if rec := rpc(t, s, tok, `{"jsonrpc":"2.0","id":9,"method":"no/such"}`); !strings.Contains(rec.Body.String(), "-32601") {
 		t.Fatalf("unknown method must yield -32601: %s", rec.Body.String())
+	}
+	if rec := rpc(t, s, tok, `{"jsonrpc":"1.0","id":3,"method":"ping"}`); !strings.Contains(rec.Body.String(), "-32600") {
+		t.Fatalf("bad envelope must yield -32600: %s", rec.Body.String())
 	}
 }

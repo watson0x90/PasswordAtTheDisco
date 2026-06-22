@@ -48,7 +48,8 @@ func rpcOK(id json.RawMessage, result any) rpcResponse {
 func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 	var req rpcRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
-		writeJSON(w, http.StatusOK, rpcErr(nil, rpcParseError, "parse error"))
+		// JSON-RPC 2.0 §5.1: when the id can't be detected (parse error), id MUST be null.
+		writeJSON(w, http.StatusOK, rpcErr(json.RawMessage("null"), rpcParseError, "parse error"))
 		return
 	}
 	if req.JSONRPC != "2.0" || req.Method == "" {
