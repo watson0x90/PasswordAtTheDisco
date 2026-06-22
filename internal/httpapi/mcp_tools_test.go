@@ -297,4 +297,30 @@ func TestRevealPasswordLeadOnly(t *testing.T) {
 	if !strings.Contains(nf.Body.String(), "isError") {
 		t.Fatalf("missing account must be a tool error: %s", nf.Body.String())
 	}
+	// missing domain -> tool error (one account per call requires both fields)
+	mf := rpc(t, s, lead, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"reveal_password","arguments":{"username":"alice"}}}`)
+	if !strings.Contains(mf.Body.String(), "isError") {
+		t.Fatalf("missing domain must be a tool error: %s", mf.Body.String())
+	}
+}
+
+// failAuditWriter errors on every write, simulating a down audit sink.
+type failAuditWriter struct{}
+
+func (failAuditWriter) Write([]byte) (int, error) { return 0, fmt.Errorf("audit sink down") }
+
+// TestRevealFailsClosedWhenAuditUnavailable verifies reveal_password withholds the
+// cleartext when the audit write fails (mirrors the REST handleReveal's auditOrFail).
+func TestRevealFailsClosedWhenAuditUnavailable(t *testing.T) {
+	ts := auth.NewTokenStore("", nil)
+	lead, _, _ := ts.Issue(auth.RoleLead, "l", nil)
+	s := &Server{MCPTokens: ts, MCPLimiter: auth.NewLimiter(50, time.Minute), Audit: audit.New(failAuditWriter{})}
+	seedMCPStore(t, s)
+	ld := rpc(t, s, lead, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"reveal_password","arguments":{"username":"alice","domain":"CORP"}}}`)
+	if !strings.Contains(ld.Body.String(), "isError") {
+		t.Fatalf("reveal must fail closed when audit is down: %s", ld.Body.String())
+	}
+	if strings.Contains(ld.Body.String(), "Summer2024!") {
+		t.Fatalf("cleartext leaked despite audit failure: %s", ld.Body.String())
+	}
 }

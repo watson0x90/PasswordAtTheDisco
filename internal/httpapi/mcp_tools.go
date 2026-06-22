@@ -21,6 +21,10 @@ type mcpTool struct {
 	InputSchema map[string]any
 	Role        auth.Role // minimum role: RoleAnalyst (any) or RoleLead
 	NeedsUnlock bool
+	// AuditCritical: fail closed — if the success audit write fails, the result is
+	// WITHHELD (mirrors the REST handleReveal's auditOrFail). Set for reveal_password so
+	// cleartext never leaves the process unlogged.
+	AuditCritical bool
 	// Handler returns the JSON-able result, a SAFE audit target (never a secret), and an
 	// error (nil => ok; non-nil => tool error).
 	Handler func(s *Server, c *mcpCall) (result any, auditTarget string, err error)
@@ -245,7 +249,7 @@ func (s *Server) mcpToolset() []mcpTool {
 				"username": map[string]any{"type": "string"},
 				"domain":   map[string]any{"type": "string"},
 			}, "required": []string{"username", "domain"}},
-			Role: auth.RoleLead, NeedsUnlock: true,
+			Role: auth.RoleLead, NeedsUnlock: true, AuditCritical: true,
 			Handler: mcpRevealPassword,
 		},
 	}
@@ -283,8 +287,8 @@ func (s *Server) mcpToolsCall(r *http.Request, req rpcRequest) rpcResponse {
 		}
 	}
 	remote := clientIP(r)
-	logCall := func(target, result string) {
-		s.Audit.Log(audit.Event{Actor: mcpActor(tok), Role: string(tok.Role), Action: "mcp_tool:" + p.Name, Target: target, Source: remote, Result: result})
+	logCall := func(target, result string) error {
+		return s.Audit.Log(audit.Event{Actor: mcpActor(tok), Role: string(tok.Role), Action: "mcp_tool:" + p.Name, Target: target, Source: remote, Result: result})
 	}
 	if tool == nil {
 		return rpcOK(req.ID, mcpToolError("unknown tool: "+p.Name))
@@ -302,7 +306,11 @@ func (s *Server) mcpToolsCall(r *http.Request, req rpcRequest) rpcResponse {
 		logCall(target, "error")
 		return rpcOK(req.ID, mcpToolError(err.Error()))
 	}
-	logCall(target, "ok")
+	if auditErr := logCall(target, "ok"); auditErr != nil && tool.AuditCritical {
+		// Fail-closed (like the REST handleReveal): never return cleartext if the action
+		// could not be recorded. The result — including any cleartext — is withheld.
+		return rpcOK(req.ID, mcpToolError("could not record the audit event; result withheld"))
+	}
 	return rpcOK(req.ID, mcpToolResult(result))
 }
 
@@ -471,14 +479,14 @@ func mcpRevealPassword(s *Server, c *mcpCall) (any, string, error) {
 		Domain   string `json:"domain"`
 	}
 	_ = json.Unmarshal(c.Args, &a)
+	target := a.Username + "@" + a.Domain // audit target carries the account on every path
 	if a.Username == "" || a.Domain == "" {
-		return nil, "", fmt.Errorf("username and domain are required")
+		return nil, target, fmt.Errorf("username and domain are required")
 	}
 	id, err := s.resolveAuditID(a.AuditID)
 	if err != nil {
-		return nil, "", err
+		return nil, target, err
 	}
-	target := a.Username + "@" + a.Domain
 	acct, found := s.Store.FindByDomain(id, a.Username, a.Domain)
 	if !found {
 		return nil, target, fmt.Errorf("account not found: %s", target)
