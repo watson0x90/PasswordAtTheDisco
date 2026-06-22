@@ -16,16 +16,22 @@ export function RecalcControl({ hasScored }: { hasScored: boolean }) {
   const [err, setErr] = useState("")
   const phase = rescore?.phase
   const running = phase === "running"
+  const isLead = me?.role === "lead"
 
   // (Re)load the ingest history when the rescore phase changes (esp. -> done) so
   // the stamp updates right after a run completes, and when the active audit
-  // changes so the stamp never lingers from a previously-open audit. Background
-  // load: errors are swallowed like Dashboard's summary/report fetches.
+  // changes so the stamp never lingers from a previously-open audit. Gated on
+  // isLead: /api/ingests is lead-only, so polling it as an analyst would emit a
+  // 403 the browser logs as console noise (the component renders null for them
+  // anyway). Background load: errors are swallowed like Dashboard's fetches.
   useEffect(() => {
+    if (!isLead) return
     let alive = true
     api.ingests().then((evs) => { if (alive) setIngests(evs) }).catch(() => {})
     return () => { alive = false }
-  }, [phase, activeId])
+  }, [phase, activeId, isLead])
+
+  if (!isLead) return null
 
   if (me?.role !== "lead") return null
 
