@@ -354,6 +354,9 @@ func EscalateSharedWithDA(accts []Account) {
 		max := 10.0
 		a.ImpactScore = &max
 		a.ImpactKnown = true
+		if a.ScoreBreakdown != nil {
+			a.ScoreBreakdown.ImpactScore = max
+		}
 	}
 }
 
