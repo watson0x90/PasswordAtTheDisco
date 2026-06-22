@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest"
 import type { IngestEvent } from "./api"
-import { lastRecalculatedLabel, recalcDisabledReason, shouldSuggestReenrich } from "./rescoreUi"
+import {
+  lastRecalculatedLabel,
+  recalcDisabledReason,
+  recalcNudgeVisible,
+  shouldSuggestReenrich,
+} from "./rescoreUi"
 
 // Build a minimal "rescore" ingest event; only `kind` and `at` are read by the
 // helpers under test, so the rest are filled with throwaway values.
@@ -58,5 +63,20 @@ describe("recalcDisabledReason", () => {
   })
   it("allows a recalc when scored and idle", () => {
     expect(recalcDisabledReason({ hasScored: true, anyRunning: false })).toBe("")
+  })
+})
+
+describe("recalcNudgeVisible", () => {
+  it("is visible after a save when no rescore is running", () => {
+    expect(recalcNudgeVisible(true, false)).toBe(true)
+  })
+  it("is hidden before a save", () => {
+    expect(recalcNudgeVisible(false, false)).toBe(false)
+  })
+  it("is hidden while a rescore is running", () => {
+    expect(recalcNudgeVisible(true, true)).toBe(false)
+  })
+  it("is hidden when not saved and a rescore is running", () => {
+    expect(recalcNudgeVisible(false, true)).toBe(false)
   })
 })

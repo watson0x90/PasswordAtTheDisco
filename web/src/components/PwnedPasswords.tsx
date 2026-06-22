@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { api, ApiError, type PwnedStatus, type PwnedBuild, type PwnedProbe, type PwnedJob, type PwnedPhase } from "../api"
 import { useAuth } from "../auth"
 import { useJobs } from "../jobs"
 import { fmtBytes, fmtDuration } from "../format"
+import { RecalcNudge } from "./RecalcNudge"
 
 const isActive = (p?: PwnedPhase) => p === "downloading" || p === "indexing"
 
@@ -35,6 +36,20 @@ export function PwnedPasswords() {
   // When the shared job transitions to a terminal/idle phase, refresh the corpus status panel.
   useEffect(() => {
     if (job && (job.phase === "done" || job.phase === "idle")) void loadStatus()
+  }, [job?.phase])
+
+  // Track the running->done transition locally so the recalc nudge shows only for a
+  // rebuild completed in THIS page session. Binding directly to job.phase==="done"
+  // would re-show the nudge on every re-entry (the server reports "done" until the
+  // next job), nagging a lead who has already recalculated. prevPhase seeds from the
+  // current phase so mounting on a stale "done" is not treated as a fresh completion.
+  const prevPhase = useRef<PwnedPhase | undefined>(job?.phase)
+  const [justRebuilt, setJustRebuilt] = useState(false)
+  useEffect(() => {
+    const p = job?.phase
+    if (isActive(prevPhase.current) && (p === "done" || p === "idle")) setJustRebuilt(true)
+    if (isActive(p)) setJustRebuilt(false)
+    prevPhase.current = p
   }, [job?.phase])
 
   async function doBuild() {
@@ -220,6 +235,7 @@ export function PwnedPasswords() {
         </div>
 
         {job && job.phase !== "idle" && <JobView job={job} />}
+        <RecalcNudge saved={justRebuilt} />
       </div>
     </div>
   )

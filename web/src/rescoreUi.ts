@@ -29,3 +29,11 @@ export function recalcDisabledReason(opts: { hasScored: boolean; anyRunning: boo
   if (opts.anyRunning) return "Another job is running — wait for it to finish"
   return ""
 }
+
+// recalcNudgeVisible decides whether to show the "recalculate to apply" nudge
+// after a scoring-input change (policy/wordlist/HIBP). Visible only after a
+// successful save/rebuild, and suppressed while a rescore is already running
+// (the RecalcControl/JobPill already surface that).
+export function recalcNudgeVisible(saved: boolean, rescoreRunning: boolean): boolean {
+  return saved && !rescoreRunning
+}
