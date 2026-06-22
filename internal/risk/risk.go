@@ -128,7 +128,7 @@ func Score(a Analysis, c Context) Result {
 			ImpactScore:       imp,
 			PrivilegeSubScore: privilegeSubScore(c.ControlledObjects, c.ControlsTier0),
 			DAComponent:       daComponent(c.DADomains),
-			DomainModifier:    domainModifier(c.DomainRiskLevel),
+			DomainModifier:    math.Max(privilegeSubScore(c.ControlledObjects, c.ControlsTier0), daComponent(c.DADomains)) * (domainFactor(c.DomainRiskLevel) - 1.0),
 			EnabledGated:      known && !c.Enabled,
 		},
 	}
@@ -368,16 +368,19 @@ func daComponent(daDomains []string) float64 {
 	return 0
 }
 
-func domainModifier(level string) float64 {
+// domainFactor scales Impact by the domain's environmental criticality. Multiplicative
+// (matches the operator-facing "1.1x/1.2x/1.3x" labels); applied to Impact only so the
+// Exposure axis stays credential-intrinsic.
+func domainFactor(level string) float64 {
 	switch level {
 	case "Critical":
-		return 1.0
+		return 1.3
 	case "High":
-		return 0.6
+		return 1.2
 	case "Medium":
-		return 0.3
+		return 1.1
 	default:
-		return 0
+		return 1.0
 	}
 }
 
@@ -390,7 +393,7 @@ func impactScore(c Context) (score float64, known bool) {
 	}
 	priv := privilegeSubScore(c.ControlledObjects, c.ControlsTier0)
 	da := daComponent(c.DADomains)
-	imp := math.Min(10.0, math.Max(priv, da)+domainModifier(c.DomainRiskLevel))
+	imp := math.Min(10.0, math.Max(priv, da)*domainFactor(c.DomainRiskLevel))
 	if !c.Enabled {
 		imp = math.Min(imp, 2.0) // disabled can't authenticate
 	}
@@ -412,7 +415,7 @@ func Vector(a Analysis, c Context) string {
 		"T0:" + tier0Code(c),
 		"S:" + shareCode(c.SharedWith),
 		"RO:" + roastableCode(c),
-		"DR:" + domainCode(c.DomainRiskLevel),
+		"DR:" + domainCode(c),
 		"HIBP:" + hibpCode(c.HIBPBreachCount),
 		"EXP:" + axisCode(exposureScore(a, c)),
 		"IMP:" + impactCode(c),
@@ -615,8 +618,11 @@ func roastableCode(c Context) string {
 	}
 }
 
-func domainCode(level string) string {
-	switch level {
+func domainCode(c Context) string {
+	if c.Coverage == "none" {
+		return "U" // domain risk does nothing while Impact is Unknown -- don't assert a contribution
+	}
+	switch c.DomainRiskLevel {
 	case "Critical":
 		return "C"
 	case "High":

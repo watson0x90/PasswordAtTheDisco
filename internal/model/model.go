@@ -340,7 +340,7 @@ func EscalateSharedWithDA(accts []Account) {
 			a.RiskLevel = "Critical"
 		}
 		if a.RiskScore < 9.0 {
-			a.RiskScore = 9.0
+			a.RiskScore = 9.0 // display/back-compat floor; triage percentile is driven by the composite key, not RiskScore
 		}
 		if !strings.Contains(a.RiskVector, "SHARED-DA") {
 			a.RiskVector += "/SHARED-DA"
@@ -360,14 +360,56 @@ func EscalateSharedWithDA(accts []Account) {
 	}
 }
 
+// triageKey is the level-first sort key for the triage percentile: rank by Level
+// severity first (Critical>High>Medium>Low), then an Impact-weighted scalar within a
+// level. Guarantees the percentile never contradicts the Level badge.
+func triageKey(a Account) (levelRank int, scalar float64) {
+	switch a.RiskLevel {
+	case "Critical":
+		levelRank = 4
+	case "High":
+		levelRank = 3
+	case "Medium":
+		levelRank = 2
+	case "Low":
+		levelRank = 1
+	default:
+		levelRank = 0
+	}
+	if a.ImpactKnown && a.ImpactScore != nil {
+		scalar = 0.4*a.ExposureScore + 0.6*(*a.ImpactScore)
+	} else {
+		scalar = a.ExposureScore
+	}
+	return levelRank, scalar
+}
+
+func triageLess(a, b Account) bool {
+	la, sa := triageKey(a)
+	lb, sb := triageKey(b)
+	if la != lb {
+		return la < lb
+	}
+	return sa < sb
+}
+
+func triageEqual(a, b Account) bool {
+	la, sa := triageKey(a)
+	lb, sb := triageKey(b)
+	return la == lb && sa == sb
+}
+
 // ComputePercentiles assigns each account a within-audit triage percentile in [0,1]
-// from its RiskScore (ties share a rank), so a large block of same-Level accounts
-// still yields a strict order. A SORT KEY, not a displayed score. Idempotent: it
-// depends only on RiskScore, never on a prior Percentile. Empty/one-account sets get 0.
+// ranked level-first (Critical>High>Medium>Low) then by an Impact-weighted scalar
+// within each level (ties share a rank), so the percentile can never contradict the
+// Level badge. A SORT KEY, not a displayed score. RiskScore is display/back-compat
+// only and no longer drives triage. Idempotent: depends only on RiskLevel,
+// ExposureScore, ImpactScore/ImpactKnown, never on a prior Percentile.
+// Empty/one-account sets get 0.
 //
-// O(n log n): collect (score, index), sort by score, then walk assigning each run of
-// equal scores a rank = number of accounts with a strictly lower score, advancing the
-// rank past each run so ties share it. Percentile = rank/(n-1).
+// O(n log n): sort by composite key, then walk assigning each run of equal keys a
+// rank = number of accounts with a strictly lower key, advancing the rank past each
+// run so ties share it. Percentile = rank/(n-1).
 func ComputePercentiles(accts []Account) {
 	n := len(accts)
 	if n == 0 {
@@ -377,29 +419,22 @@ func ComputePercentiles(accts []Account) {
 		accts[0].Percentile = 0
 		return
 	}
-	type sc struct {
-		score float64
-		idx   int
-	}
-	order := make([]sc, n)
-	for i := range accts {
-		order[i] = sc{score: accts[i].RiskScore, idx: i}
+	order := make([]int, n)
+	for i := range order {
+		order[i] = i
 	}
 	sort.SliceStable(order, func(i, j int) bool {
-		return order[i].score < order[j].score
+		return triageLess(accts[order[i]], accts[order[j]])
 	})
 	denom := float64(n - 1)
-	// Walk ascending: each run of equal scores shares rank = #strictly-lower scores,
-	// which equals the index of the first element in the run.
 	for i := 0; i < n; {
 		j := i
-		for j < n && order[j].score == order[i].score {
+		for j < n && triageEqual(accts[order[j]], accts[order[i]]) {
 			j++
 		}
-		rank := float64(i) // count of strictly-lower scores
-		p := rank / denom
+		p := float64(i) / denom
 		for k := i; k < j; k++ {
-			accts[order[k].idx].Percentile = p
+			accts[order[k]].Percentile = p
 		}
 		i = j
 	}

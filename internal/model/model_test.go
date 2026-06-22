@@ -212,19 +212,30 @@ func TestEscalateSharedWithDASyncsBreakdownImpact(t *testing.T) {
 }
 
 func TestComputePercentiles(t *testing.T) {
-	mk := func(score float64) Account { return Account{RiskScore: score} }
-	accts := []Account{mk(2), mk(5), mk(8), mk(8)} // ties share rank
+	// Fixtures now carry RiskLevel + ExposureScore so the composite triage key is
+	// meaningful (level-first, then Exposure as the scalar when ImpactKnown=false).
+	// RiskScore is kept for display/back-compat but no longer drives triage rank.
+	//   accts[0]: Low   / Exposure 2  -> levelRank 1, scalar 2  -> lowest
+	//   accts[1]: Medium/ Exposure 5  -> levelRank 2, scalar 5  -> middle
+	//   accts[2]: High  / Exposure 8  -> levelRank 3, scalar 8  -> tied-highest
+	//   accts[3]: High  / Exposure 8  -> levelRank 3, scalar 8  -> tied-highest
+	mk := func(level string, exp float64) Account {
+		return Account{RiskLevel: level, ExposureScore: exp}
+	}
+	accts := []Account{mk("Low", 2), mk("Medium", 5), mk("High", 8), mk("High", 8)}
 	ComputePercentiles(accts)
-	// Lowest score -> lowest percentile; highest -> ~1.0. Strictly ordered, [0,1].
+	// All percentiles in [0,1].
 	for i := range accts {
 		if accts[i].Percentile < 0 || accts[i].Percentile > 1 {
 			t.Fatalf("percentile out of range: %v", accts[i].Percentile)
 		}
 	}
+	// Level-first order: Low < Medium < High (strictly).
 	if !(accts[0].Percentile < accts[1].Percentile && accts[1].Percentile < accts[2].Percentile) {
-		t.Fatalf("percentiles must be monotonic with score: %v", []float64{
+		t.Fatalf("percentiles must be monotonic with composite key: %v", []float64{
 			accts[0].Percentile, accts[1].Percentile, accts[2].Percentile})
 	}
+	// Ties share a percentile (both High/Exposure=8).
 	if accts[2].Percentile != accts[3].Percentile {
 		t.Fatalf("ties must share a percentile: %v vs %v", accts[2].Percentile, accts[3].Percentile)
 	}
@@ -233,6 +244,28 @@ func TestComputePercentiles(t *testing.T) {
 	ComputePercentiles(accts)
 	if accts[2].Percentile != first {
 		t.Fatal("ComputePercentiles must be idempotent")
+	}
+}
+
+func TestComputePercentilesLevelFirst(t *testing.T) {
+	f := func(v float64) *float64 { return &v }
+	high := Account{Username: "svc", RiskLevel: "High", ExposureScore: 5, ImpactScore: f(9), ImpactKnown: true}
+	lowNoise := Account{Username: "dis", RiskLevel: "Low", ExposureScore: 9, ImpactScore: f(2), ImpactKnown: true}
+	esc := Account{Username: "esc", RiskLevel: "Critical", ExposureScore: 1, ImpactScore: f(10), ImpactKnown: true, EscalatedBySharedDA: true}
+	accts := []Account{lowNoise, high, esc}
+	ComputePercentiles(accts)
+	p := map[string]float64{}
+	for _, a := range accts {
+		p[a.Username] = a.Percentile
+	}
+	if !(p["esc"] > p["svc"] && p["svc"] > p["dis"]) {
+		t.Fatalf("level-first violated: esc=%v svc=%v dis=%v", p["esc"], p["svc"], p["dis"])
+	}
+	if p["dis"] != 0 {
+		t.Fatalf("disabled-noise should rank lowest, got %v", p["dis"])
+	}
+	if p["esc"] != 1 {
+		t.Fatalf("escalated Critical should rank highest, got %v", p["esc"])
 	}
 }
 

@@ -184,15 +184,34 @@ func TestImpactUnknown(t *testing.T) {
 }
 
 func TestImpactDomainModifier(t *testing.T) {
-	// privilege 5 (count 11..50) + Critical domain (+1.0) = 6.0.
+	// privilege 5 (count 11..50) * Critical factor (1.3) = 6.5.
 	got, _ := impactScore(Context{Coverage: "full", Enabled: true, ControlledObjects: ip(20), DomainRiskLevel: "Critical"})
-	if !almost(got, 6.0) {
-		t.Fatalf("priv5 + Critical domain = %v, want 6.0", got)
+	if !almost(got, 6.5) {
+		t.Fatalf("priv5 * Critical domain = %v, want 6.5", got)
 	}
-	// DA path 10 + Critical modifier clamps at 10 (not 11).
+	// High factor (1.2): 5 * 1.2 = 6.0.
+	got, _ = impactScore(Context{Coverage: "full", Enabled: true, ControlledObjects: ip(20), DomainRiskLevel: "High"})
+	if !almost(got, 6.0) {
+		t.Fatalf("priv5 * High domain = %v, want 6.0", got)
+	}
+	// Medium factor (1.1): 5 * 1.1 = 5.5.
+	got, _ = impactScore(Context{Coverage: "full", Enabled: true, ControlledObjects: ip(20), DomainRiskLevel: "Medium"})
+	if !almost(got, 5.5) {
+		t.Fatalf("priv5 * Medium domain = %v, want 5.5", got)
+	}
+	// Normal/other factor (1.0): 5 * 1.0 = 5.0.
+	got, _ = impactScore(Context{Coverage: "full", Enabled: true, ControlledObjects: ip(20)})
+	if !almost(got, 5.0) {
+		t.Fatalf("priv5 * Normal domain = %v, want 5.0", got)
+	}
+	// DA path 10 * Critical factor (1.3) saturates at 10 (not 13).
 	got, _ = impactScore(Context{Coverage: "full", Enabled: true, DADomains: []string{"CORP"}, DomainRiskLevel: "Critical"})
 	if !almost(got, 10.0) {
-		t.Fatalf("DA + domain clamp = %v, want 10", got)
+		t.Fatalf("DA * domain clamp = %v, want 10", got)
+	}
+	// Unenriched (Coverage "none") -> Impact still Unknown.
+	if _, known := impactScore(Context{Coverage: "none", DomainRiskLevel: "Critical"}); known {
+		t.Fatalf("unenriched impact must be Unknown, got known=true")
 	}
 }
 
@@ -266,13 +285,13 @@ func TestScoreDAHardOverride(t *testing.T) {
 func TestVectorV2(t *testing.T) {
 	got := Vector(strong(), Context{Cracked: true, Coverage: "none", PasswordExpires: "Unknown"})
 	// EXP: strong cracked exposure=3.0 -> Low tier 'L'; IMP:U (unknown).
+	// DR:U because Coverage=="none" -> domain risk does nothing while Impact is Unknown.
 	if want := "C:C1/L:VL/D:N/SM:N/CM:U/EX:U/DA:N/CO:U/T0:N/S:0/RO:N/DR:U/HIBP:N/EXP:L/IMP:U"; got != want {
 		t.Errorf("v2 strong vector = %q, want %q", got, want)
 	}
 	// Enriched privileged: CO from real count, IMP tier present.
-	// count 101 -> privilegeSubScore 7, + Critical domain modifier (+1.0) = Impact 8.0
-	// -> tier Critical 'C' (the plan's literal "IMP:H" predated the domain modifier;
-	// derived from the real impactScore here).
+	// count 101 -> privilegeSubScore 7, * Critical domain factor (1.3) = Impact min(10,9.1)=9.1
+	// -> tier Critical 'C' (>=8). DR:C because Coverage is "full".
 	got = Vector(strong(), Context{Cracked: true, Coverage: "full", Enabled: true, ControlledObjects: ip(101),
 		DomainRiskLevel: "Critical", PasswordExpires: "Unknown"})
 	if want := "C:C1/L:VL/D:N/SM:N/CM:U/EX:U/DA:N/CO:H/T0:N/S:0/RO:N/DR:C/HIBP:N/EXP:L/IMP:C"; got != want {

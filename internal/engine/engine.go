@@ -53,7 +53,7 @@ type Enricher interface {
 
 // Engine holds the pipeline's dependencies. HIBP and Enricher are optional.
 type Engine struct {
-	HIBP     HIBPLookup // guarded by hibpMu for hot-swap; read via hibpCount
+	HIBP     HIBPLookup // guarded by hibpMu for hot-swap; read via freshHIBP
 	hibpMu   sync.RWMutex
 	Enricher Enricher // guarded by encMu for hot-swap; read via enrich
 	encMu    sync.RWMutex
@@ -234,7 +234,7 @@ func (e *Engine) rescoreWith(accts []model.Account, enr Enricher) []model.Accoun
 	for _, dom := range order {
 		var cracked, uncracked []secretsdump.ParsedAccount
 		for _, a := range byDomain[dom] {
-			pa := secretsdump.ParsedAccount{Username: a.Username, Domain: a.Domain, Hash: a.NTHash, Password: a.Password, Cracked: a.Password != ""}
+			pa := secretsdump.ParsedAccount{Username: a.Username, Domain: a.Domain, Hash: a.NTHash, Password: a.Password, Cracked: a.Password != "", HIBPBreachCount: a.HIBPBreachCount}
 			if pa.Cracked {
 				cracked = append(cracked, pa)
 			} else {
@@ -286,7 +286,10 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 		peersCache[pw] = peers
 	}
 
-	count := e.hibpCount(a.Hash)
+	count, ok := e.freshHIBP(a.Hash)
+	if !ok && a.HIBPBreachCount > 0 {
+		count = a.HIBPBreachCount // preserve the stored breach floor when HIBP is unavailable
+	}
 	enrData := enrichVia(enr, a.Username, domain)
 
 	daysOOC := daysOutOfCompliance(enrData.PwdLastSet, now, pol.MaxPasswordAgeDays)
@@ -399,7 +402,10 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 // when available so DA pathways, controlled objects, and account properties are
 // captured even for uncracked accounts (their hash may be in HIBP or shared with a DA).
 func (e *Engine) scoreUncracked(domain string, a secretsdump.ParsedAccount, sharedWith int, now time.Time, enr Enricher) model.Account {
-	count := e.hibpCount(a.Hash)
+	count, ok := e.freshHIBP(a.Hash)
+	if !ok && a.HIBPBreachCount > 0 {
+		count = a.HIBPBreachCount // preserve the stored breach floor when HIBP is unavailable
+	}
 	enrData := enrichVia(enr, a.Username, domain)
 	pol := e.Policies.For(domain)
 	rctx := risk.Context{
@@ -472,17 +478,28 @@ func (e *Engine) scoreUncracked(domain string, a secretsdump.ParsedAccount, shar
 	}
 }
 
-func (e *Engine) hibpCount(ntlm string) int {
+// freshHIBP returns a fresh breach count with ok=true when the index answered
+// (including a genuine 0), or ok=false when no fresh count could be obtained
+// (index unloaded or a lookup error) -- so callers can distinguish "unknown"
+// from "known zero".
+func (e *Engine) freshHIBP(ntlm string) (count int, ok bool) {
 	e.hibpMu.RLock()
 	h := e.HIBP
 	e.hibpMu.RUnlock()
 	if h == nil {
-		return 0
+		return 0, false
 	}
 	if _, c, err := h.LookupHash(ntlm); err == nil {
-		return c
+		return c, true
 	}
-	return 0
+	return 0, false
+}
+
+// hibpCount is a thin wrapper for callers that don't need to distinguish
+// "index unavailable" from "known zero".
+func (e *Engine) hibpCount(ntlm string) int {
+	c, _ := e.freshHIBP(ntlm)
+	return c
 }
 
 // enrichVia fetches enrichment from enr; returns an empty Enrichment if enr is nil.
