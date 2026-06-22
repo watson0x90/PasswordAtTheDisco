@@ -444,3 +444,35 @@ func TestAxisFieldsPopulated(t *testing.T) {
 		t.Fatalf("breakdown PrivilegeSubScore wrong: %+v", a.ScoreBreakdown)
 	}
 }
+
+func TestRescorePreservesHIBPWhenIndexUnavailable(t *testing.T) {
+	// Build a bare engine with no HIBP index attached (HIBP == nil).
+	eng := &Engine{
+		Lists: pwanalysis.Lists{
+			ForbiddenWords:   pwanalysis.NewSet(),
+			KeyboardPatterns: pwanalysis.NewSet(),
+			CommonPasswords:  pwanalysis.NewSet(),
+			DictionaryWords:  pwanalysis.NewSet(),
+		},
+		Policies: policy.DefaultSet(),
+		Now:      func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
+	}
+	// HIBP is nil (zero value of *Engine); verify that explicitly.
+	if eng.HIBP != nil {
+		t.Fatal("fixture setup error: HIBP must be nil for this test")
+	}
+	in := []model.Account{{
+		Username: "bob", Domain: "CORP", NTHash: "ABCD", Password: "password1", Cracked: true,
+		HIBPBreached: true, HIBPBreachCount: 5000, ExposureScore: 9,
+	}}
+	out := eng.RescoreWith(in, nil)
+	if len(out) != 1 {
+		t.Fatalf("want 1 account, got %d", len(out))
+	}
+	if out[0].HIBPBreachCount != 5000 {
+		t.Fatalf("rescore zeroed the breach count when HIBP unavailable: got %d", out[0].HIBPBreachCount)
+	}
+	if !out[0].HIBPBreached {
+		t.Fatalf("HIBPBreached should remain true (floor preserved)")
+	}
+}

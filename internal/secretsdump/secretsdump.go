@@ -21,11 +21,12 @@ import (
 
 // ParsedAccount is one account parsed from a dump file.
 type ParsedAccount struct {
-	Username string
-	Domain   string
-	Hash     string // NTLM hash (field index 3 in secretsdump format)
-	Password string // cleartext; non-empty only for cracked accounts
-	Cracked  bool
+	Username        string
+	Domain          string
+	Hash            string // NTLM hash (field index 3 in secretsdump format)
+	Password        string // cleartext; non-empty only for cracked accounts
+	Cracked         bool
+	HIBPBreachCount int // prior stored breach count; set only by the rescore reconstruction, used as a fallback when the HIBP index is unavailable
 }
 
 // ParseCracked parses cracked-password lines for domain. Per line:
