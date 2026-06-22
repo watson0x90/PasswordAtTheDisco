@@ -212,3 +212,30 @@ func TestComputePercentiles(t *testing.T) {
 		t.Fatal("ComputePercentiles must be idempotent")
 	}
 }
+
+func TestUnicodeAndPolicyViolationsRoundTripAndSurviveRedaction(t *testing.T) {
+	a := Account{
+		Username: "u", Domain: "CORP",
+		Password: "s3cret", NTHash: "ABCD",
+		ContainsUnicode:  true,
+		PolicyViolations: []string{"No uppercase", "Length < 14"},
+	}
+	b, err := json.Marshal(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got Account
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.ContainsUnicode || len(got.PolicyViolations) != 2 || got.PolicyViolations[0] != "No uppercase" {
+		t.Fatalf("lost on round-trip: %+v", got)
+	}
+	red := a.Redacted()
+	if !red.ContainsUnicode || len(red.PolicyViolations) != 2 {
+		t.Fatalf("ContainsUnicode/PolicyViolations must survive Redacted() (non-secret descriptors)")
+	}
+	if red.Password != "" || red.NTHash != "" {
+		t.Fatalf("Redacted() must still strip Password/NTHash")
+	}
+}

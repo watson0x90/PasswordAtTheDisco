@@ -360,6 +360,8 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 		KeyboardPatternCount: len(an.KeyboardPatterns),
 		BannedWords:          an.BannedWords,
 		KeyboardPatterns:     an.KeyboardPatterns,
+		ContainsUnicode:      an.ContainsUnicode,
+		PolicyViolations:     an.PolicyViolations,
 		// Temporal/privilege signals for the UI
 		PwdLastSet:          pwdLastSet,
 		PwdNeverExpires:     enrData.PwdNeverExpires,
