@@ -25,6 +25,7 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/pwanalysis"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/rescore"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/store"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/vault"
 )
@@ -1704,5 +1705,108 @@ func TestRevealDomainAware(t *testing.T) {
 	}
 	if strings.Contains(al2, "u@CORP@CORP") {
 		t.Errorf("audit target double-appended domain: %s", al2)
+	}
+}
+
+// --- Re-scoring job endpoints (Task 5) ---
+
+func TestRescoreStartRequiresLead(t *testing.T) {
+	srv := newServer("secret")
+	srv.Engine = &engine.Engine{Policies: policy.DefaultSet()}
+	srv.Rescore = rescore.NewManager(srv.Engine, srv.Store)
+	// Lead creates+opens an audit; analyst then attempts to start a rescore.
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	createAudit(t, srv, lc, lcsrf, "Rescore Lead Gate")
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	r := postJSON(srv, "/api/rescore", ac, acsrf, "")
+	if r.Code != http.StatusForbidden {
+		t.Fatalf("analyst POST /api/rescore: want 403, got %d (%s)", r.Code, r.Body.String())
+	}
+}
+
+func TestRescoreStartNoAudit(t *testing.T) {
+	srv := newServer("secret")
+	srv.Engine = &engine.Engine{Policies: policy.DefaultSet()}
+	srv.Rescore = rescore.NewManager(srv.Engine, srv.Store)
+	// Lead logged in but no audit created/opened -> activeAudit writes 409.
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	r := postJSON(srv, "/api/rescore", lc, lcsrf, "")
+	if r.Code != http.StatusConflict {
+		t.Fatalf("no audit POST /api/rescore: want 409, got %d (%s)", r.Code, r.Body.String())
+	}
+	if !strings.Contains(r.Body.String(), "no audit selected") {
+		t.Fatalf("expected 'no audit selected', got: %s", r.Body.String())
+	}
+}
+
+func TestRescoreStart409WhenEnrichRunning(t *testing.T) {
+	srv := newServer("secret")
+	srv.Engine = &engine.Engine{Policies: policy.DefaultSet()}
+	srv.Rescore = rescore.NewManager(srv.Engine, srv.Store)
+	srv.Enrich = enrich.NewManager(srv.Engine, srv.Store)
+	gate := make(chan struct{})
+	srv.Enrich.ActivityHook = func() func() {
+		<-gate
+		return func() {}
+	}
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	auditID := createAudit(t, srv, lc, lcsrf, "Rescore vs Enrich")
+
+	// Start enrich; its ActivityHook blocks on the gate so Running() stays true.
+	if err := srv.Enrich.Start(auditID); err != nil {
+		t.Fatalf("enrich start: %v", err)
+	}
+	if !srv.Enrich.Running() {
+		t.Fatal("expected enrich to be running after Start")
+	}
+
+	r := postJSON(srv, "/api/rescore", lc, lcsrf, "")
+	if r.Code != http.StatusConflict {
+		t.Fatalf("rescore while enrich running: want 409, got %d (%s)", r.Code, r.Body.String())
+	}
+	if !strings.Contains(r.Body.String(), "enrichment in progress") {
+		t.Fatalf("expected 'enrichment in progress' error, got: %s", r.Body.String())
+	}
+
+	// Release the gate and drain the enrich goroutine to avoid a leak.
+	close(gate)
+	srv.Enrich.Wait()
+}
+
+func TestRescoreStartHappyPath(t *testing.T) {
+	srv := newServer("secret")
+	srv.Engine = &engine.Engine{Policies: policy.DefaultSet()}
+	srv.Rescore = rescore.NewManager(srv.Engine, srv.Store)
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	auditID := createAudit(t, srv, lc, lcsrf, "Rescore Happy")
+	if err := srv.Store.ReplaceDomain(auditID, "CORP", []model.Account{
+		{Username: "a", Domain: "CORP", Coverage: "none"},
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	r := postJSON(srv, "/api/rescore", lc, lcsrf, "")
+	if r.Code != http.StatusOK {
+		t.Fatalf("POST /api/rescore: want 200, got %d (%s)", r.Code, r.Body.String())
+	}
+	srv.Rescore.Wait()
+
+	job := sendJSON(srv, "GET", "/api/rescore/job", lc, lcsrf, "")
+	if job.Code != http.StatusOK {
+		t.Fatalf("GET /api/rescore/job: want 200, got %d (%s)", job.Code, job.Body.String())
+	}
+	if !strings.Contains(job.Body.String(), `"phase":"done"`) {
+		t.Fatalf("expected phase done, got: %s", job.Body.String())
+	}
+}
+
+func TestRescoreJobRequiresLead(t *testing.T) {
+	srv := newServer("secret")
+	srv.Engine = &engine.Engine{Policies: policy.DefaultSet()}
+	srv.Rescore = rescore.NewManager(srv.Engine, srv.Store)
+	ac, _ := loginCSRF(t, srv, "analyst", "analystpw")
+	r := sendJSON(srv, "GET", "/api/rescore/job", ac, "", "")
+	if r.Code != http.StatusForbidden {
+		t.Fatalf("analyst GET /api/rescore/job: want 403, got %d (%s)", r.Code, r.Body.String())
 	}
 }
