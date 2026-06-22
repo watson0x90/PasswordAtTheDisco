@@ -182,3 +182,27 @@ func TestListAndSearchAccounts(t *testing.T) {
 		t.Fatalf("empty query must be a tool error: %s", bad.Body.String())
 	}
 }
+
+// TestListAccountsPagination walks the cursor across two pages (limit 1 over 2 accounts)
+// and asserts the pages are disjoint and the last page has no next_cursor.
+func TestListAccountsPagination(t *testing.T) {
+	s, analyst, _ := mcpToolServer(t)
+	seedMCPStore(t, s) // 2 accounts; tied risk_score -> username tiebreaker => alice, then bob
+	p1 := toolText(t, rpc(t, s, analyst, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_accounts","arguments":{"limit":1}}}`))
+	if !strings.Contains(p1, `"total":2`) || !strings.Contains(p1, `"next_cursor":"1"`) {
+		t.Fatalf("page 1 wants total:2 + next_cursor:1: %s", p1)
+	}
+	p2 := toolText(t, rpc(t, s, analyst, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_accounts","arguments":{"limit":1,"cursor":"1"}}}`))
+	if strings.Contains(p2, "next_cursor") {
+		t.Fatalf("page 2 (last) must have no next_cursor: %s", p2)
+	}
+	// disjoint: exactly one page contains alice
+	if strings.Contains(p1, "alice") == strings.Contains(p2, "alice") {
+		t.Fatalf("pages must be disjoint: p1=%s p2=%s", p1, p2)
+	}
+	// a non-numeric cursor must not panic and is treated as offset 0 (first page)
+	bad := rpc(t, s, analyst, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_accounts","arguments":{"limit":1,"cursor":"garbage"}}}`)
+	if strings.Contains(bad.Body.String(), "isError") {
+		t.Fatalf("garbage cursor must be tolerated, not error: %s", bad.Body.String())
+	}
+}

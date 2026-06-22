@@ -332,7 +332,13 @@ func mcpListAccounts(s *Server, c *mcpCall) (any, string, error) {
 	case "username":
 		sort.Slice(out, func(i, j int) bool { return out[i].Username < out[j].Username })
 	default:
-		sort.Slice(out, func(i, j int) bool { return out[i].RiskScore > out[j].RiskScore })
+		// username tiebreaker keeps pagination stable across pages when scores tie.
+		sort.Slice(out, func(i, j int) bool {
+			if out[i].RiskScore != out[j].RiskScore {
+				return out[i].RiskScore > out[j].RiskScore
+			}
+			return out[i].Username < out[j].Username
+		})
 	}
 	total := len(out)
 	limit := a.Limit
