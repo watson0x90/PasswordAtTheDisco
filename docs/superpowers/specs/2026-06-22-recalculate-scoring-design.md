@@ -9,9 +9,11 @@ active audit using the *current* policy + wordlists + HIBP data — so config or
 changes actually propagate to existing accounts — **without re-fetching BloodHound**, and
 then nudges the operator to re-run BloodHound enrichment to refresh the Impact side.
 
-**Problem it solves:** Editing a password policy or the forbidden-words list updates the
-config but leaves every already-scored account stale; there is no way to re-score short of
-re-uploading the dump.
+**Problem it solves:** Editing a password policy or the forbidden-words list — or
+rebuilding the HIBP corpus — updates the inputs but leaves every already-scored account
+stale; there is no way to re-score short of re-uploading the dump. (`scoreCracked`/
+`scoreUncracked` read the *current* policy, wordlists, and the hot-swappable HIBP index, so
+a recalc refreshes Exposure for all three.)
 
 ---
 
@@ -45,6 +47,15 @@ re-uploading the dump.
 **Out of scope:** the unenriched-accounts tab (B); any change to how BloodHound
 enrichment itself runs; auto-recalc on every config edit (recalc stays an explicit action).
 
+**Noted debt (deliberately deferred, not addressed in A):**
+- **Job-manager duplication.** `pwned.Manager` / `enrich.Manager` / (new) `rescore.Manager`
+  are three near-identical job scaffolds. A *adds* the third rather than extracting a shared
+  runner, because refactoring two pieces of working code is scope-creep + risk for this
+  enhancement. Extract a shared job-runner the next time these are genuinely touched.
+- **Persistent staleness indicator.** The change-nudges catch the save/rebuild moment, but
+  there's no lasting "config changed since last calculated" banner if the operator navigates
+  away. A future enhancement; the nudges + Recalculate button cover the core need.
+
 ---
 
 ## 3. Architecture
@@ -71,14 +82,17 @@ is unchanged; Exposure (and Level/percentile/sharing) reflect the new config/dat
 Location: the stored enricher lives in `internal/rescore` (the new package, §3.3) since it
 is rescore-specific; it depends only on `engine` + `model`.
 
-### 3.2 `ControlsTier0` persistence
-`ControlsTier0` (a Tier-0 control Impact signal) currently flows enrichment → `risk.Context`
-but is **not** persisted on `model.Account`, so a rebuild-from-stored would drop it. A adds
-`ControlsTier0 bool` to `model.Account` (JSON `controls_tier0,omitempty`), and the engine's
-`scoreCracked`/`scoreUncracked` set it from `enrData.ControlsTier0` (the same place they set
-the other enrichment fields). Pre-existing audits lack it until their next Enrich — which is
-exactly the re-enrich the recalc already suggests. It is redaction-safe (a boolean signal,
-not a credential) and must survive `Account.Redacted()`.
+### 3.2 `ControlsTier0` persistence — also fixes a latent bug
+`ControlsTier0` (a Tier-0 control Impact signal) is built into the `risk.Context` for
+scoring but is **never written to `model.Account`** today. This is a pre-existing **latent
+bug**, not just a rescore concern: the Tier-0 signal is silently lost whenever an account is
+reloaded from the store (any reload, not only rescore), so it can't be inspected, exported,
+or re-derived without re-running BloodHound. A adds `ControlsTier0 bool` to `model.Account`
+(JSON `controls_tier0,omitempty`); `scoreCracked`/`scoreUncracked` set it from
+`enrData.ControlsTier0` (the same place they set the other enrichment fields), and it must
+survive `Account.Redacted()` (a boolean signal, not a credential). This repairs the round-trip
+for **all** paths and lets the stored enricher preserve Impact faithfully. Pre-existing audits
+gain it on their next Enrich — exactly the re-enrich the recalc already suggests.
 
 ### 3.3 `rescore.Manager` (background job)
 A new `internal/rescore` package with a `Manager` that mirrors `internal/enrich`'s job
@@ -102,9 +116,18 @@ exposed on `httpapi.Server` as `Rescore *rescore.Manager` (may be nil).
 ### 3.4 Endpoints (mirror `/api/enrich`)
 | Method & path | Auth | Behaviour |
 |---|---|---|
-| `POST /api/rescore` | `requireAuth` + `requireCSRF` + `requireUnlocked`, **lead** | start the job for the session's active audit; 409 if one is already running; audited. |
+| `POST /api/rescore` | `requireAuth` + `requireCSRF` + `requireUnlocked`, **lead** | start the job for the session's active audit; **409 if a rescore OR an Enrich job is already running on that audit** (both rewrite the audit — see §3.5); audited. |
 | `GET /api/rescore/job` | `requireAuth` | the `JobStatus` snapshot the UI polls. |
 | `POST /api/rescore/cancel` | `requireAuth` + `requireCSRF`, **lead** | cancel a running job. |
+
+### 3.5 Coordination with Enrich
+Both rescore and Enrich `Mutate` the same audit. The store's per-audit lock prevents
+*corruption*, but running them together is logically wrong — a rescore reads the very
+enrichment an Enrich job is mid-rewriting. So `POST /api/rescore` refuses with **409** if the
+`enrich.Manager` reports a running job (add a small `Running() bool` to `enrich.Manager` if it
+isn't already exposed), and symmetrically `enrich.Manager.Start` already refuses if its own job
+runs. The UI disables the Recalculate action while an Enrich job is running (and vice versa) so
+the operator never kicks off both at once.
 
 ---
 
@@ -116,9 +139,10 @@ exposed on `httpapi.Server` as `Rescore *rescore.Manager` (may be nil).
   note when no audit is active or the store is locked.
 - **`JobsProvider`** (the existing lead-only background-job poller) gains the rescore job
   alongside enrich/pwned, so progress is reflected app-wide.
-- **Editor nudges:** after a successful save on **Policies** and **Forbidden-words**, show
-  "Saved — *recalculate scoring* to apply this to existing accounts," with a button that
-  starts the job. (Editing config no longer silently leaves stale scores.)
+- **Change nudges:** after a successful save on **Policies** and **Forbidden-words**, and
+  after a **HIBP corpus rebuild** completes (the HIBP page), show "Updated — *recalculate
+  scoring* to apply this to existing accounts," with a button that starts the job. (Changing
+  any scoring input no longer silently leaves stale scores.)
 - **Completion suggestion:** when a rescore finishes, surface "Recalculated N accounts —
   BloodHound Impact was preserved; *re-run Enrichment* to refresh it," linking to the
   Integrations Enrich action. This is the requested "suggest re-enrich."
@@ -130,8 +154,9 @@ exposed on `httpapi.Server` as `Rescore *rescore.Manager` (may be nil).
 - **Audit:** `POST /api/rescore` logs a `rescore_start` audit event (actor, audit id);
   the job logs an `IngestEvent{Kind:"rescore"}` on success (account count, time — never any
   credential). Cancel logs `rescore_cancel`.
-- **Errors:** 409 if a job is already running; 423/locked and "no active audit" surfaced
-  cleanly (mirroring enrich). A job failure sets `phase=failed` + an `Error` message.
+- **Errors:** 409 if a rescore **or an Enrich** job is already running on the audit (§3.5);
+  423/locked and "no active audit" surfaced cleanly (mirroring enrich). A job failure sets
+  `phase=failed` + an `Error` message.
 - **Security:** start/cancel are **lead-only** (re-scoring rewrites the audit, like
   enrich/upload). Recompute reads unredacted accounts in-process only; nothing new leaves
   the process. No cleartext or NT hash in any event.
@@ -150,7 +175,10 @@ exposed on `httpapi.Server` as `Rescore *rescore.Manager` (may be nil).
   enricher reads it back.
 - **Manager:** one-job-at-a-time (second `Start` errors), cancel transitions to cancelled,
   `done` carries the count, a `rescore` `IngestEvent` is logged.
-- **Handlers:** lead-gating + CSRF on start/cancel; `GET /job` lifecycle; 409 when running.
+- **Handlers:** lead-gating + CSRF on start/cancel; `GET /job` lifecycle; 409 when a rescore
+  is running, **and 409 when an Enrich job is running** on the audit (§3.5 coordination).
+- **HIBP path:** recompute picks up a swapped HIBP index — a rescore after the index changes
+  yields updated breach counts / HIBP-floor Exposure for affected accounts.
 - **Web:** pure-logic tests for the editor-nudge + completion-suggestion state; Playwright
   live — edit a forbidden word, click Recalculate, watch progress → done, confirm a changed
   score and the "re-run Enrichment" suggestion; assert the console is clean.
