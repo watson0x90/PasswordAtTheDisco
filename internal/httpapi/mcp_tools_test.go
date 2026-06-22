@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"strings"
@@ -10,6 +11,19 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/audit"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/auth"
 )
+
+// TestToolsCallAuditsDenied confirms a role-denied tool call emits an audit event
+// (the audit guarantee for MCP tokens — every executed/denied call is recorded).
+func TestToolsCallAuditsDenied(t *testing.T) {
+	var buf bytes.Buffer
+	ts := auth.NewTokenStore("", nil)
+	analyst, _, _ := ts.Issue(auth.RoleAnalyst, "a", nil)
+	s := &Server{MCPTokens: ts, MCPLimiter: auth.NewLimiter(50, time.Minute), Audit: audit.New(&buf)}
+	rpc(t, s, analyst, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"reveal_password","arguments":{"username":"x","domain":"Y"}}}`)
+	if !strings.Contains(buf.String(), "mcp_tool:reveal_password") || !strings.Contains(buf.String(), "denied") {
+		t.Fatalf("denied reveal must be audited: %q", buf.String())
+	}
+}
 
 func mcpToolServer(t *testing.T) (*Server, string, string) {
 	t.Helper()

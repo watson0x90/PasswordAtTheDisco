@@ -108,6 +108,7 @@ func (s *Server) mcpToolsCall(r *http.Request, req rpcRequest) rpcResponse {
 		return rpcOK(req.ID, mcpToolError("this tool requires a lead token"))
 	}
 	if tool.NeedsUnlock && !s.Store.Unlocked() {
+		logCall("", "locked")
 		return rpcOK(req.ID, mcpToolError("data store is locked"))
 	}
 	result, target, err := tool.Handler(s, &mcpCall{Token: tok, Args: p.Arguments, RemoteAddr: remote})

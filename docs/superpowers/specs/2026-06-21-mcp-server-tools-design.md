@@ -90,7 +90,7 @@ ONLY through `reveal_password`.
 
 | Tool | Role | Unlock | Inputs | Output |
 |---|---|---|---|---|
-| `list_audits` | analyst | no | — | `[{id,name,created,updated,total_accounts,cracked}]` |
+| `list_audits` | analyst | yes | — | `[{id,name,created,updated,total_accounts,cracked}]` (needs unlock: the counts read the encrypted dataset, matching the REST `GET /api/audits` which is `requireUnlocked`) |
 | `get_posture` | analyst | yes | `audit_id?` | summary: totals, risk counts, posture score, breach-impact, coverage |
 | `list_accounts` | analyst | yes | `audit_id?, filter?, sort?, limit?(≤200, default 50), cursor?` | `{accounts:[redacted], total, next_cursor?}` |
 | `search_accounts` | analyst | yes | `audit_id?, query` | redacted accounts matching username/domain (capped) |
