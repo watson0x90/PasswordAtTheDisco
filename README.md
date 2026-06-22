@@ -41,28 +41,22 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
-## What's new in 2.20
+## What's new in 2.21
 
-**The Exposure × Impact grid is now a colour-coded danger map — plus a round of
-post-audit hardening.**
+**An MCP server — connect an AI agent (Gemini, Kiro, Claude) straight to your audit data.**
 
-- **Colourised risk matrix** — every cell of the Overview's Exposure × Impact grid
-  is tinted by the **risk level it resolves to** (Critical → red, High → amber,
-  Medium → green, Low → cyan), with a legend. Account count still drives the tint
-  intensity, so hue tells you the rating and saturation tells you how many accounts
-  sit there. The Unknown column (no BloodHound coverage) keeps its dashed edge and
-  takes its provisional, Exposure-only level. A single shared `cellLevel()` now feeds
-  both the live grid and the in-app methodology diagram, so they can't drift from the
-  scoring engine.
-- **Scoring / enrichment hardening** (post-review fixes) — Kerberoastable and
-  AS-REP-roastable signals are now captured on every BloodHound response format; the
-  Domain-Admin pathway tables show each account's controlled-object count; uncracked
-  accounts appear in the risk-factor breakdown; and a transient BloodHound outage is
-  no longer mistaken for "account not found" (which would silently drop Impact).
+- **Model Context Protocol server** at `POST /api/mcp` — a stateless JSON-RPC endpoint
+  authenticated by **role-scoped API tokens**. Issue a token (Admin → **MCP Tokens**, or
+  `patd token create`), point your agent at the URL with a bearer header, and it can
+  query posture, accounts, domains, search, the password-in-use probe, reports, and audit
+  diffs — all **redacted**. A **lead** token can additionally reveal one account's
+  cleartext, one call at a time, **audit-logged and fail-closed**. Every tool call is in
+  the audit log; the token secret never is. Setup below: **[MCP server (for AI agents)](#mcp-server-for-ai-agents)**.
 
-Since 2.15, scoring was rebuilt around a **two-axis Exposure × Impact model** (2.18)
-and the console gained an in-app, pre-auth **Help / methodology** section (2.19) that
-explains the model to CISOs and blue-team leads.
+Earlier: the Exposure × Impact grid became a colour-coded danger map (2.20), scoring was
+rebuilt around a **two-axis Exposure × Impact model** (2.18), and the console gained an
+in-app **Help / methodology** section (2.19) that explains the model to CISOs and
+blue-team leads.
 
 See **[CHANGELOG.md](CHANGELOG.md)** for the full release history.
 
@@ -166,6 +160,77 @@ Then, **on first run in the browser**:
 Static CGO-free binary → runs on **Linux / macOS / Windows (amd64 + arm64)**. Full
 guide (env vars, TLS, service management, backup/recovery): **[deploy/DEPLOYMENT.md](deploy/DEPLOYMENT.md)**.
 
+## MCP server (for AI agents)
+
+Password!AtTheDisco speaks the **Model Context Protocol**, so an AI agent (Gemini CLI,
+Kiro, Claude Desktop, …) can query an audit through a scoped token. One endpoint,
+bearer-authenticated, every call audited — no operator password is ever handed to the agent.
+
+**1. Mint a token** (managing tokens requires the **lead** role):
+
+- In the console: **Admin → MCP Tokens → Issue token**. Pick **analyst** (redacted data
+  only) or **lead** (may also reveal cleartext), then copy the secret — it is shown once.
+- Or from the CLI, for the first token before the UI is reachable (run it while the server
+  is **stopped** — the running server owns the token file):
+
+  ```bash
+  patd token create --role analyst --label gemini   # prints patdmcp_… once
+  patd token list                                    # id, label, role, last-used, status
+  patd token revoke <id>
+  ```
+
+  Tokens are stored **hashed** in `mcp_tokens.json` (path via `PATD_MCP_TOKENS_FILE`;
+  gitignored). Once the server is running, manage tokens in the **Admin UI** so changes
+  take effect live.
+
+**2. Connect your agent.** The server is Streamable-HTTP MCP at `POST /api/mcp` with an
+`Authorization: Bearer <token>` header. The config key name varies by client
+(`httpUrl` / `url` / `serverUrl`); the essentials are the `/api/mcp` URL and the bearer
+header:
+
+```json
+{
+  "mcpServers": {
+    "passwordatthedisco": {
+      "httpUrl": "https://your-host:8443/api/mcp",
+      "headers": { "Authorization": "Bearer patdmcp_…" }
+    }
+  }
+}
+```
+
+Smoke-test it with curl (lists the tools your token's role may use):
+
+```bash
+curl -s -H "Authorization: Bearer patdmcp_…" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
+  https://your-host:8443/api/mcp
+```
+
+> The data store must be **unlocked** (a lead unlocks it in the UI) for the data tools to
+> return results — the MCP token authenticates the *agent*; it does not unseal the vault.
+
+**3. Tools.** `audit_id` is optional on every data tool (defaults to the most recent audit):
+
+| Tool | Role | Returns |
+|---|---|---|
+| `list_audits` | analyst | available audits (id, name, account counts) |
+| `get_posture` | analyst | org posture: counts, risk score, breach-impact, BloodHound coverage |
+| `list_accounts` | analyst | redacted accounts — filter (risk/cracked/domain/HIBP/DA), sort, paginate (≤200) |
+| `search_accounts` | analyst | redacted accounts matching a username/domain query |
+| `domain_breakdown` | analyst | per-domain accounts / cracked / breached / critical / DA-path counts |
+| `password_in_use` | analyst | which accounts use a given password (matched by NT hash; the candidate is never stored or logged) |
+| `get_report` | analyst | the actionable report (redacted) |
+| `diff_audits` | analyst | newly-cracked / remediated / regressed / newly-breached between two audits |
+| `reveal_password` | **lead** | the cleartext for **one** account — audit-logged, fail-closed |
+
+**Security model.** Tokens are role-scoped and SHA-256-hashed (shown once). Every
+non-reveal tool returns the same **redacted** shapes as the web console — no cleartext,
+no NT hash. `reveal_password` is **lead-only**, one account per call, and **audit-logged**
+(the account, never the password); if the audit write fails, the cleartext is withheld.
+Analyst tokens never even see `reveal_password` in `tools/list`. Revoke a token any time
+in the Admin UI — revocation is immediate.
+
 ## Features
 
 - **Engine:** secretsdump parsing, HIBP NTLM lookup over a 74 GB prefix-indexed
@@ -190,7 +255,10 @@ guide (env vars, TLS, service management, backup/recovery): **[deploy/DEPLOYMENT
   NTLM set in the background, and a **BloodHound** page to configure + test the BHE
   connection from the console — both hot-swap the live integration without a restart.
 - **CLI:** `patd audit` (run the engine over dumps → ingest), `patd hashpw`,
-  `patd reindex`.
+  `patd token` (manage MCP API tokens), `patd reindex`.
+- **MCP server:** a Streamable-HTTP JSON-RPC endpoint (`POST /api/mcp`) that lets AI
+  agents query an audit through role-scoped tokens — redacted read tools plus a lead-only,
+  audited cleartext reveal. See **[MCP server (for AI agents)](#mcp-server-for-ai-agents)**.
 
 ## ⚠️ Store passphrase & data recovery — read this
 

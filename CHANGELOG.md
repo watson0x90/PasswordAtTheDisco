@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 _Nothing yet._
 
+## [2.21.0] — 2026-06-22 — MCP server for AI agents
+
+### Added
+- **MCP server** at `POST /api/mcp` — a stateless Streamable-HTTP JSON-RPC endpoint
+  (stdlib only, no new dependencies) that lets AI agents (Gemini, Kiro, Claude, …) query
+  an audit through **role-scoped API tokens**. Eight redacted read tools (`list_audits`,
+  `get_posture`, `list_accounts` [filter/sort/paginate], `search_accounts`,
+  `domain_breakdown`, `password_in_use`, `get_report`, `diff_audits`) plus a **lead-only**,
+  one-account-at-a-time, **audit-logged and fail-closed** `reveal_password`. `audit_id`
+  defaults to the most recent audit; every tool call is audited (never the token secret).
+- **API token credential system** — `patdmcp_<id>_<secret>` tokens (SHA-256-hashed,
+  shown once), a lead-gated Admin **MCP Tokens** panel, and a `patd token create|list|revoke`
+  CLI. `requireMCPToken` bearer middleware attaches an `analyst|lead` role; issue/revoke
+  are audited. Tokens live hashed in `mcp_tokens.json` (`PATD_MCP_TOKENS_FILE`, gitignored).
+
+### Security
+- Non-reveal MCP tools return only redacted data (no cleartext, no NT hash); cleartext
+  flows solely through the lead-gated, audited, fail-closed `reveal_password`. The
+  `password_in_use` candidate is matched by NT hash server-side and never stored or logged.
+
 ## [2.20.0] — 2026-06-21 — Colourised Exposure × Impact matrix + audit hardening
 
 ### Added
@@ -233,7 +253,8 @@ The ground-up Go API + React console that replaced the original Python tool.
 - Cleartext never written to disk; cleartext reveal is a lead-only, audit-logged action that
   never records the password value.
 
-[Unreleased]: https://github.com/watson0x90/PasswordAtTheDisco/compare/v2.20.0...HEAD
+[Unreleased]: https://github.com/watson0x90/PasswordAtTheDisco/compare/v2.21.0...HEAD
+[2.21.0]: https://github.com/watson0x90/PasswordAtTheDisco/compare/v2.20.0...v2.21.0
 [2.20.0]: https://github.com/watson0x90/PasswordAtTheDisco/compare/v2.19.1...v2.20.0
 [2.19.1]: https://github.com/watson0x90/PasswordAtTheDisco/compare/v2.19.0...v2.19.1
 [2.19.0]: https://github.com/watson0x90/PasswordAtTheDisco/compare/v2.18.0...v2.19.0
