@@ -10,6 +10,8 @@ import { coverageStats, exposureImpactMatrix, isProvisional } from "../matrix"
 import { Bars, ChartCard, Donut, MatrixHeatmap, PostureGauge } from "./Charts"
 import { ExposureHeadline } from "./ExposureHeadline"
 import { Insights } from "./Insights"
+import { RecalcControl } from "./RecalcControl"
+import { RecalcSuggestion } from "./RecalcSuggestion"
 import { useJobs } from "../jobs"
 import { InfoTip } from "./InfoTip"
 import { GLOSSARY } from "../glossary"
@@ -80,6 +82,7 @@ export function Dashboard() {
         <div className="section-label">Overview</div>
         <div className="export-actions">
           {summary?.generated_at && <span className="muted data-ts">Data scored {new Date(summary.generated_at).toLocaleString()}</span>}
+          <RecalcControl hasScored={!!summary?.generated_at} />
           <button className="btn" onClick={() => nav("reports")}>Reports &amp; export →</button>
         </div>
       </div>
@@ -93,6 +96,7 @@ export function Dashboard() {
           <InfoTip text={GLOSSARY.coverage} />
         </div>
       )}
+      <RecalcSuggestion />
       <div className="stat-grid">
         <Stat label="Accounts" value={total} delay={0} />
         <Stat label="Cracked" value={cracked} sub={`${crackPct}% of accounts`} delay={0.06} />
@@ -191,7 +195,7 @@ export function Dashboard() {
 
 function BackgroundJobsCard() {
   const { me } = useAuth()
-  const { enrich, hibp } = useJobs()
+  const { enrich, hibp, rescore } = useJobs()
   // Jobs are lead-operated and the provider only polls for leads (non-leads always
   // read idle), so the card has nothing to show for analysts.
   if (me?.role !== "lead") return null
@@ -201,11 +205,16 @@ function BackgroundJobsCard() {
     : enrich.phase === "done" ? `done — enriched ${enrich.enriched}/${enrich.total}`
     : enrich.phase
   const hibpLabel = !hibp || hibp.phase === "idle" ? "idle" : hibp.phase
+  const rescoreLabel =
+    !rescore || rescore.phase === "idle" ? "idle"
+    : rescore.phase === "running" ? `running ${rescore.processed}/${rescore.total}`
+    : rescore.phase === "done" ? `done — ${rescore.processed} accounts` : rescore.phase
   return (
     <div className="panel">
       <div className="section-label">Background jobs</div>
       <div className="jobs-card-row"><span>BloodHound enrichment</span><span className="muted">{enrichLabel}</span></div>
       <div className="jobs-card-row"><span>HIBP corpus</span><span className="muted">{hibpLabel}</span></div>
+      <div className="jobs-card-row"><span>Re-scoring</span><span className="muted">{rescoreLabel}</span></div>
     </div>
   )
 }
