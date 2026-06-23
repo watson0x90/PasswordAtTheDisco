@@ -49,10 +49,16 @@ Define **reachable(a)** = `a.Enabled && (a.Cracked || a.EscalatedBySharedDA || a
 da          = #{ a : a.HasDAPathway() && reachable(a) }                       // p_da   = 0.55  ⟐
 t0Reachable = #{ a : a.ControlsTier0  && reachable(a) }                       // p_t0   = 0.70
 critN       = min( #{ a : a.RiskLevel=="Critical" && !a.HasDAPathway() && !a.ControlsTier0 }, capCrit )  // p_crit=0.15, capCrit=5 ⟐
-reuseN      = min( #{ distinct large CRACKED reuse clusters (mass-reuse-escalated groups) }, capReuse )  // p_reuse=0.10, capReuse=5 ⟐
 
-L = 1 − (1−p_da)^da · (1−p_t0)^t0Reachable · (1−p_crit)^critN · (1−p_reuse)^reuseN
+L = 1 − (1−p_da)^da · (1−p_t0)^t0Reachable · (1−p_crit)^critN
 ```
+⟐ **`reuseN` deferred (NOT in v1).** Reasons: (a) Breach Reachability measures *path-to-domain-control*;
+large CRACKED reuse clusters are non-privileged lateral-spread, already captured by Hygiene's strength
+term and Finding 1's Level escalation — folding them into a *DA-reachability* score conflates two
+things. (b) Hard constraint: the redacted `/api/accounts` payload strips `nt_hash` and exposes no
+reuse-group token, so the TS mirror cannot compute distinct cracked-reuse clusters → Go⇄TS parity would
+break. The panel listed reuseN as v1-optional. Privileged reuse (a cracked account that IS a DA/Tier-0
+controller) still counts — via `reachable()` → da/t0.
 - ⟐ **`da`/`t0` count only reachable (enabled + cracked/reused) paths** — a structural DA edge through
   a strong, uncracked, or disabled account is NOT a live breach path (else every hardened domain reads
   Very High forever, the existence-vs-reachability error this rework exists to fix).
@@ -168,7 +174,9 @@ disclaimers, two-axis trend/Compare, and Go⇄TS parity with extended golden + i
 Per-account engine, Exposure/Impact axes, and Findings 1–3 untouched. Tag v2.28.0.
 
 ## 7. Settled constants (panel-tuned; golden-test them)
-`p_da=0.55, p_t0=0.70, p_crit=0.15, p_reuse=0.10`; `capCrit=5, capReuse=5`; Hygiene weights 45/35/20;
-band cutpoints (×1e6) 250000/500000/750000; Hygiene rating ≥85/≥70. All in one named `const` block.
-Deferred to v2-of-this-feature: a correlation discount (`effective_count = n^α`) for shared choke
-points — v1 uses de-duped + capped raw counts (band-only reporting absorbs the rest).
+`p_da=0.55, p_t0=0.70, p_crit=0.15`; `capCrit=5`; Hygiene weights 45/35/20; band cutpoints (×1e6)
+250000/500000/750000; Hygiene rating ≥85/≥70. All in one named `const` block.
+Deferred to v2-of-this-feature: (a) `reuseN` as a reachability enabler (needs a safe reuse-group token in
+the redacted payload for TS parity; also arguably a Hygiene not a reachability signal); (b) a correlation
+discount (`effective_count = n^α`) for shared choke points — v1 uses de-duped + capped raw counts
+(band-only reporting absorbs the rest).
