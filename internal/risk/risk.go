@@ -336,6 +336,8 @@ func reuseFloor(sharedWith int) float64 {
 		return 5.0
 	case sharedWith >= 100:
 		return 4.0
+	case sharedWith >= 50:
+		return 3.0
 	default:
 		return 0
 	}

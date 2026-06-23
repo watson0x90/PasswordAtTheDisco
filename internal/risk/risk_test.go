@@ -331,11 +331,11 @@ func TestReuseBump(t *testing.T) {
 }
 
 func TestReuseFloor(t *testing.T) {
-	// floor is 0 below 100, 4.0 at 100-999, 5.0 at 1000+
+	// floor is 0 below 50, 3.0 at 50-99, 4.0 at 100-999, 5.0 at 1000+
 	cases := []struct {
 		shared int
 		want   float64
-	}{{0, 0}, {99, 0}, {100, 4.0}, {999, 4.0}, {1000, 5.0}, {50000, 5.0}}
+	}{{0, 0}, {49, 0}, {50, 3.0}, {99, 3.0}, {100, 4.0}, {999, 4.0}, {1000, 5.0}, {50000, 5.0}}
 	prev := -1.0
 	for _, tc := range cases {
 		got := reuseFloor(tc.shared)

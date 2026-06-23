@@ -52,8 +52,9 @@ export function ChapterScoring() {
             </li>
             <li>
               <b>Password reuse</b> — more copies of the same hash means more chances for an attacker. The bump grows with
-              the cluster size, and a very large cluster (100+ accounts sharing one hash) raises a credential&rsquo;s
-              Exposure <em>floor</em> on its own — crack one, own the cluster — even if that password looks strong.
+              the cluster size, and a sizeable cluster (50+ accounts sharing one hash) raises a credential&rsquo;s
+              Exposure <em>floor</em> on its own — crack one, own the cluster — even if that password looks strong; a
+              very large cluster (100+, then 1000+) raises that floor further.
             </li>
             <li>
               <b>Roastability</b> — Kerberoastable (SPN) and AS-REP-roastable accounts are easier to attack offline.
