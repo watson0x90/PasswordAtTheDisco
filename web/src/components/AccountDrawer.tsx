@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from "react"
 import type { Account, ScoreBreakdown } from "../api"
 import { RISK_CLASS, hasDA, weaknessTags } from "../util"
+import { disabledLatentRisk } from "../disabledRisk"
 import { impactIsKnown, isProvisional, coverageState } from "../matrix"
 import { GLOSSARY } from "../glossary"
 import { weaknessSubFactors, policyViolationText } from "../drawerFactors"
@@ -75,6 +76,9 @@ export function AccountDrawer({ account: a, onClose }: { account: Account; onClo
     ["Kerberoastable (SPN)", a.has_spn === true ? "Yes ⚠ — offline crackable via TGS" : "No"],
     ["AS-REP roastable", a.dont_req_preauth === true ? "Yes ⚠ — no pre-auth required" : "No"],
     ["Enabled", a.enabled ? "Yes" : "No"],
+    ...(disabledLatentRisk(a)
+      ? ([["Latent risk", "Disabled ⚠ — re-enable / Pass-the-Hash persistence path"]] as [string, ReactNode][])
+      : []),
   ]
 
   // v2 breakdown reads a.score_breakdown (v2 axis sub-scores). Per D2 every breakdown
@@ -122,6 +126,7 @@ export function AccountDrawer({ account: a, onClose }: { account: Account; onClo
                     ["Cracked floor", v("cracked_floor")],
                     ["Reuse", v("reuse_bump")],
                     ["Roastable", v("roastable_bump")],
+                    ["Age", v("age_penalty")],
                   ]}
                 />
               )}

@@ -288,6 +288,7 @@ const EXP_FACTORS: [string, keyof NonNullable<Account["score_breakdown"]>, strin
   ["Cracked floor", "cracked_floor", "#f472b6"],
   ["Reuse", "reuse_bump", "#a78bfa"],
   ["Roastable", "roastable_bump", "#38bdf8"],
+  ["Age", "age_penalty", "#2dd4bf"],
 ]
 const IMP_FACTORS: [string, keyof NonNullable<Account["score_breakdown"]>, string][] = [
   ["Privilege", "privilege_sub_score", "#22d3ee"],

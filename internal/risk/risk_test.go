@@ -100,8 +100,8 @@ func TestExposureBumps(t *testing.T) {
 		t.Fatalf("strong cracked floor = %v, want 3.0", base)
 	}
 	reuse := exposureScore(a, Context{Cracked: true, Coverage: "none", SharedWith: 2})
-	if !almost(reuse, 3.5) {
-		t.Fatalf("reuse bump = %v, want 3.5", reuse)
+	if !almost(reuse, 3.75) { // crackedFloor 3.0 + reuseBump(2)=0.75
+		t.Fatalf("reuse bump = %v, want 3.75", reuse)
 	}
 	roast := exposureScore(a, Context{Cracked: true, Coverage: "full", HasSPN: true})
 	if !almost(roast, 3.5) {
@@ -124,10 +124,21 @@ func TestExposureUncracked(t *testing.T) {
 	if got := exposureScore(Analysis{}, Context{Cracked: false, Coverage: "none"}); !almost(got, 0.0) {
 		t.Fatalf("uncracked no-signal exposure = %v, want 0.0", got)
 	}
-	// Uncracked + reuse + roastable bump still applies.
+	// Uncracked + AS-REP floor(3.0) + reuse(3)=0.75 bump + AS-REP roastable(0.75) bump.
 	c2 := Context{Cracked: false, Coverage: "full", SharedWith: 3, DontReqPreauth: true}
-	if got := exposureScore(Analysis{}, c2); !almost(got, 1.0) {
-		t.Fatalf("uncracked bumps-only exposure = %v, want 1.0", got)
+	if got := exposureScore(Analysis{}, c2); !almost(got, 4.5) {
+		t.Fatalf("uncracked AS-REP+reuse exposure = %v, want 4.5", got)
+	}
+}
+
+func TestReuseFloorAppliesUncracked(t *testing.T) {
+	// A strong, uncracked, zero-HIBP password in a 200-account reuse cluster must still
+	// floor to >= Medium on the back of reuseFloor alone -- the panel's whole point.
+	// Components: floor = max(0, reuseFloor(200)=4.0) = 4.0; bump = reuseBump(200)=1.0 (>=10 tier).
+	// Exposure = min(10, 4.0 + 1.0) = 5.0.
+	got := exposureScore(strong(), Context{Cracked: false, Coverage: "full", SharedWith: 200})
+	if !almost(got, 5.0) {
+		t.Fatalf("uncracked 200-cluster exposure = %v, want 5.0", got)
 	}
 }
 
@@ -279,6 +290,120 @@ func TestScoreDAHardOverride(t *testing.T) {
 	r := Score(strong(), Context{Cracked: true, Coverage: "full", Enabled: true, DADomains: []string{"CORP"}})
 	if !r.HasDAPath || r.Level != "Critical" {
 		t.Fatalf("cracked+DA: hasDA=%v level=%q, want true/Critical", r.HasDAPath, r.Level)
+	}
+}
+
+func TestRoastableBump(t *testing.T) {
+	cases := []struct {
+		name string
+		c    Context
+		want float64
+	}{
+		{"neither", Context{}, 0},
+		{"spn only", Context{HasSPN: true}, 0.5},
+		{"asrep only", Context{DontReqPreauth: true}, 0.75},
+		{"both", Context{HasSPN: true, DontReqPreauth: true}, 1.25},
+	}
+	for _, tc := range cases {
+		if got := roastableBump(tc.c); !almost(got, tc.want) {
+			t.Errorf("roastableBump(%s) = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestReuseBump(t *testing.T) {
+	// boundaries: 0->0, 1->0.5, 2->0.75, 9->0.75, 10->1.0, 100->1.0 (ceiling 1.0; no higher bump tier)
+	cases := []struct {
+		shared int
+		want   float64
+	}{{0, 0}, {1, 0.5}, {2, 0.75}, {9, 0.75}, {10, 1.0}, {100, 1.0}, {5000, 1.0}}
+	prev := -1.0
+	for _, tc := range cases {
+		got := reuseBump(tc.shared)
+		if !almost(got, tc.want) {
+			t.Errorf("reuseBump(%d) = %v, want %v", tc.shared, got, tc.want)
+		}
+		if got < prev {
+			t.Errorf("reuseBump not monotone at %d: %v < %v", tc.shared, got, prev)
+		}
+		prev = got
+	}
+}
+
+func TestReuseFloor(t *testing.T) {
+	// floor is 0 below 100, 4.0 at 100-999, 5.0 at 1000+
+	cases := []struct {
+		shared int
+		want   float64
+	}{{0, 0}, {99, 0}, {100, 4.0}, {999, 4.0}, {1000, 5.0}, {50000, 5.0}}
+	prev := -1.0
+	for _, tc := range cases {
+		got := reuseFloor(tc.shared)
+		if !almost(got, tc.want) {
+			t.Errorf("reuseFloor(%d) = %v, want %v", tc.shared, got, tc.want)
+		}
+		if got < prev {
+			t.Errorf("reuseFloor not monotone at %d: %v < %v", tc.shared, got, prev)
+		}
+		prev = got
+	}
+}
+
+func TestAgeBump(t *testing.T) {
+	mk := func(d int) *int { return &d }
+	cases := []struct {
+		name string
+		days *int
+		want float64
+	}{
+		{"nil", nil, 0},
+		{"0d_never_set", mk(0), 0}, // PwdLastSet=0 (never set / pre-Win2k): below 1yr -> 0
+		{"364d", mk(364), 0},
+		{"365d", mk(365), 0.25},
+		{"729d", mk(729), 0.25},
+		{"730d", mk(730), 0.5},
+		{"1824d", mk(1824), 0.5},
+		{"1825d", mk(1825), 0.75},
+		{"6000d", mk(6000), 0.75},
+	}
+	for _, tc := range cases {
+		if got := ageBump(tc.days); !almost(got, tc.want) {
+			t.Errorf("ageBump(%s) = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestRoastableFloor(t *testing.T) {
+	cases := []struct {
+		name string
+		c    Context
+		want float64
+	}{
+		{"neither", Context{}, 0},
+		{"spn only (no floor; needs foothold)", Context{HasSPN: true}, 0},
+		{"asrep only", Context{DontReqPreauth: true}, 3.0},
+		{"both (asrep floors)", Context{HasSPN: true, DontReqPreauth: true}, 3.0},
+	}
+	for _, tc := range cases {
+		if got := roastableFloor(tc.c); !almost(got, tc.want) {
+			t.Errorf("roastableFloor(%s) = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestExposureASREPFloor(t *testing.T) {
+	// A strong, uncracked, zero-HIBP, no-reuse, AS-REP-roastable account must floor to 3.0 on the
+	// roastable floor, plus the retained +0.75 AS-REP bump => 3.75 (the low/Medium border). Before
+	// this change it was only the +0.75 bump => 0.75 (bottom-of-Low), which mis-triaged a foothold-
+	// independent offline-crackable account as harmless.
+	got := exposureScore(strong(), Context{Cracked: false, Coverage: "full", DontReqPreauth: true})
+	if !almost(got, 3.75) {
+		t.Fatalf("uncracked AS-REP exposure = %v, want 3.75", got)
+	}
+	// SPN-only (Kerberoast needs a foothold) gets NO floor: just the +0.5 bump => 0.5.
+	gotSPN := exposureScore(strong(), Context{Cracked: false, Coverage: "full", HasSPN: true})
+	if !almost(gotSPN, 0.5) {
+		t.Fatalf("uncracked SPN-only exposure = %v, want 0.5", gotSPN)
 	}
 }
 

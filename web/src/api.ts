@@ -162,6 +162,7 @@ export interface ScoreBreakdown {
   cracked_floor?: number
   reuse_bump?: number
   roastable_bump?: number
+  age_penalty?: number
   // Impact axis
   impact_score?: number
   privilege_sub_score?: number

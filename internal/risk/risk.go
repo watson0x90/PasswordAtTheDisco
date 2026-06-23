@@ -43,6 +43,9 @@ type Context struct {
 	// Retained for the vector string only (no longer scored); see Vector().
 	DaysOutOfCompliance *int
 	PasswordExpires     string
+	// PasswordAgeDays is the absolute age of the password in days since PwdLastSet
+	// (nil = unenriched / unknown). Enriched-only; feeds ageBump only.
+	PasswordAgeDays *int
 }
 
 // Breakdown is the per-axis score detail plus every raw per-factor input the
@@ -59,6 +62,7 @@ type Breakdown struct {
 	CrackedFloor      float64 `json:"cracked_floor"`
 	ReuseBump         float64 `json:"reuse_bump"`
 	RoastableBump     float64 `json:"roastable_bump"`
+	AgePenalty        float64 `json:"age_penalty"`
 	// Impact axis (v2)
 	ImpactScore       float64 `json:"impact_score"`
 	PrivilegeSubScore float64 `json:"privilege_sub_score"`
@@ -97,14 +101,6 @@ func Score(a Analysis, c Context) Result {
 		legacy = exp
 	}
 
-	var reuse, roast float64
-	if c.SharedWith > 0 {
-		reuse = 0.5
-	}
-	if c.HasSPN || c.DontReqPreauth {
-		roast = 0.5
-	}
-
 	return Result{
 		Exposure:    exp,
 		Impact:      imp,
@@ -123,8 +119,9 @@ func Score(a Analysis, c Context) Result {
 			SimPenalty:        round2(simPenalty(a.SimilarMax)),
 			HIBPFloor:         hibpExposureFloor(c.HIBPBreachCount),
 			CrackedFloor:      crackedFloor(a, c.Cracked),
-			ReuseBump:         reuse,
-			RoastableBump:     roast,
+			ReuseBump:         round2(reuseBump(c.SharedWith)),
+			RoastableBump:     round2(roastableBump(c)),
+			AgePenalty:        round2(ageBump(c.PasswordAgeDays)),
 			ImpactScore:       imp,
 			PrivilegeSubScore: privilegeSubScore(c.ControlledObjects, c.ControlsTier0),
 			DAComponent:       daComponent(c.DADomains),
@@ -301,6 +298,78 @@ func crackedFloor(a Analysis, cracked bool) float64 {
 	}
 }
 
+// roastableBump: Kerberoast (SPN) +0.5; AS-REP roastable (DontReqPreauth) +0.75. AS-REP is a
+// pre-auth exposure (no foothold needed) so it outweighs post-auth Kerberoast. Additive => both = 1.25.
+func roastableBump(c Context) float64 {
+	var b float64
+	if c.HasSPN {
+		b += 0.5
+	}
+	if c.DontReqPreauth {
+		b += 0.75
+	}
+	return b
+}
+
+// reuseBump: a small-cluster Exposure bump that scales with cluster size (ceiling 1.0). It
+// STACKS with reuseFloor by design -- a large cluster gets both the floor (via max) AND this
+// bump (e.g. SharedWith 200 => floor 4.0 + bump 1.0 = 5.0). Do not drop one for the other.
+func reuseBump(sharedWith int) float64 {
+	switch {
+	case sharedWith >= 10:
+		return 1.0
+	case sharedWith >= 2:
+		return 0.75
+	case sharedWith >= 1:
+		return 0.5
+	default:
+		return 0
+	}
+}
+
+// reuseFloor: a huge reuse cluster is a standalone exposure fact (crack one hash -> own the
+// cluster), independent of THIS account's crack status -- so it FLOORS Exposure like HIBP
+// prevalence, ensuring a strong-but-massively-reused password isn't read as "Low".
+func reuseFloor(sharedWith int) float64 {
+	switch {
+	case sharedWith >= 1000:
+		return 5.0
+	case sharedWith >= 100:
+		return 4.0
+	default:
+		return 0
+	}
+}
+
+// roastableFloor: AS-REP roastability (DontReqPreauth) is crack-status- AND foothold-independent --
+// an anonymous attacker pulls the AS-REP hash and cracks it offline -- so like a huge reuse cluster
+// it FLOORS Exposure (3.0, ~ a cracked decent-length account). SPN (Kerberoast) earns NO floor: it
+// needs a domain foothold to request the TGS, so it stays a bump (see roastableBump).
+func roastableFloor(c Context) float64 {
+	if c.DontReqPreauth {
+		return 3.0
+	}
+	return 0
+}
+
+// ageBump: an old password is materially more crackable; bounded, absolute age in days.
+// ageDays nil (unenriched / PwdLastSet unknown) => 0.
+func ageBump(ageDays *int) float64 {
+	if ageDays == nil {
+		return 0
+	}
+	switch d := *ageDays; {
+	case d >= 1825:
+		return 0.75 // 5y+
+	case d >= 730:
+		return 0.5 // 2-5y
+	case d >= 365:
+		return 0.25 // 1-2y
+	default:
+		return 0
+	}
+}
+
 // exposureScore is the per-account Exposure axis [0,10].
 func exposureScore(a Analysis, c Context) float64 {
 	var floor float64
@@ -310,13 +379,13 @@ func exposureScore(a Analysis, c Context) float64 {
 		// Uncracked: password unknown, no weakness signals.
 		floor = hibpExposureFloor(c.HIBPBreachCount)
 	}
-	var bump float64
-	if c.SharedWith > 0 {
-		bump += 0.5
-	}
-	if c.HasSPN || c.DontReqPreauth {
-		bump += 0.5
-	}
+	// Crack-status-independent floors: a huge reuse cluster (crack one, own the cluster) and an
+	// AS-REP-roastable account (offline-crackable with no foothold) both floor Exposure.
+	floor = math.Max(floor, math.Max(reuseFloor(c.SharedWith), roastableFloor(c)))
+	bump := roastableBump(c) + reuseBump(c.SharedWith) + ageBump(c.PasswordAgeDays)
+	// NOTE: bump is added pre-clamp; at a high floor the min(10,...) can absorb part of it, so the
+	// per-factor breakdown values may sum to MORE than the displayed Exposure. That's the bounded-axis
+	// clamp, not a drift bug -- the breakdown and the score read from the SAME helpers below.
 	return math.Min(10.0, floor+bump)
 }
 
@@ -603,8 +672,9 @@ func tier0Code(c Context) string {
 	return "N"
 }
 
-// roastableCode encodes Kerberoast (SPN) / AS-REP roastability, the +0.5 Exposure bumps
-// that otherwise have no vector token. K=SPN only, A=AS-REP only, KA=both, N=neither.
+// roastableCode encodes Kerberoast (SPN) / AS-REP roastability, the Exposure bumps
+// (SPN +0.5, AS-REP +0.75) that otherwise have no vector token. K=SPN only, A=AS-REP
+// only, KA=both, N=neither.
 func roastableCode(c Context) string {
 	switch {
 	case c.HasSPN && c.DontReqPreauth:

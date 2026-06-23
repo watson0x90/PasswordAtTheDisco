@@ -445,6 +445,59 @@ func TestAxisFieldsPopulated(t *testing.T) {
 	}
 }
 
+func TestAgePenaltyWired(t *testing.T) {
+	// Two enriched cracked accounts, identical except PwdLastSet: one ~3y old, one fresh.
+	// The old one must carry AgePenalty 0.5 (730-1824d band) and Exposure >= the fresh one.
+	eng := &Engine{
+		Lists: pwanalysis.Lists{
+			ForbiddenWords:   pwanalysis.NewSet(),
+			KeyboardPatterns: pwanalysis.NewSet(),
+			CommonPasswords:  pwanalysis.NewSet(),
+			DictionaryWords:  pwanalysis.NewSet(),
+		},
+		Policies: policy.DefaultSet(),
+	}
+	now := time.Date(2026, 6, 22, 0, 0, 0, 0, time.UTC)
+	oldSet := now.AddDate(-3, 0, 0).Unix()    // ~1095 days -> ageBump 0.5
+	freshSet := now.AddDate(0, 0, -10).Unix() // 10 days -> ageBump 0
+
+	score := func(pwdLastSet int64) model.Account {
+		enr := fakeEnricher{"alice@CORP": Enrichment{Enriched: true, Enabled: bp(true), PwdLastSet: &pwdLastSet}}
+		return eng.scoreCracked("CORP",
+			secretsdump.ParsedAccount{Username: "alice", Hash: "ABC", Password: "Tr0ub4dour&3xpl0it!", Cracked: true},
+			0, nil, nil, map[string]*pwanalysis.Analysis{}, map[string]float64{}, map[string][]model.SimilarPeer{}, now, enr)
+	}
+
+	oldAcct := score(oldSet)
+	freshAcct := score(freshSet)
+
+	if oldAcct.ScoreBreakdown == nil || freshAcct.ScoreBreakdown == nil {
+		t.Fatal("expected score_breakdown on both accounts")
+	}
+	if got := oldAcct.ScoreBreakdown.AgePenalty; got != 0.5 {
+		t.Errorf("old AgePenalty = %v, want 0.5", got)
+	}
+	if got := freshAcct.ScoreBreakdown.AgePenalty; got != 0 {
+		t.Errorf("fresh AgePenalty = %v, want 0", got)
+	}
+	if oldAcct.ExposureScore < freshAcct.ExposureScore {
+		t.Errorf("old exposure %v should be >= fresh %v", oldAcct.ExposureScore, freshAcct.ExposureScore)
+	}
+
+	// Uncracked path must ALSO forward AgePenalty (NTLM pass-the-hash: never cracked but
+	// the password is 3y stale). Exercises the scoreUncracked copy independently.
+	uncrackedEnr := fakeEnricher{"bob@CORP": Enrichment{Enriched: true, Enabled: bp(true), PwdLastSet: &oldSet}}
+	uncracked := eng.scoreUncracked("CORP",
+		secretsdump.ParsedAccount{Username: "bob", Hash: "DEF", Cracked: false},
+		0, now, uncrackedEnr)
+	if uncracked.ScoreBreakdown == nil {
+		t.Fatal("expected score_breakdown on the uncracked account")
+	}
+	if got := uncracked.ScoreBreakdown.AgePenalty; got != 0.5 {
+		t.Errorf("uncracked old AgePenalty = %v, want 0.5", got)
+	}
+}
+
 func TestRescorePreservesHIBPWhenIndexUnavailable(t *testing.T) {
 	// Build a bare engine with no HIBP index attached (HIBP == nil).
 	eng := &Engine{
