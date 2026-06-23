@@ -51,11 +51,17 @@ export function ChapterScoring() {
               raised in exactly one place (no double counting).
             </li>
             <li>
-              <b>Password reuse</b> — more copies of the same hash means more chances for an attacker.
+              <b>Password reuse</b> — more copies of the same hash means more chances for an attacker. The bump grows with
+              the cluster size, and a very large cluster (100+ accounts sharing one hash) raises a credential&rsquo;s
+              Exposure <em>floor</em> on its own — crack one, own the cluster — even if that password looks strong.
             </li>
             <li>
-              <b>Roastability</b> — Kerberoastable / AS-REP-roastable accounts are easier to attack offline; a small bump
-              when known.
+              <b>Roastability</b> — Kerberoastable (SPN) and AS-REP-roastable accounts are easier to attack offline.
+              AS-REP roasting needs no prior foothold, so it weighs more than Kerberoasting.
+            </li>
+            <li>
+              <b>Credential age</b> — a password that has not been rotated in years is materially more crackable; a
+              bounded bump scales with absolute age (added only when BloodHound supplies the last-set date).
             </li>
           </ul>
         </article>
