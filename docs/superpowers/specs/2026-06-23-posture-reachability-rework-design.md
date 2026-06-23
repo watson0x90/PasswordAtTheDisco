@@ -1,147 +1,174 @@
-# Executive scoring rework: Hygiene × Reachability with a Tier-0 gate — Design
+# Executive scoring rework: Hygiene × Reachability with a Tier-0 gate — Design (v2, panel-vetted)
 
 > Resolves the "Strong posture (87.6) next to Very-High breach likelihood" contradiction surfaced by
-> auditing a real 6,069-account export. Vetted by a 3-expert panel (offensive-security, measurement
-> theory, risk-frameworks) which converged unanimously. This reworks the **audit-level executive
-> rollup only** — the per-account two-axis engine (`internal/risk`) is unchanged.
+> auditing a real 6,069-account export. Designed and then spec-vetted by a 3-expert panel
+> (offensive-security/IR, measurement theory, risk-frameworks) — both rounds unanimous. **v2 folds in
+> every required change from the spec-vetting round** (marked ⟐). Reworks the **audit-level executive
+> rollup only**; the per-account two-axis engine (`internal/risk`) is unchanged.
 
 ## 1. Problem (panel consensus)
-The dashboard shows two numbers computed on incompatible scales:
-- **Posture 87.6 / "Strong"** — a *ratio/average* hygiene blend. Dilutes rare-but-catastrophic signals
-  across the whole estate (incl. 2,256 disabled accounts padding the denominator).
-- **Breach Likelihood "Very High" / >75%** — an *absolute-count tripwire* (`crit>50 || da>20`).
-
-Three real **formula defects** (not just labels):
-1. **Dead privilege term.** `max(0, 15 − da/total·100)` has slope −0.0165 pts/DA-path; 21 paths cost
-   0.35 of 15 pts; it needs ~455 paths to react. A *mean* is the wrong operator for a weakest-link
-   (min-cut) property — in AD the attacker exploits the single worst path, never the average.
-2. **Tier-0/DCSync invisible to posture.** The live DCSync account controlling 5,477/6,069 objects
-   contributes **zero**. `ControlsTier0`/`Controlled` exist but the rollup ignores them.
-3. **Breach-impact $ keyed off Critical count, ignores reachability.** A DCSync-reachable estate is
-   mis-sized "$50K–$100K / 2–4 wks" when it is realistically $1M+ / months.
-Plus the tripwire is **brittle** (20 vs 21 DA paths flips the exec headline) and **not scale-aware**.
-
-The per-account engine already does this right (`LevelFromAxes` `daOverride` forces Critical on
-cracked+DA-path); the audit rollup regressed to a compensatory mean. **Fix = make the rollup inherit
-the weakest-link/gate discipline the per-account scorer already endorses.** (FAIR/NIST/CVSS/BloodHound
-Enterprise/SSL-Labs precedent: a single reachable Tier-0 path caps the headline regardless of hygiene.)
+Two numbers on incompatible scales: **Posture 87.6/"Strong"** (a ratio *average* — dilutes catastrophe
+across the estate, incl. 2,256 disabled accounts padding the denominator) vs **Breach Likelihood
+"Very High"** (an absolute-count tripwire `crit>50 || da>20`). Three real **formula defects**:
+1. **Dead privilege term** `max(0,15−da/total·100)` — slope −0.0165 pts/path; 21 paths cost 0.35/15;
+   needs ~455 paths to react. A *mean* is the wrong operator for a weakest-link (min-cut) property.
+2. **Tier-0/DCSync invisible** to posture (the live DCSync controlling 5,477 objects scores zero).
+3. **Breach-$ keyed off Critical count, ignores reachability** (mis-sizes a DCSync estate at $50K/2wk).
+Plus a brittle, non-scale-aware tripwire. The per-account engine already gates correctly
+(`LevelFromAxes` `daOverride`); the rollup regressed to a compensatory mean. Fix = make the rollup
+inherit the weakest-link/gate discipline (FAIR / NIST 800-30 / CVSS worst-case / BloodHound Enterprise /
+SSL-Labs "one fatal flaw caps the grade" precedent).
 
 ## 2. Approach — two orthogonal axes + a one-way gate
-Replace the single "Posture" verdict with **three** related outputs and a gated headline:
+Three related outputs + a gated headline:
+- **Credential Hygiene** (0–100, intensive average — correct for hygiene breadth). Component only.
+- **Breach Reachability** `L ∈ [0,1)` (extremal, count-driven, smooth, scale-aware). Component.
+- **Overall** `= Hygiene·(1−L)` (0–100) — a **labeled trend/sort key, never a bare headline scalar** ⟐.
+- **Verdict** + **VerdictReason** — the contradiction-proof headline word (§2.5).
 
-- **Credential Hygiene** (0–100, intensive/average — *correct* for hygiene breadth). Relabel of the
-  current score; keep the average but (a) exclude **disabled** accounts from denominators, (b) **drop**
-  the dead privilege term, (c) redistribute its weight. Shown as a *component*, never the headline.
-- **Breach Reachability** `L ∈ [0,1)` (extremal/worst-path — count-driven, smooth, scale-aware).
-- **Overall** = `Hygiene × (1 − L)` (0–100, gated — keeps one comparable number for trend/Compare).
-- **Verdict** word = `min_severity(HygieneRating, gateCap(L, tier0))` — the contradiction-proof headline.
-
-### 2.1 Credential Hygiene (0–100)
-Counts taken over **enabled** accounts only (`active = #{Enabled}`); if `active==0`, Verdict "No Data".
+### 2.1 Credential Hygiene (0–100)  — over ENABLED accounts only
+`active = #{a.Enabled}`. ⟐ **Guard `active==0` BEFORE any division** → return Verdict "No Data",
+Hygiene 0, but still surface §2.6 dormant-privileged and let the Tier-0 gate fire if applicable.
 ```
 risk       = max(0, 100 − crit/active·200 − high/active·150 − med/active·50)/100 · 45
 strength   = uncrackedActive/active · 35
 compliance = (active − crackedViolationsActive)/active · 20
-Hygiene    = round1(risk + strength + compliance)            // 0..100, privilege term removed
+Hygiene    = round1(risk + strength + compliance)              // privilege term REMOVED
 HygieneRating = Strong (≥85) | Fair (≥70) | Weak (else)
 ```
-`crit/high/med/uncracked/crackedViolations` are tallied among enabled accounts only. Weights
-45/35/20 (was 40/30/15 + 15 privilege); panel to confirm split at spec review.
+`crit/high/med/uncracked/crackedViolations` counted among **enabled** accounts only. ⟐
+`crackedViolationsActive` MUST be the count of *enabled* cracked-non-compliant accounts (a subset of
+`active`) so the compliance term cannot go negative. Each term stays in [0, weight] ⇒ Hygiene∈[0,100],
+and Hygiene is 0-homogeneous (scale-invariant) since every term is a ratio. Weights 45/35/20 (was
+40/30/15 + a removed 15 privilege); panel-confirmed as a defensible +5/+5/+5 redistribution.
 
-### 2.2 Breach Reachability  L
-"Probability at least one catastrophic path is exploitable" — the natural generative model:
+### 2.2 Breach Reachability  L  — reachable catastrophe-enablers only ⟐
+Define **reachable(a)** = `a.Enabled && (a.Cracked || a.EscalatedBySharedDA || a.EscalatedByMassReuse)`
+— a privileged object the auditor can actually obtain/authenticate as. Then:
 ```
-L = 1 − (1−p_da)^da · (1−p_t0)^t0 · (1−p_crit)^critN · (1−p_reuse)^reuseN
-```
-- `da`     = #accounts with a DA pathway (`HasDAPathway()`), `p_da   = 0.50`
-- `t0`     = #Tier-0/DCSync controllers (`ControlsTier0`),    `p_t0   = 0.70`
-- `critN`  = #Critical-level accounts,                        `p_crit = 0.15`
-- `reuseN` = #distinct large CRACKED reuse clusters (the mass-reuse-escalated groups), `p_reuse = 0.10`
-- Ordinal: `Low <0.25 ≤ Medium <0.5 ≤ High <0.75 ≤ Very High`.
+da          = #{ a : a.HasDAPathway() && reachable(a) }                       // p_da   = 0.55  ⟐
+t0Reachable = #{ a : a.ControlsTier0  && reachable(a) }                       // p_t0   = 0.70
+critN       = min( #{ a : a.RiskLevel=="Critical" && !a.HasDAPathway() && !a.ControlsTier0 }, capCrit )  // p_crit=0.15, capCrit=5 ⟐
+reuseN      = min( #{ distinct large CRACKED reuse clusters (mass-reuse-escalated groups) }, capReuse )  // p_reuse=0.10, capReuse=5 ⟐
 
-Properties: strictly monotone (any added catastrophe-enabler only raises L), bounded [0,1), smooth
-(no cliffs), **scale-aware by construction** (keyed off catastrophe *counts*, not /total — one DA path
-reads High whether the estate is 30 or 600k accounts). With `p_da=0.5`: **1 DA path → L≥0.5 → High**;
-**2 → Very High**. Independence is a conservative upper bound (shared choke points correlate paths) —
-report the **band only**, never a 2-decimal % (panel caveat). `critN` mild double-count with da/t0 is
-acceptable (conservative). Seed probabilities are tunable; **panel vets exact values at spec review.**
+L = 1 − (1−p_da)^da · (1−p_t0)^t0Reachable · (1−p_crit)^critN · (1−p_reuse)^reuseN
+```
+- ⟐ **`da`/`t0` count only reachable (enabled + cracked/reused) paths** — a structural DA edge through
+  a strong, uncracked, or disabled account is NOT a live breach path (else every hardened domain reads
+  Very High forever, the existence-vs-reachability error this rework exists to fix).
+- ⟐ **`critN` de-duped** out of da∪t0 (measures Criticals that aren't *already* the catastrophe) and
+  **capped** so a large estate's Critical *volume* can't auto-pin Very High (keeps L scale-aware:
+  da/t0 are true catastrophe counts → raw; critN/reuseN are population-ish → capped, reusing the
+  project's existing absolute-cap discipline).
+- ⟐ **`p_da = 0.55`** (not 0.50): da=1 → L≈0.45 (unambiguously High), da=2 → L≈0.80 (unambiguously Very
+  High), with ~0.05 margin from every cutpoint — removes the exact-boundary float/parity hazard.
+- Properties: strictly monotone (any added enabler only raises L), bounded [0,1), smooth.
+  Scale-robust by construction (one reachable DA path → High at any N).
+- Independence overstates L when paths share choke points → it is a **conservative upper bound**;
+  ⟐ report the **band + range only, never a point %** (a UI invariant + test, not just a comment).
 
-### 2.3 Overall + the gate (contradiction-proof headline)
-```
-Overall = round1(Hygiene · (1 − L))                 // 0..100, derived sort/trend key
-Verdict ladder (best→worst): Strong, Fair, Weak, At Risk, Critical
-if t0 ≥ 1:            Verdict = "Critical"           // hard cap — reachable Tier-0/DCSync
-elif L ≥ 0.75:        Verdict = "At Risk"            // Reachability Very High
-elif L ≥ 0.50:        Verdict = worse(HygieneRating, "Fair")   // High → cannot be Strong
-else:                 Verdict = HygieneRating        // Med/Low reachability → no cap
-```
-The gate only ever **lowers** the verdict; the Hygiene number stays honest as a component. This audit:
-`t0=1 → Critical`, `Overall = 87.6·(1−~0.9999) ≈ 0–4`, Hygiene 87.6 (component), Reachability Very High.
+**Bands (integer-scaled, parity-safe)** ⟐ — compare `Ls = round(L·1e6)` (integer) against integer
+cutpoints, never the rounded display value:
+`Low: Ls<250000 · Medium: <500000 · High: <750000 · Very High: ≥750000` (>75% / 50–75% / 25–50% / <25%).
 
-### 2.4 Breach impact ($/recovery) — reachability-driven
-Replace the `crit`-count switch with a reachability/Tier-0 ladder:
+### 2.3 Overall + the Verdict gate (one register, contradiction-proof) ⟐
 ```
-if t0 ≥ 1:      "$1M – $5M+",    "6–12 months"   // full-domain credential theft
-elif L ≥ 0.75:  "$500K – $1M",   "3–6 months"
-elif L ≥ 0.50:  "$100K – $500K", "1–3 months"
-else:           "$50K – $100K",  "2–4 weeks"
-Probability / ProbabilityPct ← the same L band (Very High >75% … Low <25%)  // single source
+Overall = round1(Hygiene · (1 − L))            // trend/sort key only; shown only WITH a cap-reason
+Verdict ladder, one outcome register (best→worst):
+  Sound · Guarded · Elevated · High Risk · Critical · Critical — Tier-0 Reachable
+```
+Computed (first match wins; gate only lowers; VerdictReason is a separate field):
+```
+if active == 0 && t0Reachable == 0:   Verdict = "No Data"
+elif t0Reachable ≥ 1:                  Verdict = "Critical", Reason = "Tier-0 Reachable"
+elif L band == Very High:              Verdict = "Critical", Reason = "multiple reachable domain-control paths"
+elif L band == High:                   Verdict = "High Risk", Reason = "a reachable path to domain-control exists"
+else:  // L Medium/Low → hygiene-derived
+        Strong → "Sound" · Fair → "Guarded" · Weak → "Elevated"
+```
+⟐ Replaces the earlier mixed-register `min(HygieneRating, cap)` ladder ("At Risk" sandwiched above
+"Weak" read backwards to a CISO). `verdict_reason` is a first-class field (machine-stable verdict +
+human reason), mirroring SSL-Labs "grade capped because …". This audit: `t0Reachable=1` → **Critical —
+Tier-0 Reachable**; Hygiene ≈88 Strong (component); Reachability Very High; Overall ≈0–4 (trend only).
+
+### 2.4 Breach impact ($/recovery) — reachability-driven, single-source ⟐
+Driven by the SAME `t0Reachable`/`L` (so $ and verdict cannot disagree); labeled **modeled/illustrative**:
+```
+if t0Reachable ≥ 1:  "$1M – $5M+",   "6–12 months"     // full-domain credential theft
+elif L == Very High: "$500K – $1M",  "3–6 months"
+elif L == High:      "$100K – $500K","1–3 months"
+else:                "$50K – $100K", "2–4 weeks"
+Probability / ProbabilityPct ← the L band (single source with Reachability).
 ```
 
-### 2.5 The mandatory explanatory line (UI)
-On the executive card, one sentence so the two axes read as intentional, not contradictory:
-> *"Hygiene is the average health of all accounts; Breach Reachability is whether any path to
-> domain-control exists — one is enough. A healthy-on-average estate can still be highly breachable."*
+### 2.5 Card copy (two layers + per-axis definitions) ⟐
+**Relationship line (always):** *"Two independent questions. Credential Hygiene measures the average
+health of all **enabled** accounts. Breach Reachability measures whether **any single path** to
+domain-control credentials exists — and one is enough. A fleet healthy on average can still be fully
+breachable."*
+**Gate-reason line (only when gated):** *"Why the verdict is Critical: one reachable Tier-0 / DCSync
+path can compromise the whole domain regardless of password hygiene — fix the path to lift it."*
+**Priority-action line (placed in the dollar eye-line):** *"Remediate the reachable Tier-0 / DA path(s)
+before the password-reset backlog; hygiene is already Strong — the exposure is structural."*
+Per-axis sub-labels: Hygiene = "avg password health across enabled accounts (strength, crackability,
+compliance)"; Reachability = "likelihood ≥1 path to domain-control is exploitable; attack-path driven,
+modeled upper bound." ⟐ Hygiene component carries a footnote with the enabled-count
+(e.g. "over 3,813 enabled; 2,256 disabled excluded").
+
+### 2.6 Dormant privileged accounts (don't hide the disabled landmines) ⟐
+`dormantPrivileged = #{ a : !a.Enabled && (a.ControlsTier0 || a.HasDAPathway()) && (a.Cracked ||
+a.EscalatedBySharedDA || a.EscalatedByMassReuse) }`. Excluded from Hygiene and L (not *currently*
+reachable), but surfaced as an explicit Summary + sanitized-export + card line: *"Dormant privileged
+(disabled) accounts: N — pre-compromised credentials that become live if re-enabled."*
 
 ## 3. Data model & surfacing
-**`model.Posture`** (extend; keep existing JSON keys for back-compat):
-- keep `score` (now = Hygiene), `rating` (HygieneRating), `breakdown` (risk/strength/compliance; drop
-  privilege or keep at 0 — decide in plan), `likelihood` (= Reachability band, back-compat alias).
-- add `reachability string` (band), `reachability_score float64` (L), `overall float64`,
-  `verdict string`.
-**`model.BreachImpact`** — unchanged shape; values now reachability-driven.
-**Callsite** `internal/store/store.go:727-728` — `PostureScore(accounts)` already has everything;
-`EstimateBreachImpact` gains the reachability inputs (t0, L) — pass them or fold into one
-`ExecutiveSummary(accounts)` builder (plan decides; keep churn low).
-**TS mirror** `web/src/insights.ts` — must stay byte-parity with Go (golden test enforces).
-**Dashboard** — headline = Verdict; show Hygiene + Reachability as components + the §2.5 sentence +
-Overall for trend. **Sanitized export** (`internal/report/sanitize.go`) — add reachability/overall/
-verdict to the summary block. **HTML report** (`internal/report/report.go`) — same rollup. **Help**
-(`web/src/components/help/ChapterScoring.tsx`) — explain the two axes + gate. **Compare** — switch the
-tracked composite to `Overall` (still one number; now moves with reachability).
+**`model.Posture`** (extend; keep existing JSON keys for back-compat): keep `score`(=Hygiene),
+`rating`(HygieneRating), `breakdown`(risk/strength/compliance — privilege removed or kept 0),
+`likelihood`(= Reachability band alias). **Add** `reachability string`, `reachability_score float64`
+(L), `reachability_pct string` (band range, no point value), `overall float64`, `verdict string`,
+`verdict_reason string`, `dormant_privileged int`. **`model.BreachImpact`** — values reachability-driven.
+**Callsite** `internal/store/store.go:727-728` — fold into one `ExecutiveSummary(accounts)` builder (it
+already has all accounts) producing Posture + BreachImpact + dormant count; keep churn low.
+**TS mirror** `web/src/insights.ts` — byte-parity with Go (golden test enforces). **Dashboard** —
+Verdict headline; Hygiene + Reachability components + §2.5 copy; Overall only as a labeled trend value.
+⟐ **Trend/Compare**: track **Hygiene and Reachability as the two primary series** (hygiene = remediation
+program; reachability = structural exposure); Overall is a labeled secondary. Compare leads with the
+two-axis delta ("Hygiene +6, Reachability unchanged — Tier-0 path still open"). **Sanitized export**
+(`internal/report/sanitize.go`) + **HTML report** (`internal/report/report.go`) — new summary fields.
+**Help** (`web/src/components/help/ChapterScoring.tsx`) — the two axes + gate. **api.ts** — types.
 
 ## 4. Files
-- **Go:** `internal/model/model.go` (PostureScore + EstimateBreachImpact rework, struct fields, helpers
-  `breachReachability`, `gateVerdict`, `worseRating`); `internal/store/store.go` (callsite);
-  `internal/report/sanitize.go` + `internal/report/report.go` (export/report fields).
-  Tests: `internal/model/model_test.go` (golden + invariants), `internal/report/sanitize_test.go`.
-- **Web:** `web/src/insights.ts` (mirror), the dashboard executive card component(s),
-  `web/src/components/help/ChapterScoring.tsx`, Compare wiring, `web/src/api.ts` (types).
+- **Go:** `internal/model/model.go` (ExecutiveSummary/PostureScore + EstimateBreachImpact rework, struct
+  fields, helpers `breachReachability`, `reachBand`, `gateVerdict`, `reachable`, const block); store.go
+  callsite; report/sanitize.go + report/report.go. Tests: model_test.go (golden + invariants),
+  sanitize_test.go.
+- **Web:** insights.ts (mirror), the executive-card component(s), ChapterScoring.tsx, Compare wiring,
+  api.ts types.
 
 ## 5. Testing
-- **Invariants (Go + TS parity):** monotonicity (adding a DA path / Tier-0 / Critical never raises
-  Hygiene, Overall, or improves Verdict); boundedness (Hygiene∈[0,100], L∈[0,1), Overall∈[0,100]);
-  Hygiene scale-invariance under estate-cloning; L scale-robustness (1 DA path → High at any N);
-  gate (t0≥1 ⇒ Critical; L≥0.75 ⇒ At Risk; Strong hygiene + L≥0.5 ⇒ ≤Fair). Golden values pinned at
-  da∈{0,1,2,21}, t0∈{0,1}.
-- **The real audit:** Hygiene ≈ Strong (~88–92 after removing disabled + privilege), Reachability Very
-  High, Verdict **Critical** (DCSync), Overall ≈ low single digits, breach impact $1M+/6–12mo.
+- **Invariants (Go + TS parity, golden):** monotonicity (adding a reachable DA path / Tier-0 / Critical
+  never raises Hygiene/Overall or improves Verdict); boundedness (Hygiene∈[0,100], L∈[0,1),
+  Overall∈[0,100]); Hygiene scale-invariance; L scale-robustness (1 reachable DA path → High at any N);
+  gate (t0Reachable≥1 ⇒ Critical—Tier-0 Reachable; Very-High L ⇒ Critical; High L ⇒ High Risk).
+  ⟐ Pin **band/verdict strings** (not floats) cross-language at da∈{0,1,2,21}, t0∈{0,1}; assert da=1→High,
+  da=2→Very High. ⟐ Negative-guard test: disabled cracked DA account ⇒ 0 to L, +1 to dormantPrivileged.
+  ⟐ active==0 + t0Reachable≥1 ⇒ Critical (not "No Data").
+- **The real audit:** Hygiene ≈ Strong (~88–92), Reachability Very High, **Verdict Critical — Tier-0
+  Reachable**, Overall ≈ low single digits, impact $1M+/6–12mo, dormant-privileged surfaced.
 - **Gates:** `gofmt -l cmd internal`, `go build/vet/test ./...`, `govulncheck`; web `tsc`/`vitest`/
-  `build` (NEVER `npm install`). **Live:** rebuild, restart, re-export sanitized — confirm the card
-  reads Critical with both components shown + the explanatory line; console clean.
+  `build` (NEVER `npm install`). **Live:** rebuild, restart, re-export sanitized; card reads Critical —
+  Tier-0 Reachable with both components + §2.5 copy; console clean.
 
 ## 6. Definition of done
-The executive rollup shows Credential Hygiene (honest average, disabled excluded, dead privilege term
-gone), Breach Reachability (smooth, count-driven, scale-aware L), a gated Overall + Verdict that
-**cannot** read "Strong" while a Tier-0 path is reachable, reachability-driven breach $/recovery, and
-the one-line explanation. Go ⇄ TS parity with extended golden + invariant tests. Per-account engine,
-Exposure/Impact axes, and Findings 1–3 untouched. Tag v2.28.0.
+The executive rollup shows honest Credential Hygiene (disabled excluded, dead privilege term gone),
+smooth scale-aware Breach Reachability over **reachable** enablers, a one-register gated Verdict +
+reason that cannot read "Sound/Strong" while a Tier-0 path is reachable, reachability-driven illustrative
+breach $/recovery, dormant-privileged surfaced, two-layer card copy with modeled-upper-bound
+disclaimers, two-axis trend/Compare, and Go⇄TS parity with extended golden + invariant tests.
+Per-account engine, Exposure/Impact axes, and Findings 1–3 untouched. Tag v2.28.0.
 
-## 7. Open items for panel spec-review (before build)
-- Hygiene component reweight (proposed 45/35/20) and whether to keep a zeroed `privilege` breakdown
-  field for back-compat or remove it.
-- Reachability seed probabilities `p_da/p_t0/p_crit/p_reuse` (0.50/0.70/0.15/0.10) and whether `critN`
-  should exclude accounts already counted in da/t0 (de-dup vs. conservative over-count).
-- Verdict vocabulary ("At Risk"/"Critical" vs alternatives) and whether Tier-0 → "Critical" should
-  instead be "Critical — Tier-0 Reachable".
-- Whether `reuseN` belongs in L v1 or is deferred.
+## 7. Settled constants (panel-tuned; golden-test them)
+`p_da=0.55, p_t0=0.70, p_crit=0.15, p_reuse=0.10`; `capCrit=5, capReuse=5`; Hygiene weights 45/35/20;
+band cutpoints (×1e6) 250000/500000/750000; Hygiene rating ≥85/≥70. All in one named `const` block.
+Deferred to v2-of-this-feature: a correlation discount (`effective_count = n^α`) for shared choke
+points — v1 uses de-duped + capped raw counts (band-only reporting absorbs the rest).
