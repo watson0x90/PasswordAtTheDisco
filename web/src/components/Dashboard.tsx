@@ -25,6 +25,14 @@ const VERDICT_CLS: Record<string, string> = {
   "No Data": "dim",
 }
 
+// Hygiene rating → CSS class suffix (rating scale differs from verdict scale)
+const RATING_CLS: Record<string, string> = {
+  Strong: "low",
+  Fair: "high",
+  Weak: "crit",
+  "No Data": "dim",
+}
+
 // Reachability band → CSS class suffix
 const REACH_CLS: Record<string, string> = {
   "Very High": "crit",
@@ -183,7 +191,7 @@ function PostureCard({ posture: p, breachImpact, dormantPrivileged, enabledCount
             <span className="pex-verdict-reason"> — {p.verdict_reason}</span>
           )}
         </div>
-        {isGated && p.overall !== undefined && (
+        {isGated && (
           <div className="pex-overall-pill">
             Overall {Math.round(p.overall)}/100
             <span className="pex-overall-reason"> — capped by reachable Tier-0 path</span>
@@ -197,7 +205,7 @@ function PostureCard({ posture: p, breachImpact, dormantPrivileged, enabledCount
           <div className="pex-axis-label">Credential Hygiene</div>
           <div className="pex-axis-sub">avg password health across enabled accounts (strength, crackability, compliance)</div>
           <div className="pex-axis-value">
-            <span className={`pex-axis-score c-${VERDICT_CLS[p.rating] ?? "dim"}`}>{p.score}</span>
+            <span className={`pex-axis-score c-${RATING_CLS[p.rating] ?? "dim"}`}>{p.score}</span>
             <span className="pex-axis-of">/100</span>
             <span className="pex-axis-rating">{p.rating}</span>
           </div>
@@ -250,7 +258,7 @@ function PostureCard({ posture: p, breachImpact, dormantPrivileged, enabledCount
       )}
 
       {/* — Breach impact block — */}
-      {breachImpact && (
+      {breachImpact && p.verdict !== "No Data" && (
         <div className="pex-impact">
           <div className="pex-impact-label">
             Illustrative breach impact <span className="pex-impact-tag">modeled / illustrative</span>

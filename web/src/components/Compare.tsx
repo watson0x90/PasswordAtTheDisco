@@ -149,8 +149,10 @@ function DiffView({ res, accounts }: { res: DiffResult; accounts: Account[] }) {
             </div>
             {reachChanged ? (
               <div className="cp-axis-delta c-high">changed — re-check structural exposure</div>
-            ) : reachA !== "—" ? (
+            ) : reachA !== "—" && reachB !== "—" ? (
               <div className="cp-axis-delta muted">unchanged</div>
+            ) : reachA !== "—" || reachB !== "—" ? (
+              <div className="cp-axis-delta muted">partial — one audit lacks reachability data</div>
             ) : (
               <div className="cp-axis-delta muted">— available after backend diff extension</div>
             )}
