@@ -1056,6 +1056,21 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 .cp-score { font-family: var(--mono); font-size: 36px; font-weight: 600; }
 .cp-arrow { font-size: 22px; color: var(--faint); }
 .cp-delta { margin-left: auto; font-family: var(--mono); font-size: 15px; font-weight: 600; }
+
+/* two-axis Compare delta */
+.cp-twoaxis { display: flex; flex-direction: column; gap: var(--space-lg); margin-bottom: var(--space-lg); }
+.cp-twoaxis-head { display: flex; align-items: baseline; gap: var(--space-md); }
+.cp-twoaxis-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--dim); }
+.cp-twoaxis-sub { font-size: 12px; color: var(--faint); }
+.cp-twoaxis-row { display: flex; gap: var(--space-xl); flex-wrap: wrap; align-items: flex-start; }
+.cp-axis-block { flex: 1; min-width: 180px; display: flex; flex-direction: column; gap: var(--space-xs); }
+.cp-axis-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); }
+.cp-axis-values { display: flex; align-items: baseline; gap: var(--space-sm); }
+.cp-axis-score { font-family: var(--mono); font-size: 24px; font-weight: 700; }
+.cp-axis-arrow { font-size: 16px; color: var(--faint); }
+.cp-axis-delta { font-family: var(--mono); font-size: 13px; font-weight: 600; }
+.cp-axis-divider { width: 1px; background: var(--glass-border); align-self: stretch; flex: none; }
+.cp-overall-secondary { font-size: 12px; color: var(--faint); border-top: 1px solid var(--hairline); padding-top: var(--space-md); }
 .cohort-list { display: flex; flex-direction: column; }
 .cohort-row { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 6px 0; border-top: 1px solid var(--hairline); }
 .cohort-row:first-child { border-top: none; }
@@ -1087,6 +1102,61 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 .posture-breakdown { flex: 1; min-width: 280px; display: flex; flex-direction: column; gap: 14px; }
 .pbar-head { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--dim); margin-bottom: 6px; }
 .pbar-val { font-family: var(--mono); color: var(--text); }
+
+/* ---- executive posture card (two-axis) ---- */
+.posture-exec-card { display: flex; flex-direction: column; gap: var(--space-xl); margin-bottom: var(--space-2xl); }
+
+/* verdict headline row */
+.pex-verdict-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-lg); }
+.pex-verdict { font-family: var(--display); font-size: 32px; font-weight: 700; letter-spacing: -0.5px; line-height: 1.1; }
+.pex-verdict-reason { font-family: var(--sans); font-size: 18px; font-weight: 400; letter-spacing: 0; opacity: 0.85; }
+.pex-overall-pill {
+  font-family: var(--mono); font-size: 12px; color: var(--dim);
+  border: 1px solid var(--glass-border); border-radius: var(--radius-sm);
+  padding: var(--space-xs) var(--space-sm);
+  white-space: nowrap;
+}
+.pex-overall-reason { color: var(--faint); }
+
+/* two component axes */
+.pex-axes { display: flex; gap: var(--space-xl); align-items: stretch; flex-wrap: wrap; }
+.pex-axis { flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: var(--space-xs); }
+.pex-axis-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); }
+.pex-axis-sub { font-size: 11.5px; color: var(--faint); line-height: 1.5; }
+.pex-axis-value { display: flex; align-items: baseline; gap: var(--space-sm); margin-top: var(--space-xs); }
+.pex-axis-score { font-family: var(--mono); font-size: 28px; font-weight: 700; line-height: 1; }
+.pex-axis-of { font-family: var(--mono); font-size: 14px; color: var(--faint); }
+.pex-axis-rating { font-size: 13px; font-weight: 600; color: var(--dim); letter-spacing: 0.3px; }
+.pex-axis-pct { font-family: var(--mono); font-size: 20px; font-weight: 600; color: var(--faint); }
+.pex-axis-footnote { font-size: 11px; color: var(--faint); margin-top: var(--space-xs); }
+.pex-modeled-tag { font-style: italic; }
+.pex-axis-divider { width: 1px; background: var(--glass-border); align-self: stretch; flex: none; }
+
+/* relationship sentence */
+.pex-relationship { font-size: 13px; color: var(--dim); line-height: 1.6; border-left: 2px solid var(--glass-border); padding-left: var(--space-md); }
+
+/* gate-reason + action copy */
+.pex-gate-block { display: flex; flex-direction: column; gap: var(--space-sm); }
+.pex-gate-reason { font-size: 13px; color: var(--faint); line-height: 1.55; }
+.pex-gate-label { font-weight: 600; color: var(--crit); }
+.pex-action { font-size: 13px; font-weight: 600; color: var(--high); line-height: 1.55; }
+
+/* dormant privileged line */
+.pex-dormant { font-size: 13px; color: var(--dim); }
+.pex-dormant-count { font-family: var(--mono); font-size: 18px; font-weight: 700; }
+
+/* breach impact sub-block */
+.pex-impact { border-top: 1px solid var(--hairline); padding-top: var(--space-xl); }
+.pex-impact-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); margin-bottom: var(--space-md); display: flex; align-items: center; gap: var(--space-sm); }
+.pex-impact-tag { font-size: 10px; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--faint); border: 1px solid var(--glass-border); border-radius: var(--radius-sm); padding: 1px var(--space-xs); }
+.pex-impact-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-xl); }
+.pex-impact-item { display: flex; flex-direction: column; gap: var(--space-xs); }
+.pex-impact-k { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.5px; }
+.pex-impact-v { font-family: var(--mono); font-size: 20px; font-weight: 700; }
+.pex-impact-foot { font-size: 11px; color: var(--faint); }
+
+/* dim helper for No Data state */
+.c-dim { color: var(--dim); }
 
 /* ---- get started (empty-state guide) ---- */
 
