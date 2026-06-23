@@ -122,6 +122,7 @@ export function AccountDrawer({ account: a, onClose }: { account: Account; onClo
                     ["Cracked floor", v("cracked_floor")],
                     ["Reuse", v("reuse_bump")],
                     ["Roastable", v("roastable_bump")],
+                    ["Age", v("age_penalty")],
                   ]}
                 />
               )}
