@@ -83,6 +83,12 @@ export function ChapterScoring() {
               is treated as DA-equivalent even without a literal shortest path.
             </li>
             <li>
+              <b>Domain criticality</b> — the same blast radius matters more in a more critical domain. A domain&rsquo;s risk
+              level <strong>multiplies the Impact axis</strong> — <b>×1.1 / ×1.2 / ×1.3</b> for Medium / High / Critical
+              domains (Low and unrated leave it unchanged). It touches Impact only — Exposure stays credential-intrinsic — and
+              has <strong>no effect on un-enriched accounts</strong>, whose Impact is already Unknown.
+            </li>
+            <li>
               <b>Enabled state</b> — a disabled account cannot authenticate, so its Impact is capped low.
             </li>
           </ul>
@@ -91,6 +97,20 @@ export function ChapterScoring() {
 
       {/* The matrix diagram — the centerpiece. */}
       <ExposureImpactGrid />
+
+      {/* The flagship cross-account signal: shared-DA escalation. */}
+      <section className="score-escalation" aria-label="Shared Domain-Admin password escalation">
+        <span className="score-escalation-tag">Flagship signal</span>
+        <h2 className="score-escalation-title">Reusing a Domain Admin&rsquo;s password</h2>
+        <p className="score-escalation-body">
+          The highest-leverage finding the tool surfaces is an account that <strong>reuses a Domain Admin&rsquo;s password</strong>{" "}
+          — the same NT hash as an account with a Domain-Admin pathway. That account inherits{" "}
+          <strong>Impact 10 / Critical</strong> outright, <strong>even if it was never cracked</strong> and{" "}
+          <strong>even across domains</strong>: a helpdesk or service account anywhere that shares a DA&rsquo;s hash is a
+          ready-made lateral-movement step to Domain Admin. It is detected over the whole audit by NT-hash match, so it fires
+          on reuse the per-account axes alone would miss.
+        </p>
+      </section>
 
       {/* Coverage, provisional, percentile. */}
       <section className="score-concepts" aria-label="Coverage, provisional levels, and percentile">
@@ -113,10 +133,66 @@ export function ChapterScoring() {
         <div className="score-concept">
           <span className="score-concept-k">Percentile rank</span>
           <p>
-            A within-audit triage rank (0–100th) — a <strong>sort key, not a displayed score</strong>. It breaks ties so a
-            large block of Critical accounts still has a strict order: which 20 of 500 do you reset first?
+            A within-audit triage rank (0–100th) — a <strong>sort key, not a displayed score</strong>. It is{" "}
+            <strong>level-first</strong> (Critical &gt; High &gt; Medium &gt; Low), then an{" "}
+            <strong>Impact-weighted tiebreak</strong> (<code>0.4·Exposure + 0.6·Impact</code>) within a level, so a large
+            block of Critical accounts still has a strict order: which 20 of 500 do you reset first? It is{" "}
+            <strong>no longer derived from the legacy RiskScore</strong> — a Low-level account can never out-rank a
+            High-level one.
           </p>
         </div>
+      </section>
+
+      {/* Vector-token legend — decode the per-account vector string. */}
+      <section className="score-vector" aria-label="Vector-token legend">
+        <header className="score-vector-head">
+          <span className="score-vector-eyebrow">Reading the vector</span>
+          <h2 className="score-vector-title">Decoding the per-account vector string</h2>
+          <p className="score-vector-sub">
+            Each account carries a compact CVSS-style vector (e.g.{" "}
+            <code>… /T0:Y/RO:KA/DR:C/EXP:C/IMP:C</code>) that records the signals behind its score. The tokens that drive
+            the v2 axes:
+          </p>
+        </header>
+        <dl className="score-vector-dl">
+          <div className="score-vector-item">
+            <dt>
+              <code>T0:</code> Tier-0 control
+            </dt>
+            <dd>
+              <b>Y</b> = controls a Tier-0 / DA-equivalent asset (DCSync, Domain Admins, AdminSDHolder, KRBTGT), forcing the
+              privilege sub-score to its max; <b>N</b> = not.
+            </dd>
+          </div>
+          <div className="score-vector-item">
+            <dt>
+              <code>RO:</code> Roastability
+            </dt>
+            <dd>
+              <b>K</b> = Kerberoastable (SPN), <b>A</b> = AS-REP-roastable, <b>KA</b> = both, <b>N</b> = neither — the small
+              Exposure bump for offline-crackable tickets.
+            </dd>
+          </div>
+          <div className="score-vector-item">
+            <dt>
+              <code>DR:</code> Domain risk
+            </dt>
+            <dd>
+              The enriching domain&rsquo;s criticality that scales Impact — <b>C</b> / <b>H</b> / <b>M</b> / <b>L</b> for
+              Critical / High / Medium / Low, and <b>U</b> when the account is un-enriched (so domain risk contributes
+              nothing).
+            </dd>
+          </div>
+          <div className="score-vector-item">
+            <dt>
+              <code>EXP:</code> / <code>IMP:</code> axis tiers
+            </dt>
+            <dd>
+              The resolved Exposure and Impact tiers — <b>C</b> / <b>H</b> / <b>M</b> / <b>L</b> — with <code>IMP:U</code>{" "}
+              when Impact is Unknown (no BloodHound coverage).
+            </dd>
+          </div>
+        </dl>
       </section>
 
       {/* Worked example — walk one account end to end. */}
@@ -147,7 +223,8 @@ export function ChapterScoring() {
               <li>
                 <span className="score-case-step-k">Exposure</span>
                 <span className="score-case-step-v">
-                  Weak + a high HIBP floor → <b>9.0</b> → tier <span className="tier-pill crit">Critical</span>
+                  Weak + a high HIBP floor (41,000× sits in the ≥10,000 band) → <b>8.0</b> → tier{" "}
+                  <span className="tier-pill crit">Critical</span>
                 </span>
               </li>
               <li>
