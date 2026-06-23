@@ -349,3 +349,42 @@ func TestUnicodeAndPolicyViolationsRoundTripAndSurviveRedaction(t *testing.T) {
 		t.Fatalf("Redacted() must still strip Password/NTHash")
 	}
 }
+
+func TestEscalateLargeCrackedReuseMediumIdempotentAndSubThreshold(t *testing.T) {
+	// 25 cracked share a hash in a large audit -> Medium (absolute N>=25, but <5% of 1000).
+	// Plus a sub-threshold cluster of 3 cracked -> untouched.
+	accts := make([]Account, 0, 1003)
+	for i := 0; i < 25; i++ {
+		accts = append(accts, Account{Username: fmt.Sprintf("m%d", i), Domain: "CORP", NTHash: "MEDIUM", Cracked: true, RiskLevel: "Low", RiskScore: 0.5})
+	}
+	for i := 0; i < 3; i++ {
+		accts = append(accts, Account{Username: fmt.Sprintf("s%d", i), Domain: "CORP", NTHash: "SMALL", Cracked: true, RiskLevel: "Low", RiskScore: 0.5})
+	}
+	for i := 0; i < 975; i++ { // padding so total=1003 -> 25 is < 5% (=50.15)
+		accts = append(accts, Account{Username: fmt.Sprintf("p%d", i), Domain: "CORP", NTHash: fmt.Sprintf("UNIQ%d", i), Cracked: true, RiskLevel: "Low"})
+	}
+
+	EscalateLargeCrackedReuse(accts)
+
+	for i := 0; i < 25; i++ { // Medium tier exercises the 4.0 floor branch
+		a := accts[i]
+		if a.RiskLevel != "Medium" || !a.EscalatedByMassReuse || a.RiskScore < 4.0 {
+			t.Fatalf("m%d: level=%q flagged=%v score=%v, want Medium+flagged+>=4.0", i, a.RiskLevel, a.EscalatedByMassReuse, a.RiskScore)
+		}
+	}
+	for i := 25; i < 28; i++ { // sub-threshold cluster of 3 -> untouched
+		a := accts[i]
+		if a.EscalatedByMassReuse || a.RiskLevel != "Low" || strings.Contains(a.RiskVector, "MASS-REUSE") {
+			t.Fatalf("s%d sub-threshold escalated: %+v", i-25, a)
+		}
+	}
+
+	// Idempotent: a second run leaves state identical (no double tag, no further score change).
+	before := accts[0]
+	EscalateLargeCrackedReuse(accts)
+	after := accts[0]
+	if after.RiskLevel != before.RiskLevel || after.RiskScore != before.RiskScore ||
+		after.RiskVector != before.RiskVector || strings.Count(after.RiskVector, "MASS-REUSE") != 1 {
+		t.Errorf("not idempotent: before=%+v after=%+v", before, after)
+	}
+}

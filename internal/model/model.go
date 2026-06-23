@@ -468,25 +468,14 @@ func EscalateLargeCrackedReuse(accts []Account) {
 // triageKey is the level-first sort key for the triage percentile: rank by Level
 // severity first (Critical>High>Medium>Low), then an Impact-weighted scalar within a
 // level. Guarantees the percentile never contradicts the Level badge.
-func triageKey(a Account) (levelRank int, scalar float64) {
-	switch a.RiskLevel {
-	case "Critical":
-		levelRank = 4
-	case "High":
-		levelRank = 3
-	case "Medium":
-		levelRank = 2
-	case "Low":
-		levelRank = 1
-	default:
-		levelRank = 0
-	}
+func triageKey(a Account) (rank int, scalar float64) {
+	rank = levelRank(a.RiskLevel) // shared severity ordering (also used by EscalateLargeCrackedReuse)
 	if a.ImpactKnown && a.ImpactScore != nil {
 		scalar = 0.4*a.ExposureScore + 0.6*(*a.ImpactScore)
 	} else {
 		scalar = a.ExposureScore
 	}
-	return levelRank, scalar
+	return rank, scalar
 }
 
 func triageLess(a, b Account) bool {
