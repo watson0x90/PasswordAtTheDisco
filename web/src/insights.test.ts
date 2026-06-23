@@ -198,3 +198,20 @@ describe("crossDomainReuseGraph (real reuse groups)", () => {
     expect(crossDomainReuseGraph(null, [acctD("CORP")])).toEqual({ nodes: [], edges: [] })
   })
 })
+
+import { kpiCounts } from "./insights"
+import type { Summary } from "./api"
+
+describe("kpiCounts", () => {
+  const accts = [
+    { cracked: true, hibp_breached: true, da_domains: "CORP.LOCAL" },
+    { cracked: false, hibp_breached: false, da_domains: "None" },
+  ] as Account[]
+  it("prefers Summary counts when present", () => {
+    const s = { total_accounts: 100, cracked: 40, hibp_breached: 25, da_pathways: 7 } as Summary
+    expect(kpiCounts(s, accts)).toEqual({ total: 100, cracked: 40, breached: 25, da: 7 })
+  })
+  it("falls back to client counts when Summary is null", () => {
+    expect(kpiCounts(null, accts)).toEqual({ total: 2, cracked: 1, breached: 1, da: 1 })
+  })
+})

@@ -1,6 +1,6 @@
 // Pure functions that derive chart/scorecard data from the redacted account set.
 // All inputs come from /api/accounts (no cleartext) so everything is safe to chart.
-import type { Account, Report } from "./api"
+import type { Account, Report, Summary } from "./api"
 import { hasDA } from "./util"
 import { impactIsKnown } from "./matrix"
 
@@ -451,4 +451,19 @@ export function similarityNetwork(accts: Account[], maxNodes: number = 60): { no
     }
   }
   return { nodes, edges }
+}
+
+// kpiCounts returns the four primary Overview KPIs from the authoritative Summary counts
+// (matching the report/export), falling back to client-derived counts only while Summary is
+// still loading (null). Kills the client-predicate-vs-Go-counter drift.
+export function kpiCounts(
+  summary: Summary | null,
+  accounts: Account[],
+): { total: number; cracked: number; breached: number; da: number } {
+  return {
+    total: summary?.total_accounts ?? accounts.length,
+    cracked: summary?.cracked ?? accounts.filter((a) => a.cracked).length,
+    breached: summary?.hibp_breached ?? accounts.filter((a) => a.hibp_breached).length,
+    da: summary?.da_pathways ?? accounts.filter((a) => hasDA(a.da_domains)).length,
+  }
 }
