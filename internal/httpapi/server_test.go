@@ -1773,6 +1773,44 @@ func TestRescoreStart409WhenEnrichRunning(t *testing.T) {
 	srv.Enrich.Wait()
 }
 
+func TestEnrichStart409WhenRescoreRunning(t *testing.T) {
+	srv := newServer("secret")
+	srv.Engine = &engine.Engine{Policies: policy.DefaultSet()}
+	// handleEnrichStart bails with 503 unless an enricher is configured; swap in a
+	// stub so the handler gets PAST the "not configured" check and reaches the new
+	// rescore guard.
+	srv.Engine.SwapEnricher(fakeTestEnricher{})
+	srv.Rescore = rescore.NewManager(srv.Engine, srv.Store)
+	srv.Enrich = enrich.NewManager(srv.Engine, srv.Store)
+	gate := make(chan struct{})
+	srv.Rescore.ActivityHook = func() func() {
+		<-gate
+		return func() {}
+	}
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	auditID := createAudit(t, srv, lc, lcsrf, "Enrich vs Rescore")
+
+	// Start rescore; its ActivityHook blocks on the gate so Running() stays true.
+	if err := srv.Rescore.Start(auditID); err != nil {
+		t.Fatalf("rescore start: %v", err)
+	}
+	if !srv.Rescore.Running() {
+		t.Fatal("expected rescore to be running after Start")
+	}
+
+	r := postJSON(srv, "/api/enrich", lc, lcsrf, "")
+	if r.Code != http.StatusConflict {
+		t.Fatalf("enrich while rescore running: want 409, got %d (%s)", r.Code, r.Body.String())
+	}
+	if !strings.Contains(r.Body.String(), "re-scoring in progress") {
+		t.Fatalf("expected 're-scoring in progress' error, got: %s", r.Body.String())
+	}
+
+	// Release the gate and drain the rescore goroutine to avoid a leak.
+	close(gate)
+	srv.Rescore.Wait()
+}
+
 func TestRescoreStartHappyPath(t *testing.T) {
 	srv := newServer("secret")
 	srv.Engine = &engine.Engine{Policies: policy.DefaultSet()}

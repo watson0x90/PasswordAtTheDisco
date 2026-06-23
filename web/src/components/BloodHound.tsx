@@ -8,7 +8,7 @@ import { fmtWhen } from "../format"
 export function BloodHound() {
   const { me } = useAuth()
   const csrf = me?.csrf_token ?? ""
-  const { enrich: enrichJob, refresh } = useJobs()
+  const { enrich: enrichJob, rescore, refresh } = useJobs()
   const [status, setStatus] = useState<BHEStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [scheme, setScheme] = useState("http")
@@ -202,7 +202,7 @@ export function BloodHound() {
 
         <div className="field bhe-run">
           <button type="button" className="btn" onClick={runEnrich}
-                  disabled={enrichJob?.phase === "running" || !status?.active}>
+                  disabled={enrichJob?.phase === "running" || rescore?.phase === "running" || !status?.active}>
             {enrichJob?.phase === "running" ? "Enriching…" : "Run BloodHound enrichment on this audit"}
           </button>
           <div className="field-hint">
