@@ -41,24 +41,23 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
-## What's new in 2.22
+## What's new in 2.23
 
-**Recalculate scoring, a refined two-axis model, and a BloodHound-coverage view.**
+**Sharper Exposure weights — roastability by attack economics, reuse that scales, and credential age.**
 
-- **Recalculate scoring** — re-score an audit against the *current* policy, forbidden-words,
-  and HIBP index in one click (Overview → **Recalculate**), preserving each account's BloodHound
-  Impact. Editing a policy or wordlist now actually reaches existing accounts.
-- **Refined scoring** — domain risk now **multiplies** Impact (×1.1 / ×1.2 / ×1.3, matching the
-  Policies labels), and the triage worklist is **level-first** so a Low-level account can never
-  out-rank a High one. *Existing audits adopt the new numbers on their next Recalculate.*
-- **Enrichment coverage** — the Integrations page now lists the accounts BloodHound didn't
-  enrich, diagnoses why, and exports a (non-secret) CSV to take back to BloodHound; **analysts**
-  get this read-only view. The account drawer also surfaces Tier-0 control, the weakness
-  sub-penalties, failed policy rules, and the `RO:`/`T0:` vector tokens.
+- **Roastability weighted by reality** — AS-REP-roastable accounts (no foothold needed) now
+  outweigh Kerberoastable ones (SPN +0.5, AS-REP +0.75), and AS-REP also raises an Exposure
+  **floor** so a roastable service account can't read as harmless on a strong-looking password.
+- **Reuse scales with the cluster** — a large cluster (100+ accounts sharing one hash) now raises
+  a credential's Exposure **floor** on its own: crack one, own the cluster.
+- **Credential age scores** — a long-unrotated password adds a bounded Exposure bump (shown as an
+  **Age** row in the drawer and on the Insights radar), and a **"Latent risk"** badge flags a
+  *disabled* account that still controls Tier-0 / has a DA path / reuses a hash. *Impact axis
+  unchanged; existing audits adopt the new Exposure on their next Recalculate.*
 
-Earlier: an **MCP server** for AI agents (2.21), the Exposure × Impact danger-map grid (2.20),
-the **two-axis Exposure × Impact** scoring rebuild (2.18), and the in-app **Help / methodology**
-section (2.19).
+Earlier: Recalculate scoring + BloodHound-coverage view (2.22), an **MCP server** for AI agents
+(2.21), the Exposure × Impact danger-map grid (2.20), the **two-axis Exposure × Impact** scoring
+rebuild (2.18), and the in-app **Help / methodology** section (2.19).
 
 See **[CHANGELOG.md](CHANGELOG.md)** for the full release history.
 

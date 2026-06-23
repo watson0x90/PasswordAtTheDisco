@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 _Nothing yet._
 
+## [2.23.0] — 2026-06-22 — Sharper Exposure weights (roastability, reuse, credential age)
+
+> **Scoring was refined again** (Exposure axis only; Impact is unchanged). Existing audits keep
+> their old numbers until you **Recalculate scoring** (Overview → Recalculate).
+
+### Added
+- **Credential age now scores.** A password that hasn't rotated in years is materially more
+  crackable, so it adds a bounded Exposure bump (1–2 yr +0.25, 2–5 yr +0.5, 5 yr+ +0.75) when
+  BloodHound supplies the last-set date. Surfaced as an **Age** row in the account drawer's
+  Exposure breakdown and on the Insights Exposure radar.
+- **"Latent risk" badge** in the account drawer for a **disabled** account that is still
+  dangerous — it controls a Tier-0 asset, has a Domain-Admin pathway, controls objects, or its
+  hash is reused (≥2 accounts). Disabled accounts are capped at Impact 2.0 (they can't
+  authenticate), which can hide a re-enable / Pass-the-Hash persistence path; the badge surfaces
+  it. (No score change — a surfacing-only safety net.)
+
+### Changed
+- **Roastability is weighted by attack economics.** AS-REP-roastable accounts (no pre-auth, no
+  foothold needed) now outweigh Kerberoastable ones (which need a domain foothold): SPN +0.5,
+  AS-REP +0.75. AS-REP additionally **raises an Exposure floor of 3.0** — the hash will be pulled
+  and cracked offline regardless of how strong the password looks — so a roastable service account
+  can no longer read as harmless.
+- **Password reuse scales with the cluster.** The bump grows with the number of accounts sharing
+  a hash, and a large cluster (≥100 → floor 4.0, ≥1000 → floor 5.0) now raises a credential's
+  Exposure **floor** on its own: crack one, own the cluster — even if that password looks strong.
+- The in-app **Help → How we score risk** chapter documents the new age, reuse-floor, and AS-REP
+  weighting.
+
 ## [2.22.0] — 2026-06-23 — Recalculate scoring, a refined two-axis model & coverage tools
 
 > **Scoring was refined.** Domain risk now *multiplies* Impact and the triage percentile is
