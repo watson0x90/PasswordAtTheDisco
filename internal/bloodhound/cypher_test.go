@@ -15,6 +15,27 @@ func TestTier0NameList(t *testing.T) {
 	}
 }
 
+func TestTier0ControllersQuery(t *testing.T) {
+	q := tier0ControllersQuery()
+	// Guards the per-user/bulk definition agreement against a silent refactor:
+	// the built-in Administrators match MUST be exact (not CONTAINS), DCSync via n:Domain,
+	// and every tier0Names fragment present.
+	for _, want := range []string{
+		"= 'ADMINISTRATORS'", // exact local-part, not CONTAINS (else "Backup Administrators" over-matches)
+		"n:Domain",           // DCSync / domain-object control
+		"split(coalesce(n.name,''),'@')[0]",
+	} {
+		if !strings.Contains(q, want) {
+			t.Errorf("tier0ControllersQuery missing %q\nquery=%s", want, q)
+		}
+	}
+	for _, name := range tier0Names {
+		if !strings.Contains(q, "'"+name+"'") {
+			t.Errorf("tier0ControllersQuery missing tier0Names fragment %q", name)
+		}
+	}
+}
+
 func TestParseTier0Literals(t *testing.T) {
 	lits := []literal{{Value: "svc"}, {Value: "CORP"}, {Value: "alice"}, {Value: "EU.CORP"}}
 	got := parseTier0Literals(lits)

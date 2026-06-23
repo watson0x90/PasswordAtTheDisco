@@ -14,9 +14,9 @@ type BulkEnrichment struct {
 	Tier0         map[string]bool          // key -> controls a Tier-0/DA-equivalent object
 }
 
-// BulkEnricher pre-fetches ALL user data from BHE in 3 Cypher queries, then
+// BulkEnricher pre-fetches ALL user data from BHE in 4 Cypher queries, then
 // serves enrichment lookups from memory. This replaces the per-user REST approach
-// (which made ~10 HTTP calls per user) with 3 total queries regardless of user count.
+// (which made ~10 HTTP calls per user) with 4 total queries regardless of user count.
 type BulkEnricher struct {
 	client *Client
 	once   sync.Once

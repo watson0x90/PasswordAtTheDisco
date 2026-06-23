@@ -472,6 +472,17 @@ func parseControllablesFromResults(data []json.RawMessage) map[string]int {
 	return out
 }
 
+// tier0ControllersQuery is the bulk Tier-0 prefetch Cypher. Its predicate mirrors the
+// per-user isTier0Name + ExtractControlsTier0 EXACTLY (kept testable so a refactor can't
+// silently weaken it):
+//   n:Domain                            -> control of the domain object (DCSync)
+//   localpart(n.name) == ADMINISTRATORS -> built-in Administrators (EXACT, to avoid
+//                                          CONTAINS over-matching "Backup Administrators")
+//   n.name CONTAINS any tier0Names fragment -> the substring-matched DA-equivalent names
+func tier0ControllersQuery() string {
+	return `MATCH (u:User)-[r]->(n) WHERE type(r) IN ['GenericAll','GenericWrite','WriteOwner','WriteDacl','Owns','ForceChangePassword','AddMember'] AND (n:Domain OR toUpper(trim(split(coalesce(n.name,''),'@')[0])) = 'ADMINISTRATORS' OR ANY(t IN [` + tier0NameList() + `] WHERE toUpper(coalesce(n.name,'')) CONTAINS t)) RETURN DISTINCT u.samaccountname, u.domain`
+}
+
 // tier0NameList builds the Cypher list literal of Tier-0 object-name fragments from
 // tier0Names (the single source of truth), e.g. "'DOMAIN ADMINS','ENTERPRISE ADMINS',...".
 // tier0Names are hard-coded constants (no user input), so this string-building is injection-safe.
@@ -485,13 +496,7 @@ func tier0NameList() string {
 // object itself (DCSync). Best-effort: on error returns the error; an empty/unrecognized
 // response yields an empty set (conservative -- never a false positive).
 func (c *Client) FetchTier0Controllers() (map[string]bool, error) {
-	// Tier-0 predicate mirrors the per-user isTier0Name + ExtractControlsTier0 exactly:
-	//   n:Domain                            -> control of the domain object (DCSync)
-	//   localpart(n.name) == ADMINISTRATORS -> built-in Administrators (EXACT, to avoid
-	//                                          CONTAINS over-matching "Backup Administrators")
-	//   n.name CONTAINS any tier0Names fragment -> the substring-matched DA-equivalent names
-	query := `MATCH (u:User)-[r]->(n) WHERE type(r) IN ['GenericAll','GenericWrite','WriteOwner','WriteDacl','Owns','ForceChangePassword','AddMember'] AND (n:Domain OR toUpper(trim(split(coalesce(n.name,''),'@')[0])) = 'ADMINISTRATORS' OR ANY(t IN [` + tier0NameList() + `] WHERE toUpper(coalesce(n.name,'')) CONTAINS t)) RETURN DISTINCT u.samaccountname, u.domain`
-	data, err := c.RunCypher(query)
+	data, err := c.RunCypher(tier0ControllersQuery())
 	if err != nil {
 		return nil, fmt.Errorf("FetchTier0Controllers: %w", err)
 	}
