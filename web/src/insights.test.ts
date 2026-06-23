@@ -27,22 +27,26 @@ function acct(p: Partial<Account>): Account {
   }
 }
 
-describe("posture (parity with Go model.PostureScore golden)", () => {
+describe("posture (parity with Go model.PostureScore golden — Hygiene×Reachability formula)", () => {
   // Same fixture + expectations as internal/model TestPostureScoreGolden, so a
   // one-sided tweak to either implementation fails CI.
-  it("matches the Go golden: 22.5 Weak, breakdown {0,0,15,7.5}", () => {
+  // Weights: risk=45, strength=35, compliance=20 (privilege term removed).
+  // 2 enabled accounts: 1 Critical cracked non-compliant, 1 Low cracked compliant.
+  // active=2: risk=max(0,100-1/2*200)/100*45=0; strength=0/2*35=0; compliance=(2-1)/2*20=10 -> 10.0 Weak
+  it("matches the Go golden: 10.0 Weak, breakdown {0,0,0,10}", () => {
     const p = posture([
       acct({ risk_level: "Critical", cracked: true, hibp_breached: true, meets_policy: false }),
       acct({ risk_level: "Low", cracked: true, meets_policy: true }),
     ])
-    expect(p.score).toBe(22.5)
+    expect(p.score).toBe(10.0)
     expect(p.rating).toBe("Weak")
-    expect(p.breakdown).toEqual({ risk: 0, strength: 0, privilege: 15, compliance: 7.5 })
+    expect(p.breakdown).toEqual({ risk: 0, strength: 0, privilege: 0, compliance: 10.0 })
   })
 
   // Second golden (mirrors the Go TestPostureScoreGolden second case) with NON-ZERO
   // risk + strength, so a one-sided coefficient drift can't slip through.
-  it("matches the Go golden (non-zero risk+strength): 57 Weak, {12,18,15,12}", () => {
+  // active=5: risk=max(0,100-1/5*200-1/5*150)/100*45=13.5; strength=3/5*35=21; compliance=(5-1)/5*20=16 -> 50.5 Weak
+  it("matches the Go golden (non-zero risk+strength): 50.5 Weak, {13.5,21,0,16}", () => {
     const p = posture([
       acct({ risk_level: "Critical", cracked: true, meets_policy: false }),
       acct({ risk_level: "High", cracked: true, meets_policy: true }),
@@ -50,20 +54,43 @@ describe("posture (parity with Go model.PostureScore golden)", () => {
       acct({ risk_level: "Low", cracked: false }),
       acct({ risk_level: "Low", cracked: false }),
     ])
-    expect(p.score).toBe(57)
+    expect(p.score).toBe(50.5)
     expect(p.rating).toBe("Weak")
-    expect(p.breakdown).toEqual({ risk: 12, strength: 18, privilege: 15, compliance: 12 })
+    expect(p.breakdown).toEqual({ risk: 13.5, strength: 21.0, privilege: 0, compliance: 16.0 })
   })
 
   it("empty set -> No Data", () => {
     const p = posture([])
     expect(p.score).toBe(0)
     expect(p.rating).toBe("No Data")
+    expect(p.verdict).toBe("No Data")
   })
 
-  it("all-uncracked, no risk, compliant -> Strong", () => {
+  it("all-uncracked, no risk, compliant -> Strong + Sound verdict", () => {
     const p = posture([acct({ cracked: false, risk_level: "Low" }), acct({ cracked: false, risk_level: "Low" })])
     expect(p.rating).toBe("Strong")
+    expect(p.verdict).toBe("Sound")
+  })
+
+  it("disabled accounts excluded from hygiene (enabled=false padding does not inflate score)", () => {
+    const enabled = [
+      acct({ enabled: true, risk_level: "Low", cracked: true, meets_policy: false }),
+      acct({ enabled: true, risk_level: "Low", cracked: false, meets_policy: true }),
+    ]
+    // 8 disabled Critical accounts must not affect the hygiene score
+    const disabled = Array.from({ length: 8 }, () =>
+      acct({ enabled: false, risk_level: "Critical", cracked: true, meets_policy: false })
+    )
+    const p = posture([...enabled, ...disabled])
+    // active=2: risk=45, strength=17.5, compliance=10 -> 72.5 Fair
+    expect(p.score).toBeGreaterThan(72.0)
+    expect(p.score).toBeLessThan(73.0)
+    expect(p.breakdown.privilege).toBe(0)
+  })
+
+  it("privilege breakdown is always 0 (term removed)", () => {
+    const p = posture([acct({ risk_level: "Critical", cracked: true })])
+    expect(p.breakdown.privilege).toBe(0)
   })
 })
 
