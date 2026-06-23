@@ -80,6 +80,7 @@ export interface Summary {
   never_expires: number
   stale_passwords: number
   escalated_by_shared_da: number
+  escalated_by_mass_reuse: number
   policy_violations: number
   high_controlled: number
   // Executive breach impact
@@ -137,6 +138,7 @@ export interface Account {
   similarity_score?: number
   similar_peers?: SimilarPeer[]
   escalated_by_shared_da?: boolean
+  escalated_by_mass_reuse?: boolean
   // Kerberos attack surface
   has_spn?: boolean
   dont_req_preauth?: boolean

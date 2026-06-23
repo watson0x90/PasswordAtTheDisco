@@ -64,11 +64,12 @@ type SanitizedAccount struct {
 	HIBPBreached    bool `json:"hibp_breached"`
 	HIBPBreachCount int  `json:"hibp_breach_count"`
 
-	SharedWith          int  `json:"shared_with"`
-	EscalatedBySharedDA bool `json:"escalated_by_shared_da,omitempty"`
-	HasDAPath           bool `json:"has_da_path"`
-	ControlledObjects   int  `json:"controlled_object_count"`
-	ControlsTier0       bool `json:"controls_tier0,omitempty"`
+	SharedWith           int  `json:"shared_with"`
+	EscalatedBySharedDA  bool `json:"escalated_by_shared_da,omitempty"`
+	EscalatedByMassReuse bool `json:"escalated_by_mass_reuse,omitempty"`
+	HasDAPath            bool `json:"has_da_path"`
+	ControlledObjects    int  `json:"controlled_object_count"`
+	ControlsTier0        bool `json:"controls_tier0,omitempty"`
 
 	Enabled  bool   `json:"enabled"`
 	Coverage string `json:"coverage,omitempty"`
@@ -200,11 +201,12 @@ func Sanitize(accounts []model.Account, summary model.Summary, now time.Time, ve
 			HIBPBreached:    a.HIBPBreached,
 			HIBPBreachCount: a.HIBPBreachCount,
 
-			SharedWith:          a.SharedWith,
-			EscalatedBySharedDA: a.EscalatedBySharedDA,
-			HasDAPath:           a.HasDAPathway(),
-			ControlledObjects:   a.Controlled,
-			ControlsTier0:       a.ControlsTier0,
+			SharedWith:           a.SharedWith,
+			EscalatedBySharedDA:  a.EscalatedBySharedDA,
+			EscalatedByMassReuse: a.EscalatedByMassReuse,
+			HasDAPath:            a.HasDAPathway(),
+			ControlledObjects:    a.Controlled,
+			ControlsTier0:        a.ControlsTier0,
 
 			Enabled:  a.Enabled,
 			Coverage: a.Coverage,

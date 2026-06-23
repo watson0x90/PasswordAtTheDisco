@@ -116,6 +116,20 @@ func walkKeys(t *testing.T, v any, forbidden map[string]bool) {
 	}
 }
 
+func TestSanitizedCarriesMassReuse(t *testing.T) {
+	now := time.Date(2026, 6, 23, 0, 0, 0, 0, time.UTC)
+	rep := Sanitize([]model.Account{
+		{Username: "a", Domain: "CORP", Cracked: true, EscalatedByMassReuse: true},
+		{Username: "b", Domain: "CORP", Cracked: true},
+	}, model.Summary{}, now, "v1")
+	if !rep.Accounts[0].EscalatedByMassReuse {
+		t.Errorf("acct a EscalatedByMassReuse = false, want true (carried)")
+	}
+	if rep.Accounts[1].EscalatedByMassReuse {
+		t.Errorf("acct b EscalatedByMassReuse = true, want false")
+	}
+}
+
 func TestSanitizedNoForbiddenKeys(t *testing.T) {
 	now := time.Date(2026, 6, 23, 0, 0, 0, 0, time.UTC)
 	accts := []model.Account{{
