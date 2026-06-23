@@ -341,6 +341,17 @@ func reuseFloor(sharedWith int) float64 {
 	}
 }
 
+// roastableFloor: AS-REP roastability (DontReqPreauth) is crack-status- AND foothold-independent --
+// an anonymous attacker pulls the AS-REP hash and cracks it offline -- so like a huge reuse cluster
+// it FLOORS Exposure (3.0, ~ a cracked decent-length account). SPN (Kerberoast) earns NO floor: it
+// needs a domain foothold to request the TGS, so it stays a bump (see roastableBump).
+func roastableFloor(c Context) float64 {
+	if c.DontReqPreauth {
+		return 3.0
+	}
+	return 0
+}
+
 // ageBump: an old password is materially more crackable; bounded, absolute age in days.
 // ageDays nil (unenriched / PwdLastSet unknown) => 0.
 func ageBump(ageDays *int) float64 {
@@ -368,8 +379,9 @@ func exposureScore(a Analysis, c Context) float64 {
 		// Uncracked: password unknown, no weakness signals.
 		floor = hibpExposureFloor(c.HIBPBreachCount)
 	}
-	// Large-cluster reuse is a floor (crack-status-independent: crack one hash, own the cluster).
-	floor = math.Max(floor, reuseFloor(c.SharedWith))
+	// Crack-status-independent floors: a huge reuse cluster (crack one, own the cluster) and an
+	// AS-REP-roastable account (offline-crackable with no foothold) both floor Exposure.
+	floor = math.Max(floor, math.Max(reuseFloor(c.SharedWith), roastableFloor(c)))
 	bump := roastableBump(c) + reuseBump(c.SharedWith) + ageBump(c.PasswordAgeDays)
 	// NOTE: bump is added pre-clamp; at a high floor the min(10,...) can absorb part of it, so the
 	// per-factor breakdown values may sum to MORE than the displayed Exposure. That's the bounded-axis

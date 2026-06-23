@@ -124,10 +124,10 @@ func TestExposureUncracked(t *testing.T) {
 	if got := exposureScore(Analysis{}, Context{Cracked: false, Coverage: "none"}); !almost(got, 0.0) {
 		t.Fatalf("uncracked no-signal exposure = %v, want 0.0", got)
 	}
-	// Uncracked + reuse(3)=0.75 + AS-REP roastable(0.75) bump still applies.
+	// Uncracked + AS-REP floor(3.0) + reuse(3)=0.75 bump + AS-REP roastable(0.75) bump.
 	c2 := Context{Cracked: false, Coverage: "full", SharedWith: 3, DontReqPreauth: true}
-	if got := exposureScore(Analysis{}, c2); !almost(got, 1.5) {
-		t.Fatalf("uncracked bumps-only exposure = %v, want 1.5", got)
+	if got := exposureScore(Analysis{}, c2); !almost(got, 4.5) {
+		t.Fatalf("uncracked AS-REP+reuse exposure = %v, want 4.5", got)
 	}
 }
 
@@ -370,6 +370,40 @@ func TestAgeBump(t *testing.T) {
 		if got := ageBump(tc.days); !almost(got, tc.want) {
 			t.Errorf("ageBump(%s) = %v, want %v", tc.name, got, tc.want)
 		}
+	}
+}
+
+func TestRoastableFloor(t *testing.T) {
+	cases := []struct {
+		name string
+		c    Context
+		want float64
+	}{
+		{"neither", Context{}, 0},
+		{"spn only (no floor; needs foothold)", Context{HasSPN: true}, 0},
+		{"asrep only", Context{DontReqPreauth: true}, 3.0},
+		{"both (asrep floors)", Context{HasSPN: true, DontReqPreauth: true}, 3.0},
+	}
+	for _, tc := range cases {
+		if got := roastableFloor(tc.c); !almost(got, tc.want) {
+			t.Errorf("roastableFloor(%s) = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestExposureASREPFloor(t *testing.T) {
+	// A strong, uncracked, zero-HIBP, no-reuse, AS-REP-roastable account must floor to 3.0 on the
+	// roastable floor, plus the retained +0.75 AS-REP bump => 3.75 (the low/Medium border). Before
+	// this change it was only the +0.75 bump => 0.75 (bottom-of-Low), which mis-triaged a foothold-
+	// independent offline-crackable account as harmless.
+	got := exposureScore(strong(), Context{Cracked: false, Coverage: "full", DontReqPreauth: true})
+	if !almost(got, 3.75) {
+		t.Fatalf("uncracked AS-REP exposure = %v, want 3.75", got)
+	}
+	// SPN-only (Kerberoast needs a foothold) gets NO floor: just the +0.5 bump => 0.5.
+	gotSPN := exposureScore(strong(), Context{Cracked: false, Coverage: "full", HasSPN: true})
+	if !almost(gotSPN, 0.5) {
+		t.Fatalf("uncracked SPN-only exposure = %v, want 0.5", gotSPN)
 	}
 }
 
