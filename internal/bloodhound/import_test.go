@@ -32,7 +32,7 @@ func TestParseUsersExportRoastableFields(t *testing.T) {
 		t.Errorf("svc3 bhe: HasSPN=%v DontReqPreauth=%v, want true/true", u.HasSPN, u.DontReqPreauth)
 	}
 
-	// Simplified shape: [{"username":"...","domain":"...","hasspn":true,...}]
+	// Simplified shape: omitting hasspn tests zero-value (false); dontreqpreauth explicit true.
 	simple := `[{"username":"svc4","domain":"CORP.LOCAL","enabled":true,"dontreqpreauth":true}]`
 	got, err = ParseUsersExport(strings.NewReader(simple))
 	if err != nil {
