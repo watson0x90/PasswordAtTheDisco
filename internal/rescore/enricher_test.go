@@ -74,6 +74,42 @@ func newTestEngine() *engine.Engine {
 	}
 }
 
+func TestStoredEnricherPreservesPropsForPartialCoverage(t *testing.T) {
+	// A Coverage:"none" account that nonetheless carries uploaded AD properties
+	// (from /api/upload/bheusers) must keep them through a rescore, while Impact
+	// stays Unknown (Enriched=false). This is the bheusers-upload-fidelity fix.
+	spn := false
+	preauth := true
+	old := int64(1_600_000_000) // a real, non-zero pwdlastset
+	a := model.Account{
+		Username:       "svc",
+		Domain:         "CORP",
+		Coverage:       "none", // NOT DA-graph enriched
+		Enabled:        false,  // uploaded: disabled
+		Controlled:     50,     // uploaded: controls 50 objects
+		PwdLastSet:     old,    // uploaded: an old password
+		HasSPN:         &spn,
+		DontReqPreauth: &preauth, // uploaded: AS-REP roastable
+	}
+	enr := NewStoredEnricher([]model.Account{a}).Enrich(engine.NormalizeUsername("svc", "CORP"))
+
+	if enr.Enriched {
+		t.Fatal("Coverage=none must yield Enriched=false (Impact stays Unknown)")
+	}
+	if enr.Enabled == nil || *enr.Enabled {
+		t.Errorf("Enabled = %v, want &false (preserved)", enr.Enabled)
+	}
+	if enr.ControlledObjects == nil || *enr.ControlledObjects != 50 {
+		t.Errorf("ControlledObjects = %v, want &50 (preserved)", enr.ControlledObjects)
+	}
+	if enr.PwdLastSet == nil || *enr.PwdLastSet != old {
+		t.Errorf("PwdLastSet = %v, want &%d (preserved)", enr.PwdLastSet, old)
+	}
+	if enr.DontReqPreauth == nil || !*enr.DontReqPreauth {
+		t.Errorf("DontReqPreauth = %v, want &true (preserved)", enr.DontReqPreauth)
+	}
+}
+
 // TestImpactEquivalenceAfterRescore asserts the core rescore invariant:
 //   - Coverage:"full" with DA enrichment => ImpactKnown stays true after RescoreWith.
 //   - Coverage:"none" => ImpactKnown stays false (Impact-Unknown preserved).
