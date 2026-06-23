@@ -1,9 +1,11 @@
 package model
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -539,6 +541,7 @@ func TestPostureGolden(t *testing.T) {
 		Overall         float64 `json:"overall"`
 		Verdict         string  `json:"verdict"`
 		VerdictReason   string  `json:"verdict_reason"`
+		Likelihood      string  `json:"likelihood"`
 	}
 	type goldenCase struct {
 		Name     string          `json:"name"`
@@ -594,6 +597,30 @@ func TestPostureGolden(t *testing.T) {
 			if p.VerdictReason != e.VerdictReason {
 				t.Errorf("verdict_reason: got %q want %q", p.VerdictReason, e.VerdictReason)
 			}
+			if p.Likelihood != e.Likelihood {
+				t.Errorf("likelihood: got %q want %q", p.Likelihood, e.Likelihood)
+			}
 		})
+	}
+}
+
+// TestPostureGoldenFixtureInSync asserts that the two fixture copies are byte-identical.
+// If they drift, copy internal/model/testdata/posture_golden.json to web/src/__fixtures__/posture_golden.json.
+func TestPostureGoldenFixtureInSync(t *testing.T) {
+	// Resolve both paths relative to this test file's location (internal/model/).
+	goFixture := filepath.Join("testdata", "posture_golden.json")
+	// Two levels up from internal/model/ -> repo root, then into web/src/__fixtures__/.
+	webFixture := filepath.Join("..", "..", "web", "src", "__fixtures__", "posture_golden.json")
+
+	goBuf, err := os.ReadFile(goFixture)
+	if err != nil {
+		t.Fatalf("read Go fixture: %v", err)
+	}
+	webBuf, err := os.ReadFile(webFixture)
+	if err != nil {
+		t.Fatalf("read web fixture: %v", err)
+	}
+	if !bytes.Equal(goBuf, webBuf) {
+		t.Fatalf("fixture files are out of sync:\n  Go:  internal/model/testdata/posture_golden.json\n  Web: web/src/__fixtures__/posture_golden.json\nRe-copy the Go fixture to the web path to fix this.")
 	}
 }

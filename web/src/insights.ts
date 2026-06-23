@@ -16,7 +16,7 @@ export interface Posture {
   reachability_pct: string
   overall: number
   verdict: Verdict
-  verdict_reason: string
+  verdict_reason?: string
 }
 
 const r1 = (n: number) => Math.round(n * 10) / 10

@@ -11,7 +11,8 @@
       "reachability_pct": "",
       "overall": 0,
       "verdict": "No Data",
-      "verdict_reason": ""
+      "verdict_reason": "",
+      "likelihood": "—"
     }
   },
   {
@@ -29,7 +30,8 @@
       "reachability_pct": "<25%",
       "overall": 100,
       "verdict": "Sound",
-      "verdict_reason": ""
+      "verdict_reason": "",
+      "likelihood": "Low"
     }
   },
   {
@@ -44,7 +46,8 @@
       "reachability_pct": "50-75%",
       "overall": 20.2,
       "verdict": "High Risk",
-      "verdict_reason": "a reachable path to domain-control exists"
+      "verdict_reason": "a reachable path to domain-control exists",
+      "likelihood": "High"
     }
   },
   {
@@ -60,7 +63,8 @@
       "reachability_pct": ">75%",
       "overall": 9.1,
       "verdict": "Critical",
-      "verdict_reason": "multiple reachable domain-control paths"
+      "verdict_reason": "multiple reachable domain-control paths",
+      "likelihood": "Very High"
     }
   },
   {
@@ -75,7 +79,8 @@
       "reachability_pct": "50-75%",
       "overall": 13.5,
       "verdict": "Critical",
-      "verdict_reason": "Tier-0 Reachable"
+      "verdict_reason": "Tier-0 Reachable",
+      "likelihood": "High"
     }
   },
   {
@@ -90,7 +95,71 @@
       "reachability_pct": "",
       "overall": 0,
       "verdict": "No Data",
-      "verdict_reason": ""
+      "verdict_reason": "",
+      "likelihood": "—"
+    }
+  },
+  {
+    "name": "critN-cap",
+    "accounts": [
+      {"enabled": true, "cracked": true, "risk_level": "Critical", "meets_policy": true, "da_domains": "", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false},
+      {"enabled": true, "cracked": true, "risk_level": "Critical", "meets_policy": true, "da_domains": "", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false},
+      {"enabled": true, "cracked": true, "risk_level": "Critical", "meets_policy": true, "da_domains": "", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false},
+      {"enabled": true, "cracked": true, "risk_level": "Critical", "meets_policy": true, "da_domains": "", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false},
+      {"enabled": true, "cracked": true, "risk_level": "Critical", "meets_policy": true, "da_domains": "", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false},
+      {"enabled": true, "cracked": true, "risk_level": "Critical", "meets_policy": true, "da_domains": "", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false}
+    ],
+    "expect": {
+      "score": 20,
+      "rating": "Weak",
+      "reachability": "High",
+      "reachability_pct": "50-75%",
+      "overall": 8.9,
+      "verdict": "High Risk",
+      "verdict_reason": "a reachable path to domain-control exists",
+      "likelihood": "High"
+    }
+  },
+  {
+    "name": "escalated-not-cracked",
+    "accounts": [
+      {"enabled": true, "cracked": false, "risk_level": "Low", "meets_policy": true, "da_domains": "CORP.LOCAL", "controls_tier0": false, "escalated_by_shared_da": true, "escalated_by_mass_reuse": false}
+    ],
+    "expect": {
+      "score": 100,
+      "rating": "Strong",
+      "reachability": "High",
+      "reachability_pct": "50-75%",
+      "overall": 45,
+      "verdict": "High Risk",
+      "verdict_reason": "a reachable path to domain-control exists",
+      "likelihood": "High"
+    }
+  },
+  {
+    "name": "strong-hygiene-with-reachability",
+    "accounts": [
+      {"enabled": true, "cracked": false, "risk_level": "Low", "meets_policy": true, "da_domains": "", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false},
+      {"enabled": true, "cracked": false, "risk_level": "Low", "meets_policy": true, "da_domains": "", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false},
+      {"enabled": true, "cracked": false, "risk_level": "Low", "meets_policy": true, "da_domains": "", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false},
+      {"enabled": true, "cracked": false, "risk_level": "Low", "meets_policy": true, "da_domains": "", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false},
+      {"enabled": true, "cracked": false, "risk_level": "Low", "meets_policy": true, "da_domains": "", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false},
+      {"enabled": true, "cracked": false, "risk_level": "Low", "meets_policy": true, "da_domains": "", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false},
+      {"enabled": true, "cracked": false, "risk_level": "Low", "meets_policy": true, "da_domains": "", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false},
+      {"enabled": true, "cracked": false, "risk_level": "Low", "meets_policy": true, "da_domains": "", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false},
+      {"enabled": true, "cracked": false, "risk_level": "Low", "meets_policy": true, "da_domains": "", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false},
+      {"enabled": true, "cracked": false, "risk_level": "Low", "meets_policy": true, "da_domains": "", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false},
+      {"enabled": true, "cracked": true, "risk_level": "Low", "meets_policy": true, "da_domains": "CORP.LOCAL", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false}
+    ],
+    "expect": {
+      "score": 96.8,
+      "rating": "Strong",
+      "reachability": "High",
+      "reachability_pct": "50-75%",
+      "overall": 43.6,
+      "verdict": "High Risk",
+      "verdict_reason": "a reachable path to domain-control exists",
+      "likelihood": "High"
     }
   }
 ]

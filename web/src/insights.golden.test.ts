@@ -26,6 +26,7 @@ interface GoldenExpect {
   overall: number
   verdict: string
   verdict_reason: string
+  likelihood: string
 }
 
 interface GoldenCase {
@@ -75,7 +76,8 @@ describe("posture golden (Go⇄TS parity — same fixture as TestPostureGolden)"
       expect(p.reachability_pct).toBe(e.reachability_pct)
       expect(p.overall).toBe(e.overall)
       expect(p.verdict).toBe(e.verdict)
-      expect(p.verdict_reason).toBe(e.verdict_reason)
+      expect(p.verdict_reason ?? "").toBe(e.verdict_reason)
+      expect(p.likelihood).toBe(e.likelihood)
     })
   }
 })
