@@ -3,6 +3,7 @@ package model
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 )
@@ -513,5 +514,86 @@ func TestEscalateLargeCrackedReuseMediumIdempotentAndSubThreshold(t *testing.T) 
 	if after.RiskLevel != before.RiskLevel || after.RiskScore != before.RiskScore ||
 		after.RiskVector != before.RiskVector || strings.Count(after.RiskVector, "MASS-REUSE") != 1 {
 		t.Errorf("not idempotent: before=%+v after=%+v", before, after)
+	}
+}
+
+// TestPostureGolden loads the shared Go⇄TS fixture and pins the Go PostureScore output.
+// Any change to either the fixture or the Go formula that diverges from the TS mirror
+// will fail here; the companion web/src/insights.golden.test.ts asserts the same fixture.
+func TestPostureGolden(t *testing.T) {
+	type goldenAccount struct {
+		Enabled              bool   `json:"enabled"`
+		Cracked              bool   `json:"cracked"`
+		RiskLevel            string `json:"risk_level"`
+		MeetsPolicy          bool   `json:"meets_policy"`
+		DADomains            string `json:"da_domains"`
+		ControlsTier0        bool   `json:"controls_tier0"`
+		EscalatedBySharedDA  bool   `json:"escalated_by_shared_da"`
+		EscalatedByMassReuse bool   `json:"escalated_by_mass_reuse"`
+	}
+	type goldenExpect struct {
+		Score           float64 `json:"score"`
+		Rating          string  `json:"rating"`
+		Reachability    string  `json:"reachability"`
+		ReachabilityPct string  `json:"reachability_pct"`
+		Overall         float64 `json:"overall"`
+		Verdict         string  `json:"verdict"`
+		VerdictReason   string  `json:"verdict_reason"`
+	}
+	type goldenCase struct {
+		Name     string          `json:"name"`
+		Accounts []goldenAccount `json:"accounts"`
+		Expect   goldenExpect    `json:"expect"`
+	}
+
+	raw, err := os.ReadFile("testdata/posture_golden.json")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	var cases []goldenCase
+	if err := json.Unmarshal(raw, &cases); err != nil {
+		t.Fatalf("parse fixture: %v", err)
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.Name, func(t *testing.T) {
+			accts := make([]Account, len(c.Accounts))
+			for i, ga := range c.Accounts {
+				accts[i] = Account{
+					Enabled:              ga.Enabled,
+					Cracked:              ga.Cracked,
+					RiskLevel:            ga.RiskLevel,
+					MeetsPolicy:          ga.MeetsPolicy,
+					DADomains:            ga.DADomains,
+					ControlsTier0:        ga.ControlsTier0,
+					EscalatedBySharedDA:  ga.EscalatedBySharedDA,
+					EscalatedByMassReuse: ga.EscalatedByMassReuse,
+				}
+			}
+			p := PostureScore(accts)
+			e := c.Expect
+			if p.Score != e.Score {
+				t.Errorf("score: got %v want %v", p.Score, e.Score)
+			}
+			if p.Rating != e.Rating {
+				t.Errorf("rating: got %q want %q", p.Rating, e.Rating)
+			}
+			if p.Reachability != e.Reachability {
+				t.Errorf("reachability: got %q want %q", p.Reachability, e.Reachability)
+			}
+			if p.ReachabilityPct != e.ReachabilityPct {
+				t.Errorf("reachability_pct: got %q want %q", p.ReachabilityPct, e.ReachabilityPct)
+			}
+			if p.Overall != e.Overall {
+				t.Errorf("overall: got %v want %v", p.Overall, e.Overall)
+			}
+			if p.Verdict != e.Verdict {
+				t.Errorf("verdict: got %q want %q", p.Verdict, e.Verdict)
+			}
+			if p.VerdictReason != e.VerdictReason {
+				t.Errorf("verdict_reason: got %q want %q", p.VerdictReason, e.VerdictReason)
+			}
+		})
 	}
 }

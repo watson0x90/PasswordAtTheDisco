@@ -1,0 +1,96 @@
+[
+  {
+    "name": "all-disabled no data",
+    "accounts": [
+      {"enabled": false, "cracked": true, "risk_level": "Critical", "meets_policy": false, "da_domains": "", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false}
+    ],
+    "expect": {
+      "score": 0,
+      "rating": "No Data",
+      "reachability": "—",
+      "reachability_pct": "",
+      "overall": 0,
+      "verdict": "No Data",
+      "verdict_reason": ""
+    }
+  },
+  {
+    "name": "strong hygiene clean estate sound",
+    "accounts": [
+      {"enabled": true, "cracked": false, "risk_level": "Low", "meets_policy": true, "da_domains": "", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false},
+      {"enabled": true, "cracked": false, "risk_level": "Low", "meets_policy": true, "da_domains": "", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false},
+      {"enabled": true, "cracked": false, "risk_level": "Low", "meets_policy": true, "da_domains": "", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false},
+      {"enabled": true, "cracked": false, "risk_level": "Low", "meets_policy": true, "da_domains": "", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false}
+    ],
+    "expect": {
+      "score": 100,
+      "rating": "Strong",
+      "reachability": "Low",
+      "reachability_pct": "<25%",
+      "overall": 100,
+      "verdict": "Sound",
+      "verdict_reason": ""
+    }
+  },
+  {
+    "name": "1 reachable DA path High Risk L=0.55",
+    "accounts": [
+      {"enabled": true, "cracked": true, "risk_level": "Low", "meets_policy": false, "da_domains": "CORP.LOCAL", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false}
+    ],
+    "expect": {
+      "score": 45,
+      "rating": "Weak",
+      "reachability": "High",
+      "reachability_pct": "50-75%",
+      "overall": 20.2,
+      "verdict": "High Risk",
+      "verdict_reason": "a reachable path to domain-control exists"
+    }
+  },
+  {
+    "name": "2 reachable DA paths Critical L=0.7975",
+    "accounts": [
+      {"enabled": true, "cracked": true, "risk_level": "Low", "meets_policy": false, "da_domains": "CORP.LOCAL", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false},
+      {"enabled": true, "cracked": true, "risk_level": "Low", "meets_policy": false, "da_domains": "CORP.LOCAL", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false}
+    ],
+    "expect": {
+      "score": 45,
+      "rating": "Weak",
+      "reachability": "Very High",
+      "reachability_pct": ">75%",
+      "overall": 9.1,
+      "verdict": "Critical",
+      "verdict_reason": "multiple reachable domain-control paths"
+    }
+  },
+  {
+    "name": "1 reachable Tier-0 Critical Tier-0 Reachable",
+    "accounts": [
+      {"enabled": true, "cracked": true, "risk_level": "Low", "meets_policy": false, "da_domains": "", "controls_tier0": true, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false}
+    ],
+    "expect": {
+      "score": 45,
+      "rating": "Weak",
+      "reachability": "High",
+      "reachability_pct": "50-75%",
+      "overall": 13.5,
+      "verdict": "Critical",
+      "verdict_reason": "Tier-0 Reachable"
+    }
+  },
+  {
+    "name": "disabled cracked DA is dormant not counted in L",
+    "accounts": [
+      {"enabled": false, "cracked": true, "risk_level": "Critical", "meets_policy": false, "da_domains": "CORP.LOCAL", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false}
+    ],
+    "expect": {
+      "score": 0,
+      "rating": "No Data",
+      "reachability": "—",
+      "reachability_pct": "",
+      "overall": 0,
+      "verdict": "No Data",
+      "verdict_reason": ""
+    }
+  }
+]
