@@ -105,22 +105,61 @@ export function Compare() {
 
 function DiffView({ res, accounts }: { res: DiffResult; accounts: Account[] }) {
   const d = res.diff
-  const delta = Math.round((d.posture_b - d.posture_a) * 10) / 10
+  // posture_a / posture_b are Credential Hygiene (enabled-only average, 0–100).
+  // Reachability delta requires backend fields not yet in the diff payload; show "—" when absent.
+  const hygieneA = Math.round(d.posture_a * 10) / 10
+  const hygieneB = Math.round(d.posture_b * 10) / 10
+  const hygieneDelta = Math.round((hygieneB - hygieneA) * 10) / 10
+  const reachA: string = (d as unknown as Record<string, unknown>).reachability_a as string | undefined ?? "—"
+  const reachB: string = (d as unknown as Record<string, unknown>).reachability_b as string | undefined ?? "—"
+  const reachChanged = reachA !== "—" && reachB !== "—" && reachA !== reachB
+
   return (
     <>
-      <div className="panel compare-posture">
-        <div className="cp-side">
-          <div className="cp-name">{res.a.name}</div>
-          <div className="cp-score">{d.posture_a}</div>
+      {/* Two-axis delta — primary headline */}
+      <div className="panel cp-twoaxis">
+        <div className="cp-twoaxis-head">
+          <span className="cp-twoaxis-title">Two-axis change</span>
+          <span className="cp-twoaxis-sub">{res.a.name} → {res.b.name}</span>
         </div>
-        <div className="cp-arrow">→</div>
-        <div className="cp-side">
-          <div className="cp-name">{res.b.name}</div>
-          <div className="cp-score">{d.posture_b}</div>
+        <div className="cp-twoaxis-row">
+          {/* Hygiene axis */}
+          <div className="cp-axis-block">
+            <div className="cp-axis-label">Credential Hygiene</div>
+            <div className="cp-axis-values">
+              <span className="cp-axis-score muted">{hygieneA}</span>
+              <span className="cp-axis-arrow">→</span>
+              <span className="cp-axis-score">{hygieneB}</span>
+            </div>
+            <div className={`cp-axis-delta ${hygieneDelta >= 0 ? "c-low" : "c-crit"}`}>
+              {hygieneDelta >= 0 ? "+" : ""}{hygieneDelta} pts
+            </div>
+          </div>
+
+          <div className="cp-axis-divider" aria-hidden="true" />
+
+          {/* Reachability axis */}
+          <div className="cp-axis-block">
+            <div className="cp-axis-label">Breach Reachability</div>
+            <div className="cp-axis-values">
+              <span className="cp-axis-score muted">{reachA}</span>
+              {reachA !== "—" && reachB !== "—" && <span className="cp-axis-arrow">→</span>}
+              {reachA !== "—" && reachB !== "—" && <span className="cp-axis-score">{reachB}</span>}
+            </div>
+            {reachChanged ? (
+              <div className="cp-axis-delta c-high">changed — re-check structural exposure</div>
+            ) : reachA !== "—" ? (
+              <div className="cp-axis-delta muted">unchanged</div>
+            ) : (
+              <div className="cp-axis-delta muted">— available after backend diff extension</div>
+            )}
+          </div>
         </div>
-        <div className={`cp-delta ${delta >= 0 ? "c-low" : "c-crit"}`}>
-          {delta >= 0 ? "+" : ""}
-          {delta} posture
+
+        {/* Overall as labeled secondary, not headline */}
+        <div className="cp-overall-secondary">
+          Overall (Hygiene × (1−L) trend): {hygieneA} → {hygieneB}
+          {" "}<span className="muted">— use Hygiene and Reachability separately as primary signals</span>
         </div>
       </div>
 
