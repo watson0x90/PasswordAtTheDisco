@@ -73,6 +73,7 @@ export function AccountDrawer({ account: a, onClose }: { account: Account; onClo
     ["Password never expires", a.pwd_never_expires === true ? "Yes ⚠" : a.pwd_never_expires === false ? "No" : "Unknown"],
     ["Days out of compliance", a.days_out_of_compliance ? `${a.days_out_of_compliance}d overdue` : "—"],
     ["Escalated (Shared-DA)", a.escalated_by_shared_da ? "Yes — shares hash with a DA account" : "—"],
+    ["Escalated (Mass-reuse)", a.escalated_by_mass_reuse ? "Yes — one crack compromises this whole reuse cluster" : "—"],
     ["Kerberoastable (SPN)", a.has_spn === true ? "Yes ⚠ — offline crackable via TGS" : "No"],
     ["AS-REP roastable", a.dont_req_preauth === true ? "Yes ⚠ — no pre-auth required" : "No"],
     ["Enabled", a.enabled ? "Yes" : "No"],
