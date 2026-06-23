@@ -33,8 +33,6 @@ export function RecalcControl({ hasScored }: { hasScored: boolean }) {
 
   if (!isLead) return null
 
-  if (me?.role !== "lead") return null
-
   const reason = recalcDisabledReason({ hasScored, anyRunning })
   const label = lastRecalculatedLabel(ingests)
   const start = async () => {

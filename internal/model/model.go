@@ -444,7 +444,7 @@ func ComputePercentiles(accts []Account) {
 // Metadata only -- no password or NT hash. Stored in the audit's encrypted dataset.
 type IngestEvent struct {
 	Filename       string    `json:"filename"`
-	Kind           string    `json:"kind"` // "dump" | "cracks" | "domain_delete" | "enrich"
+	Kind           string    `json:"kind"` // "dump" | "cracks" | "domain_delete" | "enrich" | "rescore"
 	Domain         string    `json:"domain,omitempty"`
 	AccountsLoaded int       `json:"accounts_loaded,omitempty"` // dump
 	HashesMatched  int       `json:"hashes_matched,omitempty"`  // cracks

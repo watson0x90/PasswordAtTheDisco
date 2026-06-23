@@ -12,8 +12,8 @@ export type CoverageWhy =
   | { kind: "never-run"; count: number }
   | { kind: "ran-unmatched"; count: number }
 
-// coverageWhy diagnoses the audit-level reason from the un-enriched count + whether a
-// BloodHound enrichment has ever run on this audit (an "enrich" ingest event exists).
+// coverageWhy diagnoses the audit-level reason from the un-enriched count + whether
+// BloodHound enrichment has run on this audit (>=1 account is enriched, i.e. coverage === "full").
 export function coverageWhy(o: { unenrichedCount: number; totalCount: number; enrichRan: boolean }): CoverageWhy {
   if (o.unenrichedCount === 0) return { kind: "all-covered", total: o.totalCount }
   if (!o.enrichRan) return { kind: "never-run", count: o.unenrichedCount }

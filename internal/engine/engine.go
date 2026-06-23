@@ -495,13 +495,6 @@ func (e *Engine) freshHIBP(ntlm string) (count int, ok bool) {
 	return 0, false
 }
 
-// hibpCount is a thin wrapper for callers that don't need to distinguish
-// "index unavailable" from "known zero".
-func (e *Engine) hibpCount(ntlm string) int {
-	c, _ := e.freshHIBP(ntlm)
-	return c
-}
-
 // enrichVia fetches enrichment from enr; returns an empty Enrichment if enr is nil.
 func enrichVia(enr Enricher, username, domain string) Enrichment {
 	if enr == nil {
