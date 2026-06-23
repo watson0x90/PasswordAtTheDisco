@@ -39,4 +39,14 @@ describe("disabledLatentRisk", () => {
   it("nil-safe: undefined da_domains does not trip the predicate", () => {
     expect(disabledLatentRisk(acct({ enabled: false, da_domains: undefined as unknown as string }))).toBe(false)
   })
+  it("nil-safe: undefined controls_tier0 does not trip the predicate", () => {
+    expect(disabledLatentRisk(acct({ enabled: false, controls_tier0: undefined }))).toBe(false)
+  })
+  it("true when disabled + all risk signals present", () => {
+    expect(
+      disabledLatentRisk(
+        acct({ enabled: false, controls_tier0: true, da_domains: "CORP.LOCAL", controlled_object_count: 5, shared_with: 3 }),
+      ),
+    ).toBe(true)
+  })
 })
