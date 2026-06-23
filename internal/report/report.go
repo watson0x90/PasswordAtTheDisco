@@ -201,9 +201,16 @@ type domRow struct {
 }
 
 type htmlData struct {
-	Name, Generated              string
-	Score                        float64
-	Rating, Likelihood           string
+	Name, Generated    string
+	Score              float64
+	Rating, Likelihood string
+	// New executive fields (Hygiene×Reachability rework).
+	Verdict                      string
+	VerdictReason                string
+	Reachability                 string
+	ReachabilityPct              string
+	Overall                      float64
+	DormantPrivileged            int
 	BR                           [4]float64
 	BRPct                        [4]int
 	Total, Cracked, Breached, DA int
@@ -256,8 +263,12 @@ func HTML(w io.Writer, name string, generated time.Time, accounts []model.Accoun
 
 	p := model.PostureScore(accounts)
 	d.Score, d.Rating, d.Likelihood = p.Score, p.Rating, p.Likelihood
+	d.Verdict, d.VerdictReason = p.Verdict, p.VerdictReason
+	d.Reachability, d.ReachabilityPct, d.Overall = p.Reachability, p.ReachabilityPct, p.Overall
 	d.BR = [4]float64{p.Breakdown.Risk, p.Breakdown.Strength, p.Breakdown.Privilege, p.Breakdown.Compliance}
-	d.BRPct = [4]int{int(d.BR[0] / 40 * 100), int(d.BR[1] / 30 * 100), int(d.BR[2] / 15 * 100), int(d.BR[3] / 15 * 100)}
+	// Weights are now 45/35/20/0 (privilege term removed); normalize each bar accordingly.
+	// Privilege (index 2) is always 0 — display as 0% rather than dividing by zero.
+	d.BRPct = [4]int{int(d.BR[0] / 45 * 100), int(d.BR[1] / 35 * 100), 0, int(d.BR[3] / 20 * 100)}
 
 	maxRisk := 1
 	for _, c := range riskCounts {
@@ -333,14 +344,15 @@ td{padding:7px 10px;border-bottom:1px solid #1b2236;white-space:nowrap}
   <div>
     <div class="score" style="color:{{if ge .Score 85.0}}#34d399{{else if ge .Score 70.0}}#fbbf24{{else}}#fb7185{{end}}">{{f1 .Score}}</div>
     <div class="rating" style="color:{{if ge .Score 85.0}}#34d399{{else if ge .Score 70.0}}#fbbf24{{else}}#fb7185{{end}}">{{.Rating}}</div>
-    <div class="meta">breach likelihood: {{.Likelihood}}</div>
-    <div class="meta">security health — higher is better · target ≥ 75</div>
+    <div class="meta" style="margin-top:8px"><strong style="color:{{if eq .Verdict "Sound"}}#34d399{{else if eq .Verdict "Guarded"}}#fbbf24{{else if eq .Verdict "Elevated"}}#fbbf24{{else}}#fb7185{{end}}">{{.Verdict}}</strong>{{if .VerdictReason}} — {{.VerdictReason}}{{end}}</div>
+    <div class="meta">Credential Hygiene: {{f1 .Score}}/100 ({{.Rating}}) · Breach Reachability: {{.Reachability}} ({{.ReachabilityPct}}, modeled upper bound)</div>
+    <div class="meta">Overall: {{f1 .Overall}}/100 (trend key only){{if .VerdictReason}} · capped by reachability gate{{end}}</div>
+    {{if gt .DormantPrivileged 0}}<div class="meta" style="color:#fbbf24">⚠ Dormant privileged (disabled) accounts: {{.DormantPrivileged}} — pre-compromised credentials that become live if re-enabled</div>{{end}}
   </div>
   <div class="br">
-    <div class="brrow"><span>Risk profile</span><span>{{f1 (index .BR 0)}} / 40</span></div><div class="track"><div class="fill" style="width:{{index .BRPct 0}}%"></div></div>
-    <div class="brrow"><span>Password strength</span><span>{{f1 (index .BR 1)}} / 30</span></div><div class="track"><div class="fill" style="width:{{index .BRPct 1}}%"></div></div>
-    <div class="brrow"><span>Privilege control</span><span>{{f1 (index .BR 2)}} / 15</span></div><div class="track"><div class="fill" style="width:{{index .BRPct 2}}%"></div></div>
-    <div class="brrow"><span>Policy compliance</span><span>{{f1 (index .BR 3)}} / 15</span></div><div class="track"><div class="fill" style="width:{{index .BRPct 3}}%"></div></div>
+    <div class="brrow"><span>Risk profile</span><span>{{f1 (index .BR 0)}} / 45</span></div><div class="track"><div class="fill" style="width:{{index .BRPct 0}}%"></div></div>
+    <div class="brrow"><span>Password strength</span><span>{{f1 (index .BR 1)}} / 35</span></div><div class="track"><div class="fill" style="width:{{index .BRPct 1}}%"></div></div>
+    <div class="brrow"><span>Policy compliance</span><span>{{f1 (index .BR 3)}} / 20</span></div><div class="track"><div class="fill" style="width:{{index .BRPct 3}}%"></div></div>
   </div>
 </div>
 
