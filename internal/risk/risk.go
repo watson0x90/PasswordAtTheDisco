@@ -317,7 +317,9 @@ func roastableBump(c Context) float64 {
 	return b
 }
 
-// reuseBump: a small-cluster Exposure bump. Large clusters use reuseFloor instead.
+// reuseBump: a small-cluster Exposure bump that scales with cluster size (ceiling 1.0). It
+// STACKS with reuseFloor by design -- a large cluster gets both the floor (via max) AND this
+// bump (e.g. SharedWith 200 => floor 4.0 + bump 1.0 = 5.0). Do not drop one for the other.
 func reuseBump(sharedWith int) float64 {
 	switch {
 	case sharedWith >= 10:

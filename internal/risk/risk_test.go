@@ -346,6 +346,7 @@ func TestAgeBump(t *testing.T) {
 		want float64
 	}{
 		{"nil", nil, 0},
+		{"0d_never_set", mk(0), 0}, // PwdLastSet=0 (never set / pre-Win2k): below 1yr -> 0
 		{"364d", mk(364), 0},
 		{"365d", mk(365), 0.25},
 		{"729d", mk(729), 0.25},
