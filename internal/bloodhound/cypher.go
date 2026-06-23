@@ -485,7 +485,12 @@ func tier0NameList() string {
 // object itself (DCSync). Best-effort: on error returns the error; an empty/unrecognized
 // response yields an empty set (conservative -- never a false positive).
 func (c *Client) FetchTier0Controllers() (map[string]bool, error) {
-	query := `MATCH (u:User)-[r]->(n) WHERE type(r) IN ['GenericAll','GenericWrite','WriteOwner','WriteDacl','Owns','ForceChangePassword','AddMember'] AND (n:Domain OR ANY(t IN [` + tier0NameList() + `] WHERE toUpper(coalesce(n.name,'')) CONTAINS t)) RETURN DISTINCT u.samaccountname, u.domain`
+	// Tier-0 predicate mirrors the per-user isTier0Name + ExtractControlsTier0 exactly:
+	//   n:Domain                            -> control of the domain object (DCSync)
+	//   localpart(n.name) == ADMINISTRATORS -> built-in Administrators (EXACT, to avoid
+	//                                          CONTAINS over-matching "Backup Administrators")
+	//   n.name CONTAINS any tier0Names fragment -> the substring-matched DA-equivalent names
+	query := `MATCH (u:User)-[r]->(n) WHERE type(r) IN ['GenericAll','GenericWrite','WriteOwner','WriteDacl','Owns','ForceChangePassword','AddMember'] AND (n:Domain OR toUpper(trim(split(coalesce(n.name,''),'@')[0])) = 'ADMINISTRATORS' OR ANY(t IN [` + tier0NameList() + `] WHERE toUpper(coalesce(n.name,'')) CONTAINS t)) RETURN DISTINCT u.samaccountname, u.domain`
 	data, err := c.RunCypher(query)
 	if err != nil {
 		return nil, fmt.Errorf("FetchTier0Controllers: %w", err)

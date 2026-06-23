@@ -1,23 +1,18 @@
 package bloodhound
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 func TestTier0NameList(t *testing.T) {
 	got := tier0NameList()
 	for _, name := range tier0Names {
-		if !contains(got, "'"+name+"'") {
+		if !strings.Contains(got, "'"+name+"'") {
 			t.Errorf("tier0NameList()=%q missing %q", got, name)
 		}
 	}
-}
-
-func contains(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }
 
 func TestParseTier0Literals(t *testing.T) {
@@ -36,5 +31,18 @@ func TestParseTier0Rows(t *testing.T) {
 	got := parseTier0(rows)
 	if !got["svc@CORP"] || len(got) != 1 {
 		t.Errorf("parseTier0 = %v, want only svc@CORP", got)
+	}
+}
+
+func TestParseTier0FromResults(t *testing.T) {
+	// neo4j-compat tabular shape: results[].data[].row = [sam, domain]
+	data := []json.RawMessage{
+		json.RawMessage(`{"row":["svc","CORP"]}`),
+		json.RawMessage(`{"row":["","CORP"]}`), // blank sam -> skipped
+		json.RawMessage(`{"row":["alice"]}`),   // < 2 cols -> skipped
+	}
+	got := parseTier0FromResults(data)
+	if !got["svc@CORP"] || len(got) != 1 {
+		t.Errorf("parseTier0FromResults = %v, want only svc@CORP", got)
 	}
 }
