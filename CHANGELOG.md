@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 _Nothing yet._
 
+## [2.27.0] — 2026-06-23 — Reuse-floor mid tier (close the 100-cliff)
+
+> A third scoring gap from the same **sanitized-export** review (2.25). Existing audits adopt the
+> change on their next **Recalculate**.
+
+### Changed
+- **Mid-size reuse clusters now floor Exposure.** The Exposure reuse-floor previously applied only at
+  ≥100 accounts (4.0) and ≥1000 (5.0), leaving a cliff: a 50–99 account *uncracked* reuse cluster got
+  only the small reuse bump and read as bottom-of-*Low*, hiding on the Exposure worklists. A new
+  **≥50 → 3.0** tier closes it; stacking with the reuse bump it lands such clusters at ~4.0
+  (Medium-Exposure), monotonic with the existing 100/1000 tiers. Exposure-axis only — the composite
+  Level still respects the Impact matrix (a latent low-blast-radius cluster stays *Low*; only *cracked*
+  clusters escalate Level, via the 2.26 mass-reuse pass). Help copy updated.
+
 ## [2.26.0] — 2026-06-23 — Scoring-audit fixes (mass reuse + bulk Tier-0)
 
 > Two scoring gaps surfaced by reviewing a **sanitized export** (2.25) of a real 6,000-account
