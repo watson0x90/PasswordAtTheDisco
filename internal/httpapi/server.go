@@ -1781,7 +1781,9 @@ func (s *Server) handleUploadBHEUsers(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			matched++
-			next[i].Enabled = imp.Enabled
+			if imp.Enabled != nil {
+				next[i].Enabled = *imp.Enabled
+			}
 			if imp.PwdLastSet > 0 {
 				next[i].PwdLastSet = imp.PwdLastSet
 			}
@@ -1790,6 +1792,10 @@ func (s *Server) handleUploadBHEUsers(w http.ResponseWriter, r *http.Request) {
 			if imp.Controllables > 0 {
 				next[i].Controlled = imp.Controllables
 			}
+			spn := imp.HasSPN
+			next[i].HasSPN = &spn
+			preauth := imp.DontReqPreauth
+			next[i].DontReqPreauth = &preauth
 		}
 		return next
 	}); err != nil {

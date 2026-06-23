@@ -18,17 +18,20 @@ import (
 // Enrichment (Enriched:false => Impact-Unknown), matching an unenriched account.
 type StoredEnricher map[string]engine.Enrichment
 
-// NewStoredEnricher builds the lookup from the audit's accounts. For an enriched
-// account (Coverage=="full") it reconstructs the full Enrichment from persisted
-// fields; otherwise it stores the zero value so Impact stays Unknown.
+// NewStoredEnricher builds the lookup from the audit's accounts. For every
+// account it reconstructs the persisted AD properties; the Enriched bit
+// (=> Impact-known) is set only when Coverage=="full", so a partial-coverage
+// account keeps Impact Unknown but its uploaded properties (Enabled, PwdLastSet,
+// HasSPN, DontReqPreauth, Controlled) survive a rescore.
 func NewStoredEnricher(accts []model.Account) StoredEnricher {
 	m := make(StoredEnricher, len(accts))
 	for _, a := range accts {
 		key := engine.NormalizeUsername(a.Username, a.Domain)
-		if a.Coverage != "full" {
-			m[key] = engine.Enrichment{Enriched: false}
-			continue
-		}
+		// Reconstruct persisted AD properties for EVERY account so a rescore does not
+		// wipe properties uploaded via /api/upload/bheusers. enrichmentFromAccount sets
+		// Enriched = (Coverage=="full"), so Impact stays Unknown for partial-coverage
+		// accounts while their Exposure-axis props (age, roastability) and Enabled/
+		// Controlled survive.
 		m[key] = enrichmentFromAccount(a)
 	}
 	return m
@@ -55,7 +58,7 @@ func enrichmentFromAccount(a model.Account) engine.Enrichment {
 		HasSPN:          a.HasSPN,
 		DontReqPreauth:  a.DontReqPreauth,
 		PwdNeverExpires: a.PwdNeverExpires,
-		Enriched:        true,
+		Enriched:        a.Coverage == "full",
 	}
 	// Controlled==0 means "not in the controllables map" = unknown; leave the
 	// pointer nil so the vector encodes CO:U (unknown), matching the live path.

@@ -4,6 +4,7 @@ import { useAuth } from "../auth"
 import { useAudits } from "../auditsData"
 import { useJobs } from "../jobs"
 import { fmtWhen } from "../format"
+import { RecalcNudge } from "./RecalcNudge"
 
 export function BloodHound() {
   const { me } = useAuth()
@@ -272,6 +273,7 @@ function BHEUpload({ csrf }: { csrf: string }) {
         </button>
       </div>
       {result && <div className="ingest-ok">✓ {result}</div>}
+      <RecalcNudge saved={!!result} />
       {error && <div className="error">{error}</div>}
     </div>
   )

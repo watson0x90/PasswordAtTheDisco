@@ -14,10 +14,12 @@ import (
 type ImportedUser struct {
 	Username        string `json:"username"`        // SAMAccountName or user@domain
 	Domain          string `json:"domain"`          // AD domain (uppercase)
-	Enabled         bool   `json:"enabled"`         // UAC enabled
+	Enabled         *bool  `json:"enabled"`         // UAC enabled; nil means absent/unknown
 	PwdLastSet      int64  `json:"pwdlastset"`      // Unix epoch seconds
 	PwdNeverExpires bool   `json:"pwdneverexpires"` // UAC flag
 	LastLogon       int64  `json:"lastlogon"`       // Unix epoch seconds
+	HasSPN          bool   `json:"hasspn"`          // Kerberoastable (SPN set)
+	DontReqPreauth  bool   `json:"dontreqpreauth"`  // AS-REP roastable (no pre-auth)
 	Controllables   int    `json:"controllables"`   // total controlled object count (optional)
 	ObjectID        string `json:"objectid"`        // SID (optional, for DA path lookups)
 }
@@ -60,10 +62,12 @@ func parseSharpHound(data []json.RawMessage) (map[string]ImportedUser, error) {
 			Properties struct {
 				SAMAccountName  string      `json:"samaccountname"`
 				Domain          string      `json:"domain"`
-				Enabled         bool        `json:"enabled"`
+				Enabled         *bool       `json:"enabled"`
 				PwdLastSet      json.Number `json:"pwdlastset"`
 				PwdNeverExpires bool        `json:"pwdneverexpires"`
 				LastLogon       json.Number `json:"lastlogon"`
+				HasSPN          bool        `json:"hasspn"`
+				DontReqPreauth  bool        `json:"dontreqpreauth"`
 			} `json:"Properties"`
 			ObjectIdentifier string `json:"ObjectIdentifier"`
 		}
@@ -83,6 +87,8 @@ func parseSharpHound(data []json.RawMessage) (map[string]ImportedUser, error) {
 			PwdLastSet:      windowsEpochToUnix(pwdLastSet),
 			PwdNeverExpires: item.Properties.PwdNeverExpires,
 			LastLogon:       windowsEpochToUnix(lastLogon),
+			HasSPN:          item.Properties.HasSPN,
+			DontReqPreauth:  item.Properties.DontReqPreauth,
 			ObjectID:        item.ObjectIdentifier,
 		}
 		key := normalizeKey(u.Username, u.Domain)
@@ -99,10 +105,12 @@ func parseArray(data []json.RawMessage) (map[string]ImportedUser, error) {
 			Props struct {
 				SAMAccountName  string      `json:"samaccountname"`
 				Domain          string      `json:"domain"`
-				Enabled         bool        `json:"enabled"`
+				Enabled         *bool       `json:"enabled"`
 				PwdLastSet      json.Number `json:"pwdlastset"`
 				PwdNeverExpires bool        `json:"pwdneverexpires"`
 				LastLogon       json.Number `json:"lastlogon"`
+				HasSPN          bool        `json:"hasspn"`
+				DontReqPreauth  bool        `json:"dontreqpreauth"`
 			} `json:"props"`
 			ObjectID string `json:"objectid"`
 		}
@@ -117,6 +125,8 @@ func parseArray(data []json.RawMessage) (map[string]ImportedUser, error) {
 				PwdLastSet:      windowsEpochToUnix(pwdLastSet),
 				PwdNeverExpires: bhe.Props.PwdNeverExpires,
 				LastLogon:       windowsEpochToUnix(lastLogon),
+				HasSPN:          bhe.Props.HasSPN,
+				DontReqPreauth:  bhe.Props.DontReqPreauth,
 				ObjectID:        bhe.ObjectID,
 			}
 			out[normalizeKey(u.Username, u.Domain)] = u

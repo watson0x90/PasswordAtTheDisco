@@ -74,6 +74,42 @@ func newTestEngine() *engine.Engine {
 	}
 }
 
+func TestStoredEnricherPreservesPropsForPartialCoverage(t *testing.T) {
+	// A Coverage:"none" account that nonetheless carries uploaded AD properties
+	// (from /api/upload/bheusers) must keep them through a rescore, while Impact
+	// stays Unknown (Enriched=false). This is the bheusers-upload-fidelity fix.
+	spn := false
+	preauth := true
+	old := int64(1_600_000_000) // a real, non-zero pwdlastset
+	a := model.Account{
+		Username:       "svc",
+		Domain:         "CORP",
+		Coverage:       "none", // NOT DA-graph enriched
+		Enabled:        false,  // uploaded: disabled
+		Controlled:     50,     // uploaded: controls 50 objects
+		PwdLastSet:     old,    // uploaded: an old password
+		HasSPN:         &spn,
+		DontReqPreauth: &preauth, // uploaded: AS-REP roastable
+	}
+	enr := NewStoredEnricher([]model.Account{a}).Enrich(engine.NormalizeUsername("svc", "CORP"))
+
+	if enr.Enriched {
+		t.Fatal("Coverage=none must yield Enriched=false (Impact stays Unknown)")
+	}
+	if enr.Enabled == nil || *enr.Enabled {
+		t.Errorf("Enabled = %v, want &false (preserved)", enr.Enabled)
+	}
+	if enr.ControlledObjects == nil || *enr.ControlledObjects != 50 {
+		t.Errorf("ControlledObjects = %v, want &50 (preserved)", enr.ControlledObjects)
+	}
+	if enr.PwdLastSet == nil || *enr.PwdLastSet != old {
+		t.Errorf("PwdLastSet = %v, want &%d (preserved)", enr.PwdLastSet, old)
+	}
+	if enr.DontReqPreauth == nil || !*enr.DontReqPreauth {
+		t.Errorf("DontReqPreauth = %v, want &true (preserved)", enr.DontReqPreauth)
+	}
+}
+
 // TestImpactEquivalenceAfterRescore asserts the core rescore invariant:
 //   - Coverage:"full" with DA enrichment => ImpactKnown stays true after RescoreWith.
 //   - Coverage:"none" => ImpactKnown stays false (Impact-Unknown preserved).
@@ -132,5 +168,36 @@ func TestImpactEquivalenceAfterRescore(t *testing.T) {
 	}
 	if bob.ImpactKnown {
 		t.Errorf("Coverage:none => ImpactKnown must be false after rescore, got true")
+	}
+}
+
+// TestRescorePreservedPwdLastSetRaisesExposure is the end-to-end payoff of the wipe
+// fix: a Coverage:"none" account whose old PwdLastSet was uploaded via /api/upload/bheusers
+// must, after a real rescore, score a non-zero AgePenalty and a higher Exposure than an
+// otherwise-identical account with no PwdLastSet — while Impact stays Unknown for both.
+func TestRescorePreservedPwdLastSetRaisesExposure(t *testing.T) {
+	in := []model.Account{
+		// Uncracked, partial-coverage, with a years-old uploaded PwdLastSet.
+		{Username: "old", Domain: "CORP", NTHash: "AAA", Coverage: "none", PwdLastSet: 1_300_000_000},
+		// Identical but no PwdLastSet (age unknown -> no age bump).
+		{Username: "fresh", Domain: "CORP", NTHash: "BBB", Coverage: "none"},
+	}
+	eng := newTestEngine()
+	out := eng.RescoreWith(in, NewStoredEnricher(in))
+
+	byUser := make(map[string]model.Account, len(out))
+	for _, a := range out {
+		byUser[a.Username] = a
+	}
+	old, fresh := byUser["old"], byUser["fresh"]
+
+	if old.ScoreBreakdown == nil || old.ScoreBreakdown.AgePenalty <= 0 {
+		t.Errorf("old account AgePenalty = %v, want > 0 (preserved PwdLastSet must score age)", old.ScoreBreakdown)
+	}
+	if old.ExposureScore <= fresh.ExposureScore {
+		t.Errorf("old Exposure %v must exceed fresh %v (age applied after rescore)", old.ExposureScore, fresh.ExposureScore)
+	}
+	if old.ImpactKnown || fresh.ImpactKnown {
+		t.Errorf("Coverage:none must keep Impact Unknown after rescore (old=%v fresh=%v)", old.ImpactKnown, fresh.ImpactKnown)
 	}
 }
