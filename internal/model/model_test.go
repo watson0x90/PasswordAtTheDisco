@@ -8,37 +8,37 @@ import (
 )
 
 func TestPostureScoreGolden(t *testing.T) {
-	// Pins the formula; web/src/insights.ts:posture() must match. 2 accounts:
-	// 1 Critical cracked+breached non-compliant, 1 Low cracked compliant.
+	// Pins the new Hygiene×Reachability formula over ENABLED accounts.
+	// Weights: risk=45, strength=35, compliance=20 (privilege term removed).
+	// 2 enabled accounts: 1 Critical cracked+breached non-compliant, 1 Low cracked compliant.
+	// active=2: risk=max(0,100-1/2*200)/100*45=0; strength=0/2*35=0; compliance=(2-1)/2*20=10 -> 10.0
 	p := PostureScore([]Account{
-		{RiskLevel: "Critical", Cracked: true, HIBPBreached: true, MeetsPolicy: false},
-		{RiskLevel: "Low", Cracked: true, MeetsPolicy: true},
+		{Enabled: true, RiskLevel: "Critical", Cracked: true, HIBPBreached: true, MeetsPolicy: false},
+		{Enabled: true, RiskLevel: "Low", Cracked: true, MeetsPolicy: true},
 	})
-	// risk: max(0,100-(1/2)*200)=0 ; strength 0 ; priv 15 ; compliance (2-1)/2*15=7.5
-	if p.Score != 22.5 || p.Rating != "Weak" {
-		t.Fatalf("posture = %.1f %s, want 22.5 Weak", p.Score, p.Rating)
+	if p.Score != 10.0 || p.Rating != "Weak" {
+		t.Fatalf("posture = %.1f %s, want 10.0 Weak", p.Score, p.Rating)
 	}
-	if p.Breakdown != (PostureBreakdown{Risk: 0, Strength: 0, Privilege: 15, Compliance: 7.5}) {
-		t.Fatalf("breakdown = %+v, want {0 0 15 7.5}", p.Breakdown)
+	if p.Breakdown.Risk != 0 || p.Breakdown.Strength != 0 || p.Breakdown.Privilege != 0 || p.Breakdown.Compliance != 10.0 {
+		t.Fatalf("breakdown = %+v, want {Risk:0 Strength:0 Privilege:0 Compliance:10}", p.Breakdown)
 	}
 
-	// Second golden with NON-ZERO risk + strength, so coefficient drift in either
-	// (which the all-zero fixture above would miss) is caught. 5 accounts: 1 Crit
-	// cracked non-compliant, 1 High cracked compliant, 3 Low uncracked.
-	//   risk = (100 - 1/5*200 - 1/5*150)/100*40 = 12 ; strength = 3/5*30 = 18 ;
-	//   privilege 15 ; compliance = (5-1)/5*15 = 12  -> score 57 Weak
+	// Second golden with NON-ZERO risk + strength. 5 enabled accounts:
+	// 1 Crit cracked non-compliant, 1 High cracked compliant, 3 Low uncracked.
+	// active=5: risk=max(0,100-1/5*200-1/5*150)/100*45 = (100-40-30)/100*45 = 30/100*45 = 13.5
+	// strength = 3/5*35 = 21; compliance = (5-1)/5*20 = 16 -> 50.5 Weak
 	p2 := PostureScore([]Account{
-		{RiskLevel: "Critical", Cracked: true, MeetsPolicy: false},
-		{RiskLevel: "High", Cracked: true, MeetsPolicy: true},
-		{RiskLevel: "Low", Cracked: false},
-		{RiskLevel: "Low", Cracked: false},
-		{RiskLevel: "Low", Cracked: false},
+		{Enabled: true, RiskLevel: "Critical", Cracked: true, MeetsPolicy: false},
+		{Enabled: true, RiskLevel: "High", Cracked: true, MeetsPolicy: true},
+		{Enabled: true, RiskLevel: "Low", Cracked: false},
+		{Enabled: true, RiskLevel: "Low", Cracked: false},
+		{Enabled: true, RiskLevel: "Low", Cracked: false},
 	})
-	if p2.Score != 57 || p2.Rating != "Weak" {
-		t.Fatalf("posture2 = %.1f %s, want 57 Weak", p2.Score, p2.Rating)
+	if p2.Score != 50.5 || p2.Rating != "Weak" {
+		t.Fatalf("posture2 = %.1f %s, want 50.5 Weak", p2.Score, p2.Rating)
 	}
-	if p2.Breakdown != (PostureBreakdown{Risk: 12, Strength: 18, Privilege: 15, Compliance: 12}) {
-		t.Fatalf("breakdown2 = %+v, want {12 18 15 12}", p2.Breakdown)
+	if p2.Breakdown.Risk != 13.5 || p2.Breakdown.Strength != 21.0 || p2.Breakdown.Privilege != 0 || p2.Breakdown.Compliance != 16.0 {
+		t.Fatalf("breakdown2 = %+v, want {Risk:13.5 Strength:21 Privilege:0 Compliance:16}", p2.Breakdown)
 	}
 }
 
@@ -347,6 +347,34 @@ func TestUnicodeAndPolicyViolationsRoundTripAndSurviveRedaction(t *testing.T) {
 	}
 	if red.Password != "" || red.NTHash != "" {
 		t.Fatalf("Redacted() must still strip Password/NTHash")
+	}
+}
+
+func TestHygieneExcludesDisabledAndDropsPrivilege(t *testing.T) {
+	// 2 enabled (1 cracked-violator), 8 disabled -> hygiene computed over the 2 enabled only.
+	accts := []Account{
+		{Enabled: true, RiskLevel: "Low", Cracked: true, MeetsPolicy: false}, // enabled cracked violator
+		{Enabled: true, RiskLevel: "Low", Cracked: false, MeetsPolicy: true}, // enabled clean
+	}
+	for i := 0; i < 8; i++ { // disabled padding must NOT inflate hygiene
+		accts = append(accts, Account{Enabled: false, RiskLevel: "Critical", Cracked: true, MeetsPolicy: false})
+	}
+	p := PostureScore(accts)
+	// active=2: risk=45 (no crit/high/med among enabled), strength=(1/2)*35=17.5,
+	// compliance=((2-1)/2)*20=10 -> 72.5
+	if p.Score < 72.0 || p.Score > 73.0 {
+		t.Fatalf("hygiene = %v, want ~72.5 (disabled excluded, privilege dropped)", p.Score)
+	}
+	if p.Breakdown.Privilege != 0 {
+		t.Errorf("privilege breakdown must be 0 (term removed), got %v", p.Breakdown.Privilege)
+	}
+}
+
+func TestHygieneActiveZero(t *testing.T) {
+	accts := []Account{{Enabled: false, RiskLevel: "Low"}}
+	p := PostureScore(accts)
+	if p.Verdict != "No Data" || p.Score != 0 {
+		t.Fatalf("all-disabled -> want No Data/0, got %q/%v", p.Verdict, p.Score)
 	}
 }
 

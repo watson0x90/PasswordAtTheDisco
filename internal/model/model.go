@@ -54,18 +54,44 @@ type PostureBreakdown struct {
 
 func round1(f float64) float64 { return math.Round(f*10) / 10 }
 
-// PostureScore is the executive Security Posture Score (0-100) from the redacted
-// account set: risk distribution (40) + password strength (30) + privilege
-// exposure (15) + policy compliance (15). THIS IS THE SINGLE SOURCE OF TRUTH --
-// the HTML report, audit diff, and the /api/summary the dashboard renders all use
-// it, so the on-screen gauge can never drift from the exported report.
-func PostureScore(accounts []Account) Posture {
-	total := len(accounts)
-	if total == 0 {
-		return Posture{Rating: "No Data", Likelihood: "—"}
+// STUB: Task 3 — replaced by real implementation in Task 3.
+func breachReachability(accts []Account) (L float64, da, t0, critN, dormant int) {
+	return 0, 0, 0, 0, 0
+}
+
+// STUB: Task 3 — replaced by real implementation in Task 3.
+func reachBand(L float64) string { return "Low" }
+
+// STUB: Task 3 — replaced by real implementation in Task 3.
+func reachPct(band string) string { return "<25%" }
+
+// STUB: Task 4 — replaced by real implementation in Task 4.
+func gateVerdict(hygieneRating, band string, t0, active int) (verdict, reason string) {
+	return "No Data", ""
+}
+
+func hygieneRating(h float64) string {
+	switch {
+	case h >= hygieneStrongMin:
+		return "Strong"
+	case h >= hygieneFairMin:
+		return "Fair"
+	default:
+		return "Weak"
 	}
-	var crit, high, med, cracked, uncracked, da, viol int
+}
+
+// PostureScore computes the executive Credential Hygiene (0–100) over ENABLED accounts
+// plus Breach Reachability (L) over the full account set, and a gated Verdict.
+// THIS IS THE SINGLE SOURCE OF TRUTH — the HTML report, audit diff, and the /api/summary
+// the dashboard renders all use it, so the on-screen gauge can never drift from the exported report.
+func PostureScore(accounts []Account) Posture {
+	var active, crit, high, med, uncracked, viol int
 	for _, a := range accounts {
+		if !a.Enabled {
+			continue // disabled excluded from hygiene (they padded "Strong")
+		}
+		active++
 		switch a.RiskLevel {
 		case "Critical":
 			crit++
@@ -74,78 +100,61 @@ func PostureScore(accounts []Account) Posture {
 		case "Medium":
 			med++
 		}
-		if a.Cracked {
-			cracked++
-		} else {
+		if !a.Cracked {
 			uncracked++
-		}
-		if a.HasDAPathway() {
-			da++
 		}
 		if a.Cracked && !a.MeetsPolicy {
 			viol++
 		}
 	}
-	ft := float64(total)
-	risk := math.Max(0, 100-float64(crit)/ft*200-float64(high)/ft*150-float64(med)/ft*50) / 100 * 40
-	strength := 0.0
-	if cracked+uncracked > 0 {
-		strength = float64(uncracked) / float64(cracked+uncracked) * 30
+	// Reachability is computed over the FULL set so the Tier-0 gate can fire even when active==0.
+	L, _, t0, _, _ := breachReachability(accounts)
+	band := reachBand(L)
+
+	if active == 0 {
+		p := Posture{Score: 0, Rating: "No Data", Reachability: band,
+			ReachabilityScore: L, ReachabilityPct: reachPct(band), Likelihood: band}
+		p.Verdict, p.VerdictReason = gateVerdict("No Data", band, t0, active)
+		return p
 	}
-	priv := math.Max(0, 15-float64(da)/ft*100)
-	comp := float64(total-viol) / ft * 15
+	af := float64(active)
+	risk := math.Max(0, 100-float64(crit)/af*200-float64(high)/af*150-float64(med)/af*50) / 100 * hygieneRiskWeight
+	strength := float64(uncracked) / af * hygieneStrengthWeight
+	compliance := float64(active-viol) / af * hygieneComplianceWeight
+	hygiene := round1(risk + strength + compliance)
+	rating := hygieneRating(hygiene)
+
 	p := Posture{
-		Score:     round1(risk + strength + priv + comp),
-		Rating:    "Weak",
-		Breakdown: PostureBreakdown{Risk: round1(risk), Strength: round1(strength), Privilege: round1(priv), Compliance: round1(comp)},
+		Score:             hygiene,
+		Rating:            rating,
+		Breakdown:         PostureBreakdown{Risk: round1(risk), Strength: round1(strength), Privilege: 0, Compliance: round1(compliance)},
+		Reachability:      band,
+		ReachabilityScore: L,
+		ReachabilityPct:   reachPct(band),
+		Likelihood:        band,
 	}
-	if p.Score >= 85 {
-		p.Rating = "Strong"
-	} else if p.Score >= 70 {
-		p.Rating = "Fair"
-	}
-	p.Likelihood = "Low"
-	if crit > 50 || da > 20 {
-		p.Likelihood = "Very High"
-	} else if crit > 20 || da > 10 {
-		p.Likelihood = "High"
-	} else if crit > 5 || da > 3 {
-		p.Likelihood = "Medium"
-	}
+	p.Overall = round1(hygiene * (1 - L))
+	p.Verdict, p.VerdictReason = gateVerdict(rating, band, t0, active)
 	return p
 }
 
-// EstimateBreachImpact produces a simplified breach-impact estimate for the
-// executive summary, mirroring the legacy Python report's approach.
-func EstimateBreachImpact(crit, da int) BreachImpact {
+// EstimateBreachImpact: reachability-driven (single-source with Posture so $ and verdict agree).
+func EstimateBreachImpact(p Posture) BreachImpact {
 	var bi BreachImpact
+	bi.Probability = p.Reachability
+	bi.ProbabilityPct = p.ReachabilityPct
 	switch {
-	case crit > 50 || da > 20:
-		bi.Probability = "Very High"
-		bi.ProbabilityPct = ">75%"
-	case crit > 20 || da > 10:
-		bi.Probability = "High"
-		bi.ProbabilityPct = "50-75%"
-	case crit > 5 || da > 3:
-		bi.Probability = "Medium"
-		bi.ProbabilityPct = "25-50%"
+	case p.VerdictReason == "Tier-0 Reachable":
+		bi.EstimatedCost, bi.RecoveryTime = "$1M – $5M+", "6–12 months"
+	case p.Reachability == "Very High":
+		bi.EstimatedCost, bi.RecoveryTime = "$500K – $1M", "3–6 months"
+	case p.Reachability == "High":
+		bi.EstimatedCost, bi.RecoveryTime = "$100K – $500K", "1–3 months"
 	default:
-		bi.Probability = "Low"
-		bi.ProbabilityPct = "<25%"
+		bi.EstimatedCost, bi.RecoveryTime = "$50K – $100K", "2–4 weeks"
 	}
-	switch {
-	case crit > 50:
-		bi.EstimatedCost = "$1M – $5M+"
-		bi.RecoveryTime = "6–12 months"
-	case crit > 20:
-		bi.EstimatedCost = "$500K – $1M"
-		bi.RecoveryTime = "3–6 months"
-	case crit > 5:
-		bi.EstimatedCost = "$100K – $500K"
-		bi.RecoveryTime = "1–3 months"
-	default:
-		bi.EstimatedCost = "$50K – $100K"
-		bi.RecoveryTime = "2–4 weeks"
+	if p.Reachability == "" || p.Reachability == "—" { // No-Data guard
+		bi.Probability, bi.ProbabilityPct = "—", ""
 	}
 	return bi
 }
