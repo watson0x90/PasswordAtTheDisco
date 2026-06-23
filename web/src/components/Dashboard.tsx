@@ -245,7 +245,7 @@ function PostureCard({ posture: p, breachImpact, dormantPrivileged, enabledCount
             {p.verdict_reason === "Tier-0 Reachable"
               ? "one reachable Tier-0 / DCSync path can compromise the whole domain regardless of password hygiene — fix the path to lift it."
               : p.verdict_reason
-                ? `${p.verdict_reason} — a reachable path to domain-control exists.`
+                ? `${p.verdict_reason} — remediate to lift the verdict.`
                 : "a reachable path to domain-control exists — remediate to lift the verdict."}
           </div>
           <div className="pex-action">

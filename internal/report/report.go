@@ -249,6 +249,10 @@ func HTML(w io.Writer, name string, generated time.Time, accounts []model.Accoun
 		if a.HasDAPathway() {
 			d.DA++
 		}
+		if !a.Enabled && (a.ControlsTier0 || a.HasDAPathway()) &&
+			(a.Cracked || a.EscalatedBySharedDA || a.EscalatedByMassReuse) {
+			d.DormantPrivileged++
+		}
 		if a.RiskLevel != "" {
 			riskCounts[a.RiskLevel]++
 		}

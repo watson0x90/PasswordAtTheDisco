@@ -285,6 +285,44 @@ func TestCSVEscapesFormulaInjection(t *testing.T) {
 	}
 }
 
+// TestHTMLDormantPrivileged verifies that HTML() counts disabled+privileged+cracked
+// accounts and renders the "Dormant privileged" warning, and that a dataset without
+// such accounts does NOT render the warning.
+func TestHTMLDormantPrivileged(t *testing.T) {
+	when := time.Unix(1_700_000_000, 0)
+
+	// Dataset WITH one dormant privileged account.
+	withDormant := []model.Account{
+		// disabled + has DA pathway + cracked → should be counted
+		{Username: "svc_priv", Domain: "CORP", Enabled: false, DADomains: "CORP", Cracked: true, RiskLevel: "Critical", RiskScore: 9.5},
+		// enabled + cracked → NOT dormant
+		{Username: "user1", Domain: "CORP", Enabled: true, Cracked: true, RiskLevel: "High", RiskScore: 7},
+	}
+	var b bytes.Buffer
+	if err := HTML(&b, "Engagement", when, withDormant); err != nil {
+		t.Fatalf("HTML with dormant: %v", err)
+	}
+	out := b.String()
+	if !strings.Contains(out, "Dormant privileged") {
+		t.Errorf("HTML with dormant privileged account should render 'Dormant privileged' warning; got none\noutput:\n%s", out)
+	}
+
+	// Dataset WITHOUT any dormant privileged account.
+	b.Reset()
+	noDormant := []model.Account{
+		// disabled but no DA pathway and not cracked → not dormant
+		{Username: "disabled_user", Domain: "CORP", Enabled: false, Cracked: false, RiskLevel: "Low", RiskScore: 1},
+		// enabled + DA pathway + cracked → enabled, so not dormant
+		{Username: "active_da", Domain: "CORP", Enabled: true, DADomains: "CORP", Cracked: true, RiskLevel: "Critical", RiskScore: 9},
+	}
+	if err := HTML(&b, "Engagement", when, noDormant); err != nil {
+		t.Fatalf("HTML without dormant: %v", err)
+	}
+	if strings.Contains(b.String(), "Dormant privileged") {
+		t.Errorf("HTML without dormant privileged accounts should NOT render 'Dormant privileged' warning")
+	}
+}
+
 func TestWeakPasswordsHTML(t *testing.T) {
 	accts := []model.Account{
 		{Username: "alice", Domain: "CORP", Cracked: true, Password: "Summer2021!",
