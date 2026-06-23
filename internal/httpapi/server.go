@@ -1781,7 +1781,9 @@ func (s *Server) handleUploadBHEUsers(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			matched++
-			next[i].Enabled = imp.Enabled
+			if imp.Enabled != nil {
+				next[i].Enabled = *imp.Enabled
+			}
 			if imp.PwdLastSet > 0 {
 				next[i].PwdLastSet = imp.PwdLastSet
 			}

@@ -5,6 +5,22 @@ import (
 	"testing"
 )
 
+func TestParseUsersExportEnabledOptional(t *testing.T) {
+	// An export that OMITS "enabled" must leave Enabled nil (unknown), not false.
+	got, err := ParseUsersExport(strings.NewReader(`[{"username":"svc","domain":"CORP","hasspn":true}]`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if u := got["svc@CORP"]; u.Enabled != nil {
+		t.Errorf("absent enabled: got %v, want nil (unknown)", u.Enabled)
+	}
+	// An explicit "enabled":false must parse to a non-nil *bool false.
+	got, _ = ParseUsersExport(strings.NewReader(`[{"username":"svc2","domain":"CORP","enabled":false}]`))
+	if u := got["svc2@CORP"]; u.Enabled == nil || *u.Enabled {
+		t.Errorf("explicit enabled=false: got %v, want &false", u.Enabled)
+	}
+}
+
 func TestParseUsersExportRoastableFields(t *testing.T) {
 	// SharpHound collection shape: {"data":[{"Properties":{...},"ObjectIdentifier":"..."}]}
 	sharp := `{"data":[

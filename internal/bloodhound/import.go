@@ -14,7 +14,7 @@ import (
 type ImportedUser struct {
 	Username        string `json:"username"`        // SAMAccountName or user@domain
 	Domain          string `json:"domain"`          // AD domain (uppercase)
-	Enabled         bool   `json:"enabled"`         // UAC enabled
+	Enabled         *bool  `json:"enabled"`         // UAC enabled; nil means absent/unknown
 	PwdLastSet      int64  `json:"pwdlastset"`      // Unix epoch seconds
 	PwdNeverExpires bool   `json:"pwdneverexpires"` // UAC flag
 	LastLogon       int64  `json:"lastlogon"`       // Unix epoch seconds
@@ -62,7 +62,7 @@ func parseSharpHound(data []json.RawMessage) (map[string]ImportedUser, error) {
 			Properties struct {
 				SAMAccountName  string      `json:"samaccountname"`
 				Domain          string      `json:"domain"`
-				Enabled         bool        `json:"enabled"`
+				Enabled         *bool       `json:"enabled"`
 				PwdLastSet      json.Number `json:"pwdlastset"`
 				PwdNeverExpires bool        `json:"pwdneverexpires"`
 				LastLogon       json.Number `json:"lastlogon"`
@@ -105,7 +105,7 @@ func parseArray(data []json.RawMessage) (map[string]ImportedUser, error) {
 			Props struct {
 				SAMAccountName  string      `json:"samaccountname"`
 				Domain          string      `json:"domain"`
-				Enabled         bool        `json:"enabled"`
+				Enabled         *bool       `json:"enabled"`
 				PwdLastSet      json.Number `json:"pwdlastset"`
 				PwdNeverExpires bool        `json:"pwdneverexpires"`
 				LastLogon       json.Number `json:"lastlogon"`
