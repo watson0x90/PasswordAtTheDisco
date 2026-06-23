@@ -1,13 +1,19 @@
 import { PwnedPasswords } from "./PwnedPasswords"
 import { BloodHound } from "./BloodHound"
+import { EnrichmentCoverage } from "./EnrichmentCoverage"
+import { useAuth } from "../auth"
 
-// Integrations is the merged HIBP + BloodHound configuration page (Setup ▾ → Integrations).
-// It composes the two existing pages as stacked sections — no behavior change to either.
+// Integrations: HIBP + BloodHound config (lead) + Enrichment coverage (all operators).
+// Analysts reach this page for the read-only coverage view only; the lead-only HIBP/
+// BloodHound config components are not rendered for them.
 export function Integrations() {
+  const { me } = useAuth()
+  const isLead = me?.role === "lead"
   return (
     <>
-      <PwnedPasswords />
-      <BloodHound />
+      {isLead && <PwnedPasswords />}
+      {isLead && <BloodHound />}
+      <EnrichmentCoverage />
     </>
   )
 }
