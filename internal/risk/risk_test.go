@@ -100,8 +100,8 @@ func TestExposureBumps(t *testing.T) {
 		t.Fatalf("strong cracked floor = %v, want 3.0", base)
 	}
 	reuse := exposureScore(a, Context{Cracked: true, Coverage: "none", SharedWith: 2})
-	if !almost(reuse, 3.5) {
-		t.Fatalf("reuse bump = %v, want 3.5", reuse)
+	if !almost(reuse, 3.75) { // crackedFloor 3.0 + reuseBump(2)=0.75
+		t.Fatalf("reuse bump = %v, want 3.75", reuse)
 	}
 	roast := exposureScore(a, Context{Cracked: true, Coverage: "full", HasSPN: true})
 	if !almost(roast, 3.5) {
@@ -124,10 +124,21 @@ func TestExposureUncracked(t *testing.T) {
 	if got := exposureScore(Analysis{}, Context{Cracked: false, Coverage: "none"}); !almost(got, 0.0) {
 		t.Fatalf("uncracked no-signal exposure = %v, want 0.0", got)
 	}
-	// Uncracked + reuse + roastable bump still applies.
+	// Uncracked + reuse(3)=0.75 + AS-REP roastable(0.75) bump still applies.
 	c2 := Context{Cracked: false, Coverage: "full", SharedWith: 3, DontReqPreauth: true}
-	if got := exposureScore(Analysis{}, c2); !almost(got, 1.0) {
-		t.Fatalf("uncracked bumps-only exposure = %v, want 1.0", got)
+	if got := exposureScore(Analysis{}, c2); !almost(got, 1.5) {
+		t.Fatalf("uncracked bumps-only exposure = %v, want 1.5", got)
+	}
+}
+
+func TestReuseFloorAppliesUncracked(t *testing.T) {
+	// A strong, uncracked, zero-HIBP password in a 200-account reuse cluster must still
+	// floor to >= Medium on the back of reuseFloor alone -- the panel's whole point.
+	// Components: floor = max(0, reuseFloor(200)=4.0) = 4.0; bump = reuseBump(200)=1.0 (>=10 tier).
+	// Exposure = min(10, 4.0 + 1.0) = 5.0.
+	got := exposureScore(strong(), Context{Cracked: false, Coverage: "full", SharedWith: 200})
+	if !almost(got, 5.0) {
+		t.Fatalf("uncracked 200-cluster exposure = %v, want 5.0", got)
 	}
 }
 

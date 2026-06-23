@@ -62,6 +62,7 @@ type Breakdown struct {
 	CrackedFloor      float64 `json:"cracked_floor"`
 	ReuseBump         float64 `json:"reuse_bump"`
 	RoastableBump     float64 `json:"roastable_bump"`
+	AgePenalty        float64 `json:"age_penalty"`
 	// Impact axis (v2)
 	ImpactScore       float64 `json:"impact_score"`
 	PrivilegeSubScore float64 `json:"privilege_sub_score"`
@@ -100,14 +101,6 @@ func Score(a Analysis, c Context) Result {
 		legacy = exp
 	}
 
-	var reuse, roast float64
-	if c.SharedWith > 0 {
-		reuse = 0.5
-	}
-	if c.HasSPN || c.DontReqPreauth {
-		roast = 0.5
-	}
-
 	return Result{
 		Exposure:    exp,
 		Impact:      imp,
@@ -126,8 +119,9 @@ func Score(a Analysis, c Context) Result {
 			SimPenalty:        round2(simPenalty(a.SimilarMax)),
 			HIBPFloor:         hibpExposureFloor(c.HIBPBreachCount),
 			CrackedFloor:      crackedFloor(a, c.Cracked),
-			ReuseBump:         reuse,
-			RoastableBump:     roast,
+			ReuseBump:         round2(reuseBump(c.SharedWith)),
+			RoastableBump:     round2(roastableBump(c)),
+			AgePenalty:        round2(ageBump(c.PasswordAgeDays)),
 			ImpactScore:       imp,
 			PrivilegeSubScore: privilegeSubScore(c.ControlledObjects, c.ControlsTier0),
 			DAComponent:       daComponent(c.DADomains),
@@ -374,13 +368,12 @@ func exposureScore(a Analysis, c Context) float64 {
 		// Uncracked: password unknown, no weakness signals.
 		floor = hibpExposureFloor(c.HIBPBreachCount)
 	}
-	var bump float64
-	if c.SharedWith > 0 {
-		bump += 0.5
-	}
-	if c.HasSPN || c.DontReqPreauth {
-		bump += 0.5
-	}
+	// Large-cluster reuse is a floor (crack-status-independent: crack one hash, own the cluster).
+	floor = math.Max(floor, reuseFloor(c.SharedWith))
+	bump := roastableBump(c) + reuseBump(c.SharedWith) + ageBump(c.PasswordAgeDays)
+	// NOTE: bump is added pre-clamp; at a high floor the min(10,...) can absorb part of it, so the
+	// per-factor breakdown values may sum to MORE than the displayed Exposure. That's the bounded-axis
+	// clamp, not a drift bug -- the breakdown and the score read from the SAME helpers below.
 	return math.Min(10.0, floor+bump)
 }
 
