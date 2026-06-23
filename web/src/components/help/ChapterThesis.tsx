@@ -21,9 +21,12 @@ export function ChapterThesis() {
           <span className="help-hero-mark"> cracked passwords to disk.</span>
         </h1>
         <p className="help-hero-lede">
-          The original Python tool shipped its findings as a self-contained HTML report — and that report wrote{" "}
-          <strong>cleartext cracked passwords straight to a file on disk</strong>. Anyone who later found that file
-          held a plaintext list of working credentials. This tool was rebuilt, end to end, so that{" "}
+          Password!AtTheDisco audits <strong>Windows Active Directory</strong> account passwords — ingesting
+          credential dumps, correlating against HIBP, enriching with BloodHound DA pathways, and scoring each
+          account by risk. The original Python tool shipped its findings as a self-contained HTML report — and
+          that report wrote{" "}
+          <strong>cleartext cracked passwords straight to a file on disk</strong>. Anyone who later found that
+          file held a plaintext list of working credentials. This tool was rebuilt, end to end, so that{" "}
           <strong>that file never exists.</strong>
         </p>
       </section>

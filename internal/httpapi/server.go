@@ -728,6 +728,11 @@ func (s *Server) handleEnrichStart(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Coordination: a Rescore job rewrites the same audit -- refuse to run both.
+	if s.Rescore != nil && s.Rescore.Running() {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "re-scoring in progress; run enrichment after it finishes"})
+		return
+	}
 	if err := s.Enrich.Start(auditID); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
