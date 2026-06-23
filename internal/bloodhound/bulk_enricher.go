@@ -11,11 +11,12 @@ type BulkEnrichment struct {
 	Props         map[string]BulkUserProps // key: "user@DOMAIN"
 	DAUsers       map[string][]string      // key -> DA domains
 	Controllables map[string]int           // key -> controlled object count
+	Tier0         map[string]bool          // key -> controls a Tier-0/DA-equivalent object
 }
 
-// BulkEnricher pre-fetches ALL user data from BHE in 3 Cypher queries, then
+// BulkEnricher pre-fetches ALL user data from BHE in 4 Cypher queries, then
 // serves enrichment lookups from memory. This replaces the per-user REST approach
-// (which made ~10 HTTP calls per user) with 3 total queries regardless of user count.
+// (which made ~10 HTTP calls per user) with 4 total queries regardless of user count.
 type BulkEnricher struct {
 	client *Client
 	once   sync.Once
@@ -56,7 +57,15 @@ func (b *BulkEnricher) Prefetch() error {
 			log.Printf("bloodhound: fetched controllable counts for %d users", len(ctrl))
 		}
 
-		b.data = BulkEnrichment{Props: props, DAUsers: da, Controllables: ctrl}
+		t0, err := b.client.FetchTier0Controllers()
+		if err != nil {
+			log.Printf("bloodhound: FetchTier0Controllers failed: %v (Tier-0 control will be empty)", err)
+			t0 = map[string]bool{}
+		} else {
+			log.Printf("bloodhound: fetched Tier-0 controllers: %d users", len(t0))
+		}
+
+		b.data = BulkEnrichment{Props: props, DAUsers: da, Controllables: ctrl, Tier0: t0}
 		log.Printf("bloodhound: bulk prefetch complete (DA paths will be checked per credential-relevant accounts at rescore time)")
 	})
 	return b.err
@@ -110,6 +119,24 @@ func (b *BulkEnricher) CheckDAForAccounts(accounts []struct {
 		b.data.DAUsers[k] = append(b.data.DAUsers[k], domains...)
 	}
 	log.Printf("bloodhound: total DA pathways: %d users", len(b.data.DAUsers))
+}
+
+// NewBulkEnricherFromData builds an enricher whose cache is pre-populated, without a
+// Cypher prefetch. Used for seeding/tests; Prefetch is not required (Lookup/Tier0 read data directly).
+func NewBulkEnricherFromData(data BulkEnrichment) *BulkEnricher {
+	return &BulkEnricher{data: data}
+}
+
+// Tier0 reports whether the user controls a Tier-0 / DA-equivalent object, from the
+// bulk Tier-0 prefetch set. Same key normalization as Lookup.
+func (b *BulkEnricher) Tier0(key string) bool {
+	k := key
+	if idx := strings.LastIndex(k, "@"); idx >= 0 {
+		k = strings.ToLower(k[:idx]) + "@" + strings.ToUpper(k[idx+1:])
+	} else {
+		k = strings.ToLower(k)
+	}
+	return b.data.Tier0[k]
 }
 
 // Lookup returns the enrichment for a normalized "user@DOMAIN" key.
