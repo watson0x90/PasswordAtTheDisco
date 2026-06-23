@@ -1790,6 +1790,10 @@ func (s *Server) handleUploadBHEUsers(w http.ResponseWriter, r *http.Request) {
 			if imp.Controllables > 0 {
 				next[i].Controlled = imp.Controllables
 			}
+			spn := imp.HasSPN
+			next[i].HasSPN = &spn
+			preauth := imp.DontReqPreauth
+			next[i].DontReqPreauth = &preauth
 		}
 		return next
 	}); err != nil {
