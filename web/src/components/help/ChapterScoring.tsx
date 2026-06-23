@@ -57,7 +57,9 @@ export function ChapterScoring() {
             </li>
             <li>
               <b>Roastability</b> — Kerberoastable (SPN) and AS-REP-roastable accounts are easier to attack offline.
-              AS-REP roasting needs no prior foothold, so it weighs more than Kerberoasting.
+              AS-REP roasting needs no prior foothold, so it weighs more than Kerberoasting and raises a credential&rsquo;s
+              Exposure <em>floor</em> on its own — the hash will be pulled and cracked offline regardless of how strong it
+              looks.
             </li>
             <li>
               <b>Credential age</b> — a password that has not been rotated in years is materially more crackable; a
