@@ -54,16 +54,74 @@ type PostureBreakdown struct {
 
 func round1(f float64) float64 { return math.Round(f*10) / 10 }
 
-// STUB: Task 3 — replaced by real implementation in Task 3.
-func breachReachability(accts []Account) (L float64, da, t0, critN, dormant int) {
-	return 0, 0, 0, 0, 0
+// reachable: a privileged object the auditor can actually obtain/authenticate as.
+func reachable(a Account) bool {
+	return a.Enabled && (a.Cracked || a.EscalatedBySharedDA || a.EscalatedByMassReuse)
 }
 
-// STUB: Task 3 — replaced by real implementation in Task 3.
-func reachBand(L float64) string { return "Low" }
+// powi: integer power by repeated multiply — IDENTICAL in Go and JS (avoids math.Pow/Math.pow
+// cross-libm last-ULP drift). Keep web/src/insights.ts powi in lockstep.
+func powi(base float64, n int) float64 {
+	r := 1.0
+	for i := 0; i < n; i++ {
+		r *= base
+	}
+	return r
+}
 
-// STUB: Task 3 — replaced by real implementation in Task 3.
-func reachPct(band string) string { return "<25%" }
+// breachReachability returns L plus the component counts (da, t0Reachable, critN, dormant).
+func breachReachability(accts []Account) (L float64, da, t0, critN, dormant int) {
+	for i := range accts {
+		a := accts[i]
+		if reachable(a) {
+			if a.HasDAPathway() {
+				da++
+			}
+			if a.ControlsTier0 {
+				t0++
+			}
+		} else if !a.Enabled && (a.ControlsTier0 || a.HasDAPathway()) &&
+			(a.Cracked || a.EscalatedBySharedDA || a.EscalatedByMassReuse) {
+			dormant++ // disabled landmine
+		}
+		if a.RiskLevel == "Critical" && !a.HasDAPathway() && !a.ControlsTier0 {
+			critN++ // Critical that is not ALREADY the catastrophe (de-dup vs da/t0)
+		}
+	}
+	if critN > reachCapCrit {
+		critN = reachCapCrit
+	}
+	// reuseN deferred (v1) — see spec §2.2.
+	L = 1 - powi(1-reachPDA, da)*powi(1-reachPT0, t0)*powi(1-reachPCrit, critN)
+	return
+}
+
+func reachBand(L float64) string {
+	ls := int(L*reachScale + 0.5) // floor(L*scale+0.5); identical to Math.floor(L*scale+0.5) in TS
+	switch {
+	case ls >= reachBandVeryHi:
+		return "Very High"
+	case ls >= reachBandHigh:
+		return "High"
+	case ls >= reachBandMedium:
+		return "Medium"
+	default:
+		return "Low"
+	}
+}
+
+func reachPct(band string) string {
+	switch band {
+	case "Very High":
+		return ">75%"
+	case "High":
+		return "50-75%"
+	case "Medium":
+		return "25-50%"
+	default:
+		return "<25%"
+	}
+}
 
 // STUB: Task 4 — replaced by real implementation in Task 4.
 func gateVerdict(hygieneRating, band string, t0, active int) (verdict, reason string) {

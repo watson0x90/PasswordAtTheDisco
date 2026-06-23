@@ -350,6 +350,38 @@ func TestUnicodeAndPolicyViolationsRoundTripAndSurviveRedaction(t *testing.T) {
 	}
 }
 
+func TestReachabilityBandsAndReachable(t *testing.T) {
+	mk := func(da, t0 bool, cracked, enabled bool) Account {
+		a := Account{Enabled: enabled, Cracked: cracked, ControlsTier0: t0}
+		if da {
+			a.DADomains = "CORP.LOCAL" // makes HasDAPathway() true
+		}
+		return a
+	}
+	// 0 enablers -> Low
+	if b := reachBand(0); b != "Low" {
+		t.Fatalf("reachBand(0) = %q, want Low", b)
+	}
+	// 1 reachable DA path -> L=0.55 -> High
+	one := []Account{mk(true, false, true, true)}
+	L, da, _, _, _ := breachReachability(one)
+	if da != 1 || reachBand(L) != "High" {
+		t.Fatalf("1 reachable DA: da=%d band=%s L=%.4f, want da=1 High L=0.55", da, reachBand(L), L)
+	}
+	// 2 reachable DA paths -> L=0.7975 -> Very High
+	two := []Account{mk(true, false, true, true), mk(true, false, true, true)}
+	L2, _, _, _, _ := breachReachability(two)
+	if reachBand(L2) != "Very High" {
+		t.Fatalf("2 reachable DA: band=%s L=%.4f, want Very High", reachBand(L2), L2)
+	}
+	// DA path through a DISABLED account is NOT reachable -> contributes 0, +1 dormant
+	dis := []Account{mk(true, false, true, false)}
+	Ld, dad, _, _, dorm := breachReachability(dis)
+	if dad != 0 || reachBand(Ld) != "Low" || dorm != 1 {
+		t.Fatalf("disabled DA: da=%d band=%s dormant=%d, want da=0 Low dormant=1", dad, reachBand(Ld), dorm)
+	}
+}
+
 func TestHygieneExcludesDisabledAndDropsPrivilege(t *testing.T) {
 	// 2 enabled (1 cracked-violator), 8 disabled -> hygiene computed over the 2 enabled only.
 	accts := []Account{
