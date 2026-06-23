@@ -475,10 +475,11 @@ func parseControllablesFromResults(data []json.RawMessage) map[string]int {
 // tier0ControllersQuery is the bulk Tier-0 prefetch Cypher. Its predicate mirrors the
 // per-user isTier0Name + ExtractControlsTier0 EXACTLY (kept testable so a refactor can't
 // silently weaken it):
-//   n:Domain                            -> control of the domain object (DCSync)
-//   localpart(n.name) == ADMINISTRATORS -> built-in Administrators (EXACT, to avoid
-//                                          CONTAINS over-matching "Backup Administrators")
-//   n.name CONTAINS any tier0Names fragment -> the substring-matched DA-equivalent names
+//
+//	n:Domain                            -> control of the domain object (DCSync)
+//	localpart(n.name) == ADMINISTRATORS -> built-in Administrators (EXACT, to avoid
+//	                                       CONTAINS over-matching "Backup Administrators")
+//	n.name CONTAINS any tier0Names fragment -> the substring-matched DA-equivalent names
 func tier0ControllersQuery() string {
 	return `MATCH (u:User)-[r]->(n) WHERE type(r) IN ['GenericAll','GenericWrite','WriteOwner','WriteDacl','Owns','ForceChangePassword','AddMember'] AND (n:Domain OR toUpper(trim(split(coalesce(n.name,''),'@')[0])) = 'ADMINISTRATORS' OR ANY(t IN [` + tier0NameList() + `] WHERE toUpper(coalesce(n.name,'')) CONTAINS t)) RETURN DISTINCT u.samaccountname, u.domain`
 }
