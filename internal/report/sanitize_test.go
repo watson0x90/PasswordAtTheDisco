@@ -95,3 +95,46 @@ func TestSanitizedSummaryAndDomainsCarried(t *testing.T) {
 		t.Fatalf("encode: %v", err)
 	}
 }
+
+// forbiddenKeys are JSON object keys that must NEVER appear anywhere in the
+// sanitized output -- a structural guard so an accidentally-named future field is
+// caught even if its value happens not to collide with a canary value.
+func walkKeys(t *testing.T, v any, forbidden map[string]bool) {
+	t.Helper()
+	switch m := v.(type) {
+	case map[string]any:
+		for k, val := range m {
+			if forbidden[k] {
+				t.Errorf("forbidden key present in sanitized output: %q", k)
+			}
+			walkKeys(t, val, forbidden)
+		}
+	case []any:
+		for _, e := range m {
+			walkKeys(t, e, forbidden)
+		}
+	}
+}
+
+func TestSanitizedNoForbiddenKeys(t *testing.T) {
+	now := time.Date(2026, 6, 23, 0, 0, 0, 0, time.UTC)
+	accts := []model.Account{{
+		Username: "u", Domain: "CORP", Password: "p", NTHash: "ABC",
+		BannedWords: []string{"x"}, KeyboardPatterns: []string{"y"}, DADomains: "CORP.LOCAL",
+		Cracked: true, ScoreBreakdown: &model.ScoreBreakdown{ExposureScore: 1},
+		SimilarPeers: []model.SimilarPeer{{Username: "u", Domain: "CORP", Score: 0.5}},
+	}}
+	var buf bytes.Buffer
+	if err := SanitizedJSON(&buf, accts, model.Summary{}, now, "v1"); err != nil {
+		t.Fatalf("SanitizedJSON: %v", err)
+	}
+	var tree any
+	if err := json.Unmarshal(buf.Bytes(), &tree); err != nil {
+		t.Fatalf("output not JSON: %v", err)
+	}
+	forbidden := map[string]bool{
+		"username": true, "domain": true, "nt_hash": true, "password": true,
+		"da_domains": true, "banned_words": true, "keyboard_patterns": true, "pwd_last_set": true,
+	}
+	walkKeys(t, tree, forbidden)
+}

@@ -128,7 +128,14 @@ func Sanitize(accounts []model.Account, summary model.Summary, now time.Time, ve
 	idByPeerKey := make(map[string]string, n)
 	for i, a := range accounts {
 		ids[i] = "a" + strconv.Itoa(i+1)
-		idByPeerKey[peerKey(a.Username, a.Domain)] = ids[i]
+		// First account with a given (user,domain) key wins, so peer resolution is
+		// deterministic even if two accounts collide on the key (it never affects
+		// privacy -- only an opaque id is ever emitted).
+		if k := peerKey(a.Username, a.Domain); k != "" {
+			if _, ok := idByPeerKey[k]; !ok {
+				idByPeerKey[k] = ids[i]
+			}
+		}
 	}
 
 	domainLabel := make(map[string]string)
