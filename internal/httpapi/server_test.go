@@ -1974,3 +1974,44 @@ func TestUploadBHEUsersMergesRoastable(t *testing.T) {
 		t.Errorf("DontReqPreauth = %v, want &true", a.DontReqPreauth)
 	}
 }
+
+func TestExportSanitizedJSON(t *testing.T) {
+	srv := newServer("secret")
+	srv.Engine = &engine.Engine{Policies: policy.DefaultSet()}
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	id := createAudit(t, srv, lc, lcsrf, "Acme Customer Audit") // name carries a "customer"
+
+	if err := srv.Store.Replace(id, model.Dataset{
+		Name: "Acme Customer Audit",
+		Accounts: []model.Account{
+			{Username: "SECRETUSER", Domain: "SECRET.CORP", NTHash: "SECRETHASH", Cracked: true, ExposureScore: 4.3},
+		},
+	}); err != nil {
+		t.Fatalf("seed Replace: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/export/sanitized.json", nil)
+	req.AddCookie(lc)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("sanitized export: want 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
+	body := rec.Body.String()
+	for _, canary := range []string{"SECRETUSER", "SECRET.CORP", "SECRETHASH", "Acme Customer Audit"} {
+		if strings.Contains(body, canary) {
+			t.Errorf("LEAK in handler output: %q", canary)
+		}
+	}
+	var rep map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &rep); err != nil {
+		t.Fatalf("body not JSON: %v", err)
+	}
+	if _, ok := rep["accounts"]; !ok {
+		t.Errorf("missing accounts in output")
+	}
+}

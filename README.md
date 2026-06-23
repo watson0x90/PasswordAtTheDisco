@@ -41,23 +41,21 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
-## What's new in 2.24
+## What's new in 2.25
 
-**BloodHound user-properties upload, done right — offline enrichment that sticks.**
+**Sanitized review export — audit the scoring, not the customer.**
 
-- **Uploaded properties survive a Recalculate.** Uploading a SharpHound/BHE *users* export
-  (Setup → BloodHound → "Upload user data") enriches accounts with no live Neo4j query; those
-  properties used to be silently wiped by the next Recalculate — now they persist, and Impact
-  stays **Unknown** for accounts without a Domain-Admin graph (as it should).
-- **Kerberoast / AS-REP from an export** — the upload now applies `hasspn` / `dontreqpreauth`,
-  so roastability scoring (incl. the AS-REP Exposure floor) works offline, not just live.
-- **A recalculate nudge** after the upload so credential-age, roastability, and the
-  disabled-latent-risk flag actually take effect; and an export omitting `enabled` no longer
-  force-disables accounts.
+- **Sanitized review export** (Reports tab, or `GET /api/export/sanitized.json`): a fully
+  **anonymized** JSON of an audit — every per-account scoring signal + the aggregates — with
+  **zero** identifying or secret data (no usernames, domain names, hashes, cleartext, or audit
+  name). Domains and password-reuse groups become **opaque labels**, so the scoring model can be
+  reviewed for gaps (by a person or an AI) **without exposing customer data**.
+- Built as an **allowlist** (future fields excluded by default); the no-leak guarantee is enforced
+  by a canary byte-scan + a structural key test, and verified live. The export is audit-logged.
 
-Earlier: sharper Exposure weights — roastability/reuse-floor/credential-age (2.23); Recalculate
-scoring + BloodHound-coverage view (2.22); an **MCP server** for AI agents (2.21); the Exposure ×
-Impact danger-map grid (2.20); the **two-axis Exposure × Impact** scoring rebuild (2.18).
+Earlier: BloodHound user-properties upload fidelity (2.24); sharper Exposure weights —
+roastability/reuse-floor/credential-age (2.23); Recalculate scoring + BloodHound-coverage view
+(2.22); an **MCP server** for AI agents (2.21); the **two-axis Exposure × Impact** scoring rebuild (2.18).
 
 See **[CHANGELOG.md](CHANGELOG.md)** for the full release history.
 
