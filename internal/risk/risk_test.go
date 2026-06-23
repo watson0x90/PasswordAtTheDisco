@@ -282,6 +282,85 @@ func TestScoreDAHardOverride(t *testing.T) {
 	}
 }
 
+func TestRoastableBump(t *testing.T) {
+	cases := []struct {
+		name string
+		c    Context
+		want float64
+	}{
+		{"neither", Context{}, 0},
+		{"spn only", Context{HasSPN: true}, 0.5},
+		{"asrep only", Context{DontReqPreauth: true}, 0.75},
+		{"both", Context{HasSPN: true, DontReqPreauth: true}, 1.25},
+	}
+	for _, tc := range cases {
+		if got := roastableBump(tc.c); !almost(got, tc.want) {
+			t.Errorf("roastableBump(%s) = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestReuseBump(t *testing.T) {
+	// boundaries: 0->0, 1->0.5, 2->0.75, 9->0.75, 10->1.0, 100->1.0 (ceiling 1.0; no higher bump tier)
+	cases := []struct {
+		shared int
+		want   float64
+	}{{0, 0}, {1, 0.5}, {2, 0.75}, {9, 0.75}, {10, 1.0}, {100, 1.0}, {5000, 1.0}}
+	prev := -1.0
+	for _, tc := range cases {
+		got := reuseBump(tc.shared)
+		if !almost(got, tc.want) {
+			t.Errorf("reuseBump(%d) = %v, want %v", tc.shared, got, tc.want)
+		}
+		if got < prev {
+			t.Errorf("reuseBump not monotone at %d: %v < %v", tc.shared, got, prev)
+		}
+		prev = got
+	}
+}
+
+func TestReuseFloor(t *testing.T) {
+	// floor is 0 below 100, 4.0 at 100-999, 5.0 at 1000+
+	cases := []struct {
+		shared int
+		want   float64
+	}{{0, 0}, {99, 0}, {100, 4.0}, {999, 4.0}, {1000, 5.0}, {50000, 5.0}}
+	prev := -1.0
+	for _, tc := range cases {
+		got := reuseFloor(tc.shared)
+		if !almost(got, tc.want) {
+			t.Errorf("reuseFloor(%d) = %v, want %v", tc.shared, got, tc.want)
+		}
+		if got < prev {
+			t.Errorf("reuseFloor not monotone at %d: %v < %v", tc.shared, got, prev)
+		}
+		prev = got
+	}
+}
+
+func TestAgeBump(t *testing.T) {
+	mk := func(d int) *int { return &d }
+	cases := []struct {
+		name string
+		days *int
+		want float64
+	}{
+		{"nil", nil, 0},
+		{"364d", mk(364), 0},
+		{"365d", mk(365), 0.25},
+		{"729d", mk(729), 0.25},
+		{"730d", mk(730), 0.5},
+		{"1824d", mk(1824), 0.5},
+		{"1825d", mk(1825), 0.75},
+		{"6000d", mk(6000), 0.75},
+	}
+	for _, tc := range cases {
+		if got := ageBump(tc.days); !almost(got, tc.want) {
+			t.Errorf("ageBump(%s) = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestVectorV2(t *testing.T) {
 	got := Vector(strong(), Context{Cracked: true, Coverage: "none", PasswordExpires: "Unknown"})
 	// EXP: strong cracked exposure=3.0 -> Low tier 'L'; IMP:U (unknown).

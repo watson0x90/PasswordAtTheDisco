@@ -43,6 +43,9 @@ type Context struct {
 	// Retained for the vector string only (no longer scored); see Vector().
 	DaysOutOfCompliance *int
 	PasswordExpires     string
+	// PasswordAgeDays is the absolute age of the password in days since PwdLastSet
+	// (nil = unenriched / unknown). Enriched-only; feeds ageBump only.
+	PasswordAgeDays *int
 }
 
 // Breakdown is the per-axis score detail plus every raw per-factor input the
@@ -296,6 +299,65 @@ func crackedFloor(a Analysis, cracked bool) float64 {
 		return 4.0
 	case cracked:
 		return 3.0
+	default:
+		return 0
+	}
+}
+
+// roastableBump: Kerberoast (SPN) +0.5; AS-REP roastable (DontReqPreauth) +0.75. AS-REP is a
+// pre-auth exposure (no foothold needed) so it outweighs post-auth Kerberoast. Additive => both = 1.25.
+func roastableBump(c Context) float64 {
+	var b float64
+	if c.HasSPN {
+		b += 0.5
+	}
+	if c.DontReqPreauth {
+		b += 0.75
+	}
+	return b
+}
+
+// reuseBump: a small-cluster Exposure bump. Large clusters use reuseFloor instead.
+func reuseBump(sharedWith int) float64 {
+	switch {
+	case sharedWith >= 10:
+		return 1.0
+	case sharedWith >= 2:
+		return 0.75
+	case sharedWith >= 1:
+		return 0.5
+	default:
+		return 0
+	}
+}
+
+// reuseFloor: a huge reuse cluster is a standalone exposure fact (crack one hash -> own the
+// cluster), independent of THIS account's crack status -- so it FLOORS Exposure like HIBP
+// prevalence, ensuring a strong-but-massively-reused password isn't read as "Low".
+func reuseFloor(sharedWith int) float64 {
+	switch {
+	case sharedWith >= 1000:
+		return 5.0
+	case sharedWith >= 100:
+		return 4.0
+	default:
+		return 0
+	}
+}
+
+// ageBump: an old password is materially more crackable; bounded, absolute age in days.
+// ageDays nil (unenriched / PwdLastSet unknown) => 0.
+func ageBump(ageDays *int) float64 {
+	if ageDays == nil {
+		return 0
+	}
+	switch d := *ageDays; {
+	case d >= 1825:
+		return 0.75 // 5y+
+	case d >= 730:
+		return 0.5 // 2-5y
+	case d >= 365:
+		return 0.25 // 1-2y
 	default:
 		return 0
 	}
