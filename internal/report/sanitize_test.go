@@ -205,7 +205,7 @@ func TestSanitizedSummaryHasReachabilityFields(t *testing.T) {
 	}
 	for _, key := range []string{
 		`"reachability"`, `"reachability_score"`, `"reachability_pct"`,
-		`"overall"`, `"verdict"`, `"dormant_privileged"`,
+		`"overall"`, `"verdict"`, `"verdict_reason"`, `"dormant_privileged"`,
 	} {
 		if !bytes.Contains(buf.Bytes(), []byte(key)) {
 			t.Errorf("sanitized JSON missing key %s", key)
