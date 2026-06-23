@@ -350,6 +350,21 @@ func TestUnicodeAndPolicyViolationsRoundTripAndSurviveRedaction(t *testing.T) {
 	}
 }
 
+func TestBreachImpactReachabilityDriven(t *testing.T) {
+	t0 := Posture{Verdict: "Critical", VerdictReason: "Tier-0 Reachable", Reachability: "Very High"}
+	if bi := EstimateBreachImpact(t0); bi.EstimatedCost != "$1M – $5M+" || bi.RecoveryTime != "6–12 months" {
+		t.Fatalf("tier-0 reachable -> want $1M-$5M+/6-12mo, got %q/%q", bi.EstimatedCost, bi.RecoveryTime)
+	}
+	vh := Posture{Verdict: "Critical", VerdictReason: "multiple reachable domain-control paths", Reachability: "Very High"}
+	if bi := EstimateBreachImpact(vh); bi.EstimatedCost != "$500K – $1M" {
+		t.Fatalf("very-high (no tier0) -> want $500K-$1M, got %q", bi.EstimatedCost)
+	}
+	low := Posture{Verdict: "Sound", Reachability: "Low"}
+	if bi := EstimateBreachImpact(low); bi.Probability != "Low" || bi.EstimatedCost != "$50K – $100K" {
+		t.Fatalf("low -> want Low/$50K-$100K, got %q/%q", bi.Probability, bi.EstimatedCost)
+	}
+}
+
 func TestGateVerdict(t *testing.T) {
 	cases := []struct {
 		name, rating, band string
