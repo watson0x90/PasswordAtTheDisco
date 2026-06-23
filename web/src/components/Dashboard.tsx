@@ -123,7 +123,7 @@ export function Dashboard() {
                 Estimated breach likelihood:{" "}
                 <b style={{ color: LIKELIHOOD_COLOR[p.likelihood] }}>{p.likelihood}</b>
               </div>
-              <div className="posture-cap">Security health · higher is better · target ≥ 75</div>
+              <div className="posture-cap">Security health · higher is better · aim for Strong (≥ 85)</div>
             </div>
             <div className="posture-breakdown">
               <div className="posture-cap">Each bar: more filled = healthier</div>
