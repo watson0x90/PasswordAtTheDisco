@@ -20,6 +20,15 @@ compromised" signals); the Impact axis is unchanged.
 - **#2 Roastable:** replace the flat `+0.5 if (SPN || AS-REP)` with **SPN +0.5 and AS-REP +0.75,
   additive** (both → +1.25). *(Panel: AS-REP roasting is a pre-auth exposure — no foothold needed —
   so it outweighs Kerberoast, a post-auth escalation.)*
+- **#2b Roastable FLOOR (added 2026-06-22 post-build security panel):** AS-REP roastability is not
+  only worse than Kerberoast, it is **crack-status-independent and foothold-independent** — an
+  anonymous attacker pulls the AS-REP hash and cracks it offline — exactly the rationale that earned
+  reuse a floor. So **AS-REP (`DontReqPreauth`) also raises an Exposure FLOOR of 3.0** (`roastableFloor`),
+  joining the `max(...)` floor terms; **SPN earns no floor** (Kerberoast needs a domain foothold, so it
+  stays a bump). The AS-REP +0.75 bump is **retained on top** (stacks like reuse's floor+bump), keeping
+  "Roastable" visible in the breakdown. Net for a strong, uncracked AS-REP account: floor 3.0 + bump
+  0.75 = **3.75** (the low/Medium border, vs 0.75 ≈ bottom-of-Low before). *(Panel SHIP; this is the one
+  place F1's weighting was internally inconsistent with its own floor philosophy.)*
 - **#2 Reuse:** a **small-cluster bump** (1→+0.5, 2–9→+0.75, **10+→+1.0**) PLUS a **large-cluster
   Exposure FLOOR** (independent of crack status, like HIBP prevalence): **SharedWith ≥100 → floor 4.0
   (Medium), ≥1000 → floor 5.0**. *(Panel: a bump can't lift a zero-floor account out of "Low", so a
