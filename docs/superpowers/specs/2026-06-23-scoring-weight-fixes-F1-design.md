@@ -15,16 +15,24 @@ compromised" signals); the Impact axis is unchanged.
 
 ---
 
-## 1. Decisions locked during brainstorming
+## 1. Decisions locked during brainstorming (incl. the 2026-06-23 expert-panel adjustments)
 
-- **#2 Roastable:** replace the flat `+0.5 if (SPN || AS-REP)` with **SPN +0.5 and AS-REP +0.5,
-  additive** (both → +1.0). **Reuse:** replace the flat `+0.5 if SharedWith>0` with a **tiered**
-  magnitude bump: 1→+0.5, 2–9→+0.75, 10–99→+1.0, 100+→+1.5.
+- **#2 Roastable:** replace the flat `+0.5 if (SPN || AS-REP)` with **SPN +0.5 and AS-REP +0.75,
+  additive** (both → +1.25). *(Panel: AS-REP roasting is a pre-auth exposure — no foothold needed —
+  so it outweighs Kerberoast, a post-auth escalation.)*
+- **#2 Reuse:** a **small-cluster bump** (1→+0.5, 2–9→+0.75, **10+→+1.0**) PLUS a **large-cluster
+  Exposure FLOOR** (independent of crack status, like HIBP prevalence): **SharedWith ≥100 → floor 4.0
+  (Medium), ≥1000 → floor 5.0**. *(Panel: a bump can't lift a zero-floor account out of "Low", so a
+  huge strong-password spray cluster — crack one, own 100 — would be mis-triaged; a floor fixes it.)*
 - **#3 Disabled-cap lull:** **flag only** — keep the `Impact ≤ 2.0` cap (correct for live auth), but
-  surface a "disabled — latent risk" badge when a disabled account has high privilege, a DA path, or a
-  reused hash, so the operator isn't lulled. **No score change** (the panel's actual recommendation).
+  surface a "disabled — latent risk" badge when a disabled account has Tier-0 control, a DA path, a
+  controlled object, or a **reused hash (SharedWith ≥ 2)**, so the operator isn't lulled. **No score
+  change.** *(Panel: the `shared_with>0` arm was raised to ≥2 to cut badge noise. A genuinely-missed
+  case — a disabled, cracked, privileged-**by-group-membership** account with 0 controlled objects —
+  needs a group-membership-privilege signal we don't collect today; that's an **F2** gap, noted.)*
 - **#4 Credential age:** a bounded **absolute-age** Exposure bump (enriched-only, where `PwdLastSet`
-  is known): <1yr +0, 1–2yr +0.25, 2–5yr +0.5, 5yr+ +0.75.
+  is known): <1yr +0, 1–2yr +0.25, 2–5yr +0.5, 5yr+ +0.75. *(Panel: SOUND, keep — including the
+  deliberate stack with roastable, which correctly elevates a never-rotated RC4 service account.)*
 
 ---
 
@@ -46,24 +54,35 @@ inline AND `Score()` for the `Breakdown`). F1 fixes that by routing both through
 ## 3. Architecture
 
 ### 3.1 Shared Exposure-bump helpers (`internal/risk/risk.go`)
-Add three pure helpers, used by BOTH `exposureScore` and the `Breakdown` in `Score()`:
+Add four pure helpers, used by BOTH `exposureScore` and the `Breakdown` in `Score()`:
 ```go
-// roastableBump: Kerberoast (SPN) and AS-REP roastability each add +0.5 (both => +1.0).
+// roastableBump: Kerberoast (SPN) +0.5; AS-REP roastable (no pre-auth) +0.75 -- AS-REP is a
+// pre-auth exposure (no foothold needed) so it outweighs Kerberoast. Additive => both = +1.25.
 func roastableBump(c Context) float64 {
 	var b float64
 	if c.HasSPN { b += 0.5 }
-	if c.DontReqPreauth { b += 0.5 }
+	if c.DontReqPreauth { b += 0.75 }
 	return b
 }
 
-// reuseBump: scales with the size of the reuse cluster (a wide spray is far worse than one reuse).
+// reuseBump: a small-cluster Exposure bump. Large clusters use reuseFloor instead (below).
 func reuseBump(sharedWith int) float64 {
 	switch {
-	case sharedWith >= 100: return 1.5
-	case sharedWith >= 10:  return 1.0
-	case sharedWith >= 2:   return 0.75
-	case sharedWith >= 1:   return 0.5
-	default:                return 0
+	case sharedWith >= 10: return 1.0
+	case sharedWith >= 2:  return 0.75
+	case sharedWith >= 1:  return 0.5
+	default:               return 0
+	}
+}
+
+// reuseFloor: a huge reuse cluster is a standalone exposure fact (crack one hash -> own the
+// cluster), independent of this account's crack status -- so it FLOORS Exposure like HIBP
+// prevalence, ensuring a strong-but-massively-reused password isn't read as "Low".
+func reuseFloor(sharedWith int) float64 {
+	switch {
+	case sharedWith >= 1000: return 5.0
+	case sharedWith >= 100:  return 4.0
+	default:                 return 0
 	}
 }
 
@@ -79,14 +98,26 @@ func ageBump(ageDays *int) float64 {
 	}
 }
 ```
-`exposureScore` (risk.go:313-320) becomes:
+`exposureScore` (risk.go:305-321) becomes — `reuseFloor` joins the `max(...)` floor terms, the
+small bumps add on top:
 ```go
-	bump := reuseBump(c.SharedWith) + roastableBump(c) + ageBump(c.PasswordAgeDays)
+	var floor float64
+	if c.Cracked {
+		floor = math.Max(weaknessScore(a), math.Max(hibpExposureFloor(c.HIBPBreachCount), crackedFloor(a, true)))
+	} else {
+		floor = hibpExposureFloor(c.HIBPBreachCount)
+	}
+	floor = math.Max(floor, reuseFloor(c.SharedWith)) // large-cluster reuse is a floor, crack-status-independent
+	bump := roastableBump(c) + reuseBump(c.SharedWith) + ageBump(c.PasswordAgeDays)
+	// NOTE: bump is added pre-clamp; at a high floor the min(10,...) can absorb part of it, so the
+	// per-factor breakdown values may sum to MORE than the displayed Exposure. That's the bounded-axis
+	// clamp, not a drift bug -- the breakdown and the score read from the SAME helpers.
 	return math.Min(10.0, floor+bump)
 ```
 `Score()`'s `Breakdown` fields use the same helpers: `ReuseBump: reuseBump(c.SharedWith)`,
 `RoastableBump: roastableBump(c)`, and a new `AgePenalty: ageBump(c.PasswordAgeDays)`. (Remove the
-old inline `reuse`/`roast` locals so there is one source of truth.)
+old inline `reuse`/`roast` locals so there is one source of truth.) The `reuseFloor` contribution is
+reflected via the overall Exposure (it joins the floor `max`, not a separate breakdown factor).
 
 ### 3.2 `Context.PasswordAgeDays` + engine wiring
 Add `PasswordAgeDays *int` to `risk.Context` (absolute days since `PwdLastSet`; nil = unknown). In
@@ -117,7 +148,12 @@ if enrData.PwdLastSet != nil && *enrData.PwdLastSet > 0 {
 ### 3.4 Disabled latent-risk flag (#3 — frontend only, no score change)
 A pure predicate + a drawer badge (no backend, derivable from existing redacted `Account` fields):
 - `web/src/coverage.ts` (or a small `web/src/disabledRisk.ts`) — `disabledLatentRisk(a: Account): boolean`
-  = `!a.enabled && (a.controls_tier0 === true || hasDA(a.da_domains) || a.controlled_object_count > 0 || a.shared_with > 0)`.
+  = `!a.enabled && (a.controls_tier0 === true || hasDA(a.da_domains ?? "") || a.controlled_object_count > 0 || a.shared_with >= 2)`.
+  (The `shared_with >= 2` threshold — raised from `> 0` per the panel — cuts badge noise; the
+  `?? ""` keeps `hasDA` nil-safe for hand-built objects even though the API always sends a string.
+  **Known F2 gap:** a disabled+cracked account privileged only *by group membership* — `controlled==0`,
+  not Tier-0, no DA path — won't trip this predicate; surfacing it needs a group-membership-privilege
+  signal we don't collect until F2.)
 - `web/src/components/AccountDrawer.tsx`: when `disabledLatentRisk(a)`, show a badge/row near the
   "Enabled" field — e.g. **"Disabled — latent risk (re-enable / Pass-the-Hash persistence)"** — so a
   disabled-but-dangerous account capped at Impact 2.0 isn't read as harmless. Reuse existing badge
@@ -137,20 +173,27 @@ A pure predicate + a drawer badge (no backend, derivable from existing redacted 
 No Impact-axis change, no new endpoints, no new ingestion.
 
 ## 5. Testing
-- **#2/#4 (Go):** `reuseBump` tiers (0/0.5/0.75/1.0/1.5 at the boundaries 0/1/2/10/100); `roastableBump`
-  (SPN-only 0.5, AS-REP-only 0.5, both 1.0, neither 0); `ageBump` tiers at 364/365/730/1825 days + nil→0;
-  each is **monotone non-decreasing** in its input. `exposureScore` is still bounded [0,10] and the
-  bumps compose additively under the clamp. Update the affected Exposure/vector goldens. An **unenriched**
-  account's Exposure is unchanged (ageBump 0 via nil; reuse/roastable already applied before).
+- **#2/#4 (Go):** `reuseBump` tiers (0/0.5/0.75/1.0 at the boundaries 0/1/2/10 — note the ceiling is now
+  1.0; there is no 100+ bump tier, large clusters use the floor instead); `reuseFloor` (0 below 100,
+  4.0 at 100, 5.0 at 1000); `roastableBump` (SPN-only 0.5, AS-REP-only 0.75, both 1.25, neither 0);
+  `ageBump` tiers at 364/365/730/1825 days + nil→0; each is **monotone non-decreasing** in its input.
+  `exposureScore` is still bounded [0,10] and the bumps+floor compose under the clamp. **Floor-vs-crack
+  independence:** an UNCRACKED account with `SharedWith ≥ 100` gets Exposure ≥ 4.0 (≥ Medium) even with
+  a strong password / zero HIBP — the new floor's whole point. Update the affected Exposure/vector
+  goldens. An **unenriched** account's Exposure is unchanged for the age axis (ageBump 0 via nil);
+  reuse/roastable still apply as before.
 - **#3 (web):** `disabledLatentRisk` — true for a disabled account with Tier-0 / DA-path / controlled>0 /
-  shared>0; false for an enabled account or a disabled account with none of those.
+  **shared_with ≥ 2**; false for an enabled account, a disabled account with none of those, and a
+  disabled account with **shared_with == 1** (below the raised threshold). Verify `da_domains`
+  absent/`undefined` does NOT trip the predicate (nil-safe `?? ""`).
 - **Gates:** `gofmt`, `go build/vet/test`, `govulncheck`; `tsc`/`vitest`/`build`. Live: Recalculate an
   audit, confirm a widely-reused or roastable or old-password account's Exposure rose, the drawer shows
   the Age/Reuse/Roastable rows, and a disabled-but-privileged account shows the latent-risk badge;
   console clean.
 
 ## 6. Definition of done (F1)
-Roastability and password-reuse scale with severity instead of a flat +0.5; an old password adds a
-bounded, credential-intrinsic Exposure bump; and a disabled-but-dangerous account is flagged so the
-Impact-2.0 cap can't lull an operator. Exposure stays bounded/monotone; Impact unchanged; all goldens
+Roastability scales (AS-REP > Kerberoast) and password-reuse scales with cluster size — a small-cluster
+bump plus a large-cluster Exposure **floor** so a massively-reused strong password can't read as "Low";
+an old password adds a bounded, credential-intrinsic Exposure bump; and a disabled-but-dangerous account
+is flagged so the Impact-2.0 cap can't lull an operator. Exposure stays bounded/monotone; Impact unchanged; all goldens
 green; existing audits adopt the new Exposure on their next Recalculate. F2 (delegation + LM-hash) is next.
