@@ -220,6 +220,10 @@ type Account struct {
 	// EscalateSharedWithDA (shares an NT hash with a DA account).
 	EscalatedBySharedDA bool `json:"escalated_by_shared_da,omitempty"`
 
+	// EscalatedByMassReuse is true when this account was escalated by
+	// EscalateLargeCrackedReuse (member of a large CRACKED reuse cluster).
+	EscalatedByMassReuse bool `json:"escalated_by_mass_reuse,omitempty"`
+
 	// ScoreBreakdown holds the numeric risk-factor components that produced the
 	// final RiskScore. Stored so the UI can explain *why* an account scored high
 	// without operators having to decode the vector string manually.
@@ -358,6 +362,106 @@ func EscalateSharedWithDA(accts []Account) {
 		if a.ScoreBreakdown != nil {
 			a.ScoreBreakdown.ImpactScore = max
 		}
+	}
+}
+
+// Mass-reuse Level escalation (Finding 1). A large CRACKED reuse cluster is collectively
+// high-risk ("crack one, own N") even though each member's blast radius is low; the
+// Exposure x Impact matrix caps low-Impact accounts at Medium, so without this pass a
+// 402-account cracked cluster reads as 402x "Low". Hybrid + scale-aware so it isn't locked
+// to one audit size. Tune the five knobs here.
+const (
+	massReuseHighN             = 100
+	massReuseMediumN           = 25
+	massReuseHighFrac          = 0.25
+	massReuseMediumFrac        = 0.05
+	massReuseMinClusterForFrac = 5 // the fraction path requires at least this many accounts
+)
+
+// massReuseTarget returns the Level a cracked cluster of n members (in an audit of total
+// accounts) escalates to: "High", "Medium", or "" (none). Cap: High.
+func massReuseTarget(n, total int) string {
+	if n >= massReuseHighN || (n >= massReuseMinClusterForFrac && float64(n) >= massReuseHighFrac*float64(total)) {
+		return "High"
+	}
+	if n >= massReuseMediumN || (n >= massReuseMinClusterForFrac && float64(n) >= massReuseMediumFrac*float64(total)) {
+		return "Medium"
+	}
+	return ""
+}
+
+// levelRank maps a Level to a severity rank (higher = worse); mirrors triageKey.
+func levelRank(level string) int {
+	switch level {
+	case "Critical":
+		return 4
+	case "High":
+		return 3
+	case "Medium":
+		return 2
+	case "Low":
+		return 1
+	default:
+		return 0
+	}
+}
+
+// moreSevereLevel returns whichever of cur/target is higher severity.
+func moreSevereLevel(cur, target string) string {
+	if levelRank(target) > levelRank(cur) {
+		return target
+	}
+	return cur
+}
+
+// levelFloorScore is the display RiskScore floor for an escalated level (the tier minimum),
+// so a Medium/High level doesn't show next to a near-zero RiskScore.
+func levelFloorScore(level string) float64 {
+	switch level {
+	case "High":
+		return 6.0
+	case "Medium":
+		return 4.0
+	default:
+		return 0
+	}
+}
+
+// EscalateLargeCrackedReuse raises the Level of members of a large CRACKED reuse cluster
+// (see massReuseTarget). It changes Level / RiskScore / vector / flag ONLY -- Impact stays
+// honest (these accounts genuinely have low blast radius; the /MASS-REUSE tag + flag explain
+// the override). Run AFTER EscalateSharedWithDA, BEFORE ComputePercentiles.
+func EscalateLargeCrackedReuse(accts []Account) {
+	total := len(accts)
+	crackedN := map[string]int{}
+	for i := range accts {
+		if accts[i].Cracked {
+			if k := reuseKey(accts[i].NTHash); k != "" {
+				crackedN[k]++
+			}
+		}
+	}
+	for i := range accts {
+		a := &accts[i]
+		if !a.Cracked {
+			continue
+		}
+		k := reuseKey(a.NTHash)
+		if k == "" {
+			continue
+		}
+		target := massReuseTarget(crackedN[k], total)
+		if target == "" {
+			continue
+		}
+		a.RiskLevel = moreSevereLevel(a.RiskLevel, target)
+		if f := levelFloorScore(target); a.RiskScore < f {
+			a.RiskScore = f
+		}
+		if !strings.Contains(a.RiskVector, "MASS-REUSE") {
+			a.RiskVector += "/MASS-REUSE"
+		}
+		a.EscalatedByMassReuse = true
 	}
 }
 

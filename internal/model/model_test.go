@@ -2,6 +2,7 @@ package model
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -266,6 +267,59 @@ func TestComputePercentilesLevelFirst(t *testing.T) {
 	}
 	if p["esc"] != 1 {
 		t.Fatalf("escalated Critical should rank highest, got %v", p["esc"])
+	}
+}
+
+func TestMassReuseTarget(t *testing.T) {
+	cases := []struct {
+		n, total int
+		want     string
+	}{
+		{100, 10000, "High"},
+		{25, 10000, "Medium"},
+		{24, 10000, ""},
+		{20, 30, "High"},   // hybrid: 20 >= 0.25*30=7.5 and >=5
+		{8, 100, "Medium"}, // hybrid: 8 >= 0.05*100=5 and >=5
+		{2, 4, ""},         // below the N>=5 fraction guard
+		{4, 5, ""},         // 4 < 5 guard even though 80% of audit
+	}
+	for _, c := range cases {
+		if got := massReuseTarget(c.n, c.total); got != c.want {
+			t.Errorf("massReuseTarget(%d,%d)=%q want %q", c.n, c.total, got, c.want)
+		}
+	}
+}
+
+func TestEscalateLargeCrackedReuse(t *testing.T) {
+	accts := make([]Account, 0, 102)
+	for i := 0; i < 100; i++ {
+		accts = append(accts, Account{Username: fmt.Sprintf("u%d", i), Domain: "CORP", NTHash: "SHARED", Cracked: true, RiskLevel: "Low", RiskScore: 0.8})
+	}
+	accts = append(accts, Account{Username: "x", Domain: "CORP", NTHash: "OTHER", Cracked: false, RiskLevel: "Low"})
+	accts = append(accts, Account{Username: "crit", Domain: "CORP", NTHash: "SHARED", Cracked: true, RiskLevel: "Critical", RiskScore: 9.0, EscalatedBySharedDA: true})
+
+	EscalateLargeCrackedReuse(accts)
+
+	for i := 0; i < 100; i++ {
+		a := accts[i]
+		if a.RiskLevel != "High" {
+			t.Fatalf("u%d level=%q want High", i, a.RiskLevel)
+		}
+		if !a.EscalatedByMassReuse || !strings.Contains(a.RiskVector, "MASS-REUSE") {
+			t.Fatalf("u%d not flagged/tagged: %+v", i, a)
+		}
+		if a.RiskScore < 6.0 {
+			t.Fatalf("u%d score=%v want >=6.0 (High floor)", i, a.RiskScore)
+		}
+		if a.ImpactKnown || a.ImpactScore != nil {
+			t.Fatalf("u%d Impact must stay untouched", i)
+		}
+	}
+	if accts[100].EscalatedByMassReuse || accts[100].RiskLevel != "Low" {
+		t.Errorf("uncracked account wrongly escalated: %+v", accts[100])
+	}
+	if accts[101].RiskLevel != "Critical" || !accts[101].EscalatedByMassReuse {
+		t.Errorf("already-Critical member must stay Critical AND be flagged: %+v", accts[101])
 	}
 }
 
