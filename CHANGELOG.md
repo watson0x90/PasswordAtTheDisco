@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 _Nothing yet._
 
+## [2.26.0] — 2026-06-23 — Scoring-audit fixes (mass reuse + bulk Tier-0)
+
+> Two scoring gaps surfaced by reviewing a **sanitized export** (2.25) of a real 6,000-account
+> audit. Existing audits adopt the changes on their next **Recalculate**.
+
+### Changed
+- **Large cracked-password reuse clusters now escalate.** A password cracked across many accounts
+  ("crack one, own N") used to read as N× *Low* — each account's blast radius is low, and the
+  Exposure×Impact matrix caps a low-Impact account at Medium. Now the **Level** of members of a large
+  *cracked* cluster escalates to **Medium / High** (scale-aware thresholds: ≥25 accounts or ≥5% of the
+  audit → Medium; ≥100 or ≥25% → High; cap High). Impact is left honest (the blast radius really is
+  low); a `MASS-REUSE` risk-vector tag, an `escalated_by_mass_reuse` flag, and an "Escalated
+  (Mass-reuse)" drawer row explain the escalation. Critical accounts (DA / shared-DA) are never
+  downgraded.
+
+### Fixed
+- **Tier-0 control is now flagged on large audits.** The bulk BloodHound enricher (used for big
+  audits) never computed `controls_tier0`, so DCSync / Domain-Admin-group / KRBTGT / AdminSDHolder
+  controllers were silently under-scored on any audit large enough to use bulk enrichment. A new bulk
+  Cypher (using the same Tier-0 definition as the per-user path) closes the gap — verified live against
+  a real BloodHound (it correctly surfaced an AD-sync DCSync account the bulk path had been missing).
+
 ## [2.25.0] — 2026-06-23 — Sanitized review export
 
 ### Added

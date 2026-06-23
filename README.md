@@ -41,21 +41,22 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
-## What's new in 2.25
+## What's new in 2.26
 
-**Sanitized review export — audit the scoring, not the customer.**
+**Scoring-audit fixes — surfaced by reviewing a sanitized export of a real audit.**
 
-- **Sanitized review export** (Reports tab, or `GET /api/export/sanitized.json`): a fully
-  **anonymized** JSON of an audit — every per-account scoring signal + the aggregates — with
-  **zero** identifying or secret data (no usernames, domain names, hashes, cleartext, or audit
-  name). Domains and password-reuse groups become **opaque labels**, so the scoring model can be
-  reviewed for gaps (by a person or an AI) **without exposing customer data**.
-- Built as an **allowlist** (future fields excluded by default); the no-leak guarantee is enforced
-  by a canary byte-scan + a structural key test, and verified live. The export is audit-logged.
+- **Large cracked-reuse clusters escalate.** A password cracked across many accounts ("crack one,
+  own N") used to read as N× *Low*; now members of a large *cracked* cluster escalate to **Medium /
+  High** (scale-aware thresholds, cap High), with a `MASS-REUSE` tag + `escalated_by_mass_reuse` flag.
+  Impact stays honest; DA / shared-DA Criticals are never downgraded.
+- **Tier-0 control flagged on large audits.** The bulk BloodHound enricher never computed
+  `controls_tier0`, so DCSync / Domain-Admin / KRBTGT / AdminSDHolder controllers were under-scored on
+  big audits. A new bulk Cypher closes it — verified live (it surfaced a real AD-sync DCSync account
+  the bulk path had been missing).
 
-Earlier: BloodHound user-properties upload fidelity (2.24); sharper Exposure weights —
-roastability/reuse-floor/credential-age (2.23); Recalculate scoring + BloodHound-coverage view
-(2.22); an **MCP server** for AI agents (2.21); the **two-axis Exposure × Impact** scoring rebuild (2.18).
+Both gaps were found using the **sanitized review export** (2.25) — audit the scoring without exposing
+customer data. Earlier: BloodHound user-properties upload fidelity (2.24); sharper Exposure weights
+(2.23); Recalculate scoring + coverage view (2.22); an **MCP server** for AI agents (2.21).
 
 See **[CHANGELOG.md](CHANGELOG.md)** for the full release history.
 
