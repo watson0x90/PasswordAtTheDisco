@@ -9,6 +9,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 _Nothing yet._
 
+## [2.22.0] — 2026-06-23 — Recalculate scoring, a refined two-axis model & coverage tools
+
+> **Scoring was refined.** Domain risk now *multiplies* Impact and the triage percentile is
+> level-first (details below). Existing audits keep their old numbers until you **Recalculate
+> scoring** (Overview → Recalculate) — the new action makes that one click.
+
+### Added
+- **Recalculate scoring** — a lead-only background job that re-scores the active audit against
+  the *current* policy, forbidden-words, and HIBP index **without re-querying BloodHound**
+  (each account's Impact is preserved), then nudges you to re-run enrichment. Editing a policy
+  or wordlist now offers a one-click recalculate so changes actually reach existing accounts.
+- **Enrichment Coverage** — a read-only section on the Integrations page listing the accounts
+  BloodHound did **not** enrich (the same count as the Overview "Impact Unknown" KPI), with a
+  why-diagnosis and a non-secret **CSV export** to take back to BloodHound. **Analysts can reach
+  it** (Integrations is now role-aware: analysts see only the coverage view, not the lead-only
+  HIBP/BloodHound config).
+- **More of the score is now visible** in the account drawer: the **Tier-0 / DA-equivalent
+  control** signal, the decomposed **weakness sub-penalties** (length / complexity / dictionary
+  / similarity), the **failed policy rules**, and a **unicode** flag. The risk vector gained
+  **`RO:`** (Kerberoast / AS-REP roastability) and **`T0:`** (Tier-0) tokens.
+- The in-app **Help → How we score risk** chapter now documents the full live model: the domain
+  multiplier, a vector-token legend, the level-first percentile, and the shared-DA escalation.
+
+### Changed
+- **Domain risk is now a multiplier on Impact** (`×1.1 / ×1.2 / ×1.3` for Medium / High / Critical),
+  matching the labels in the Policies editor; the Exposure axis stays credential-intrinsic and
+  unenriched accounts are unaffected. (Previously additive, contrary to the UI.)
+- **Triage percentile is level-first** (Critical > High > Medium > Low, then an Impact-weighted
+  tiebreak) — so it can never rank a Low-level account above a High one. It no longer rides the
+  legacy `risk_score`.
+- **Dashboard consistency:** the Insights "Cross-domain credential reuse" graph is built from the
+  report's real reuse groups (no more fabricated edges; it agrees with the Exposure bridges
+  panel); the Overview KPIs read the authoritative `Summary` counts.
+
+### Fixed
+- **A Recalculate no longer drops the HIBP Exposure floor** when the HIBP index is unavailable —
+  the stored breach count is preserved (unknown ≠ zero).
+- The shared-DA escalation now syncs the score **breakdown** to Impact 10 (the drawer no longer
+  contradicts the headline); an open account drawer reflects a completed rescore **without a page
+  reload**; the posture caption cites a real band; dead code and stale comments cleaned up.
+
+### Security
+- BloodHound **enrichment now refuses (409) while a rescore is running** and vice-versa (both
+  rewrite the audit) — the guard is symmetric across the REST API and the UI.
+- The coverage table/CSV expose only non-secret fields (username / domain / cracked / level);
+  the new `contains_unicode` / `policy_violations` signals are descriptive (rule names, not
+  passwords) and survive redaction. No cleartext or NT hash is added to any endpoint, vector, or
+  the audit log.
+
 ## [2.21.0] — 2026-06-22 — MCP server for AI agents
 
 ### Added

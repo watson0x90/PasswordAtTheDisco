@@ -41,22 +41,24 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
-## What's new in 2.21
+## What's new in 2.22
 
-**An MCP server — connect an AI agent (Gemini, Kiro, Claude) straight to your audit data.**
+**Recalculate scoring, a refined two-axis model, and a BloodHound-coverage view.**
 
-- **Model Context Protocol server** at `POST /api/mcp` — a stateless JSON-RPC endpoint
-  authenticated by **role-scoped API tokens**. Issue a token (Admin → **MCP Tokens**, or
-  `patd token create`), point your agent at the URL with a bearer header, and it can
-  query posture, accounts, domains, search, the password-in-use probe, reports, and audit
-  diffs — all **redacted**. A **lead** token can additionally reveal one account's
-  cleartext, one call at a time, **audit-logged and fail-closed**. Every tool call is in
-  the audit log; the token secret never is. Setup below: **[MCP server (for AI agents)](#mcp-server-for-ai-agents)**.
+- **Recalculate scoring** — re-score an audit against the *current* policy, forbidden-words,
+  and HIBP index in one click (Overview → **Recalculate**), preserving each account's BloodHound
+  Impact. Editing a policy or wordlist now actually reaches existing accounts.
+- **Refined scoring** — domain risk now **multiplies** Impact (×1.1 / ×1.2 / ×1.3, matching the
+  Policies labels), and the triage worklist is **level-first** so a Low-level account can never
+  out-rank a High one. *Existing audits adopt the new numbers on their next Recalculate.*
+- **Enrichment coverage** — the Integrations page now lists the accounts BloodHound didn't
+  enrich, diagnoses why, and exports a (non-secret) CSV to take back to BloodHound; **analysts**
+  get this read-only view. The account drawer also surfaces Tier-0 control, the weakness
+  sub-penalties, failed policy rules, and the `RO:`/`T0:` vector tokens.
 
-Earlier: the Exposure × Impact grid became a colour-coded danger map (2.20), scoring was
-rebuilt around a **two-axis Exposure × Impact model** (2.18), and the console gained an
-in-app **Help / methodology** section (2.19) that explains the model to CISOs and
-blue-team leads.
+Earlier: an **MCP server** for AI agents (2.21), the Exposure × Impact danger-map grid (2.20),
+the **two-axis Exposure × Impact** scoring rebuild (2.18), and the in-app **Help / methodology**
+section (2.19).
 
 See **[CHANGELOG.md](CHANGELOG.md)** for the full release history.
 
