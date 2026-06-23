@@ -28,6 +28,10 @@ type DiffAccount struct {
 type Diff struct {
 	PostureA      float64       `json:"posture_a"`
 	PostureB      float64       `json:"posture_b"`
+	ReachabilityA string        `json:"reachability_a"`
+	ReachabilityB string        `json:"reachability_b"`
+	OverallA      float64       `json:"overall_a"`
+	OverallB      float64       `json:"overall_b"`
 	StillCracked  int           `json:"still_cracked"`
 	NewlyCracked  []DiffAccount `json:"newly_cracked"`
 	Remediated    []DiffAccount `json:"remediated"`
@@ -48,6 +52,9 @@ func ComputeDiff(a, b []model.Account) Diff {
 	for _, x := range b {
 		bm[key(x)] = x
 	}
+	// Compute PostureScore once per side; reuse both .Score and .Reachability/.Overall.
+	pa := model.PostureScore(a)
+	pb := model.PostureScore(b)
 	// Initialize to non-nil so JSON emits [] not null (the client maps over them).
 	d := Diff{
 		NewlyCracked:  []DiffAccount{},
@@ -55,8 +62,12 @@ func ComputeDiff(a, b []model.Account) Diff {
 		NewlyBreached: []DiffAccount{},
 		Regressed:     []DiffAccount{},
 	}
-	d.PostureA = model.PostureScore(a).Score
-	d.PostureB = model.PostureScore(b).Score
+	d.PostureA = pa.Score
+	d.PostureB = pb.Score
+	d.ReachabilityA = pa.Reachability
+	d.ReachabilityB = pb.Reachability
+	d.OverallA = pa.Overall
+	d.OverallB = pb.Overall
 	ref := func(ax, bx model.Account, name model.Account) DiffAccount {
 		return DiffAccount{Username: name.Username, Domain: name.Domain, RiskA: ax.RiskLevel, RiskB: bx.RiskLevel}
 	}

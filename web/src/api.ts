@@ -47,6 +47,10 @@ export interface DiffAccount {
 export interface AuditDiff {
   posture_a: number
   posture_b: number
+  reachability_a?: string
+  reachability_b?: string
+  overall_a?: number
+  overall_b?: number
   still_cracked: number
   newly_cracked: DiffAccount[]
   remediated: DiffAccount[]

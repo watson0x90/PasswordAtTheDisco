@@ -106,13 +106,14 @@ export function Compare() {
 function DiffView({ res, accounts }: { res: DiffResult; accounts: Account[] }) {
   const d = res.diff
   // posture_a / posture_b are Credential Hygiene (enabled-only average, 0–100).
-  // Reachability delta requires backend fields not yet in the diff payload; show "—" when absent.
   const hygieneA = Math.round(d.posture_a * 10) / 10
   const hygieneB = Math.round(d.posture_b * 10) / 10
   const hygieneDelta = Math.round((hygieneB - hygieneA) * 10) / 10
-  const reachA: string = (d as unknown as Record<string, unknown>).reachability_a as string | undefined ?? "—"
-  const reachB: string = (d as unknown as Record<string, unknown>).reachability_b as string | undefined ?? "—"
+  const reachA: string = d.reachability_a ?? "—"
+  const reachB: string = d.reachability_b ?? "—"
   const reachChanged = reachA !== "—" && reachB !== "—" && reachA !== reachB
+  const overallA = d.overall_a ?? hygieneA
+  const overallB = d.overall_b ?? hygieneB
 
   return (
     <>
@@ -158,7 +159,7 @@ function DiffView({ res, accounts }: { res: DiffResult; accounts: Account[] }) {
 
         {/* Overall as labeled secondary, not headline */}
         <div className="cp-overall-secondary">
-          Overall (Hygiene × (1−L) trend): {hygieneA} → {hygieneB}
+          Overall (Hygiene × (1−L) trend): {overallA} → {overallB}
           {" "}<span className="muted">— use Hygiene and Reachability separately as primary signals</span>
         </div>
       </div>
