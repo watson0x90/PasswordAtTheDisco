@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 _Nothing yet._
 
+## [2.25.0] — 2026-06-23 — Sanitized review export
+
+### Added
+- **Sanitized review export** (Reports → "Sanitized review export (JSON)", and
+  `GET /api/export/sanitized.json`): a fully **anonymized** JSON report of an audit — every
+  per-account scoring signal (exposure, impact, the risk vector, the score breakdown, coverage,
+  the Kerberos/DA/controlled/reuse flags) plus the audit aggregates — with **all identifying and
+  secret data removed**. No usernames, domain names, NT hashes, cleartext, matched wordlist
+  substrings, DA pathway domain names, raw password-set timestamps, or audit name appear anywhere.
+  Relational structure is preserved as **opaque, name-free tokens** (account ids, domain labels,
+  reuse-group ids, similar-peer links) so the scoring can be reviewed for gaps — by a person or an
+  AI — **without exposing customer data**. The export is audit-logged.
+  - Built as an **allowlist** (a separate output type, never the account struct), so any future
+    field is excluded by default; the guarantee is enforced by a canary byte-scan **and** a
+    structural forbidden-key test, and verified live.
+
 ## [2.24.0] — 2026-06-22 — BloodHound user-properties upload fidelity
 
 > Uploading a SharpHound/BHE **users** export (Setup → BloodHound → "Upload user data")
