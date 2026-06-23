@@ -147,6 +147,23 @@ export function Reports() {
           </a>
         </div>
       </div>
+
+      <div className="panel report-export">
+        <div className="report-export-head">
+          <div>
+            <div className="action-title">Sanitized review export (JSON)</div>
+            <div className="action-sub">
+              Every per-account <b>scoring signal</b> and the audit aggregates, with <b>all identity removed</b> —
+              no usernames, domain names, hashes, cleartext, or audit name. Domains and password-reuse groups are
+              preserved as opaque labels so the scoring can be reviewed (by a person or an AI) without exposing
+              customer data.
+            </div>
+          </div>
+          <a className="btn" href="/api/export/sanitized.json" download>
+            Download JSON
+          </a>
+        </div>
+      </div>
     </>
   )
 }
