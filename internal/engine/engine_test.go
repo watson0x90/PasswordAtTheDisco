@@ -483,6 +483,19 @@ func TestAgePenaltyWired(t *testing.T) {
 	if oldAcct.ExposureScore < freshAcct.ExposureScore {
 		t.Errorf("old exposure %v should be >= fresh %v", oldAcct.ExposureScore, freshAcct.ExposureScore)
 	}
+
+	// Uncracked path must ALSO forward AgePenalty (NTLM pass-the-hash: never cracked but
+	// the password is 3y stale). Exercises the scoreUncracked copy independently.
+	uncrackedEnr := fakeEnricher{"bob@CORP": Enrichment{Enriched: true, Enabled: bp(true), PwdLastSet: &oldSet}}
+	uncracked := eng.scoreUncracked("CORP",
+		secretsdump.ParsedAccount{Username: "bob", Hash: "DEF", Cracked: false},
+		0, now, uncrackedEnr)
+	if uncracked.ScoreBreakdown == nil {
+		t.Fatal("expected score_breakdown on the uncracked account")
+	}
+	if got := uncracked.ScoreBreakdown.AgePenalty; got != 0.5 {
+		t.Errorf("uncracked old AgePenalty = %v, want 0.5", got)
+	}
 }
 
 func TestRescorePreservesHIBPWhenIndexUnavailable(t *testing.T) {
