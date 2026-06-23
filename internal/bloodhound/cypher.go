@@ -473,15 +473,18 @@ func parseControllablesFromResults(data []json.RawMessage) map[string]int {
 }
 
 // tier0ControllersQuery is the bulk Tier-0 prefetch Cypher. Its predicate mirrors the
-// per-user isTier0Name + ExtractControlsTier0 EXACTLY (kept testable so a refactor can't
-// silently weaken it):
+// per-user isTier0Name + ExtractControlsTier0 (kept testable so a refactor can't silently
+// weaken it). It uses ONLY the Cypher subset BloodHound CE accepts -- validated live:
+// split()/trim()/list-indexing return HTTP 500, so the built-in Administrators check uses
+// STARTS WITH instead:
 //
-//	n:Domain                            -> control of the domain object (DCSync)
-//	localpart(n.name) == ADMINISTRATORS -> built-in Administrators (EXACT, to avoid
-//	                                       CONTAINS over-matching "Backup Administrators")
+//	n:Domain                             -> control of the domain object (DCSync)
+//	n.name STARTS WITH 'ADMINISTRATORS@' -> built-in Administrators group (EXACT local-part:
+//	                                        won't match "Backup Administrators@..."; BHE group
+//	                                        names are always "NAME@DOMAIN", so '@' anchors it)
 //	n.name CONTAINS any tier0Names fragment -> the substring-matched DA-equivalent names
 func tier0ControllersQuery() string {
-	return `MATCH (u:User)-[r]->(n) WHERE type(r) IN ['GenericAll','GenericWrite','WriteOwner','WriteDacl','Owns','ForceChangePassword','AddMember'] AND (n:Domain OR toUpper(trim(split(coalesce(n.name,''),'@')[0])) = 'ADMINISTRATORS' OR ANY(t IN [` + tier0NameList() + `] WHERE toUpper(coalesce(n.name,'')) CONTAINS t)) RETURN DISTINCT u.samaccountname, u.domain`
+	return `MATCH (u:User)-[r]->(n) WHERE type(r) IN ['GenericAll','GenericWrite','WriteOwner','WriteDacl','Owns','ForceChangePassword','AddMember'] AND (n:Domain OR toUpper(coalesce(n.name,'')) STARTS WITH 'ADMINISTRATORS@' OR ANY(t IN [` + tier0NameList() + `] WHERE toUpper(coalesce(n.name,'')) CONTAINS t)) RETURN DISTINCT u.samaccountname, u.domain`
 }
 
 // tier0NameList builds the Cypher list literal of Tier-0 object-name fragments from

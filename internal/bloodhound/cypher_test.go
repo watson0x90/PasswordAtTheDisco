@@ -21,9 +21,8 @@ func TestTier0ControllersQuery(t *testing.T) {
 	// the built-in Administrators match MUST be exact (not CONTAINS), DCSync via n:Domain,
 	// and every tier0Names fragment present.
 	for _, want := range []string{
-		"= 'ADMINISTRATORS'", // exact local-part, not CONTAINS (else "Backup Administrators" over-matches)
-		"n:Domain",           // DCSync / domain-object control
-		"split(coalesce(n.name,''),'@')[0]",
+		"STARTS WITH 'ADMINISTRATORS@'", // exact local-part (BHE-CE supported; not CONTAINS, else "Backup Administrators" over-matches)
+		"n:Domain",                      // DCSync / domain-object control
 	} {
 		if !strings.Contains(q, want) {
 			t.Errorf("tier0ControllersQuery missing %q\nquery=%s", want, q)
