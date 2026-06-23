@@ -528,3 +528,35 @@ func TestAuditLevelPassesAfterReplace(t *testing.T) {
 }
 
 func ptrf(v float64) *float64 { return &v }
+
+func TestMassReuseEscalationThroughPipeline(t *testing.T) {
+	s := New()
+	m, err := s.CreateAudit("mass-reuse", "")
+	if err != nil {
+		t.Fatalf("CreateAudit: %v", err)
+	}
+	id := m.ID
+	accts := make([]model.Account, 0, 100)
+	for i := 0; i < 100; i++ { // 100 cracked share one hash -> High (absolute threshold)
+		accts = append(accts, model.Account{Username: fmt.Sprintf("u%d", i), Domain: "D", NTHash: "SHARED", Cracked: true, RiskLevel: "Low"})
+	}
+	if err := s.Replace(id, model.Dataset{Accounts: accts}); err != nil {
+		t.Fatalf("Replace: %v", err)
+	}
+	sum, err := s.Summary(id)
+	if err != nil {
+		t.Fatalf("Summary: %v", err)
+	}
+	if sum.EscalatedByMassReuse != 100 {
+		t.Errorf("Summary.EscalatedByMassReuse=%d, want 100", sum.EscalatedByMassReuse)
+	}
+	got, err := s.Accounts(id, false)
+	if err != nil {
+		t.Fatalf("Accounts: %v", err)
+	}
+	for _, a := range got {
+		if a.RiskLevel != "High" || !a.EscalatedByMassReuse {
+			t.Errorf("%s: level=%q flagged=%v, want High+flagged", a.Username, a.RiskLevel, a.EscalatedByMassReuse)
+		}
+	}
+}

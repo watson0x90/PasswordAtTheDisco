@@ -567,12 +567,13 @@ type Summary struct {
 	GeneratedAt   time.Time      `json:"generated_at"`
 
 	// Extended stats for the dashboard gap-fills.
-	DisabledAccounts    int `json:"disabled_accounts"`
-	NeverExpires        int `json:"never_expires"`
-	StalePasswords      int `json:"stale_passwords"`        // days_out_of_compliance > 0
-	EscalatedBySharedDA int `json:"escalated_by_shared_da"` // escalated via hash-sharing with a DA
-	PolicyViolations    int `json:"policy_violations"`      // cracked && !meets_policy
-	HighControlled      int `json:"high_controlled"`        // controlled_object_count > 100
+	DisabledAccounts     int `json:"disabled_accounts"`
+	NeverExpires         int `json:"never_expires"`
+	StalePasswords       int `json:"stale_passwords"`         // days_out_of_compliance > 0
+	EscalatedBySharedDA  int `json:"escalated_by_shared_da"`  // escalated via hash-sharing with a DA
+	EscalatedByMassReuse int `json:"escalated_by_mass_reuse"` // escalated via a large cracked-reuse cluster
+	PolicyViolations     int `json:"policy_violations"`       // cracked && !meets_policy
+	HighControlled       int `json:"high_controlled"`         // controlled_object_count > 100
 
 	// Executive breach impact estimate.
 	BreachImpact BreachImpact `json:"breach_impact"`
