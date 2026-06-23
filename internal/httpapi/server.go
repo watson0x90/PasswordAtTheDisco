@@ -183,6 +183,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /api/export/hibp.html", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportHIBPHTML))))
 	mux.Handle("GET /api/export/reuse.html", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportReuseHTML))))
 	mux.Handle("GET /api/export/weak.html", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportWeakHTML))))
+	mux.Handle("GET /api/export/sanitized.json", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportSanitized))))
 	// Per-domain password policies: any operator may read; lead may edit
 	mux.Handle("GET /api/policies", s.requireAuth(http.HandlerFunc(s.handleGetPolicies)))
 	mux.Handle("PUT /api/policies", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleSetPolicies))))
@@ -1946,7 +1947,7 @@ func (s *Server) exportAccountsRead(w http.ResponseWriter, r *http.Request, labe
 	return meta, accts, true
 }
 
-// download sets attachment headers for a report file (ext "csv" or "html").
+// download sets attachment headers for a report file (ext "csv", "html", or "json").
 func download(w http.ResponseWriter, name, suffix, ext string) {
 	fn := safeFilename(name)
 	if suffix != "" {
@@ -1955,6 +1956,9 @@ func download(w http.ResponseWriter, name, suffix, ext string) {
 	ctype := "text/csv; charset=utf-8"
 	if ext == "html" {
 		ctype = "text/html; charset=utf-8"
+	}
+	if ext == "json" {
+		ctype = "application/json; charset=utf-8"
 	}
 	w.Header().Set("Content-Type", ctype)
 	w.Header().Set("Content-Disposition", `attachment; filename="`+fn+"."+ext+`"`)
@@ -2079,6 +2083,32 @@ func (s *Server) handleExportHIBPHTML(w http.ResponseWriter, r *http.Request) {
 	download(w, meta.Name, "hibp", "html")
 	hibp := byBreachDesc(filterAccounts(accts, func(a model.Account) bool { return a.HIBPBreached }))
 	_ = report.AccountsHTML(w, meta.Name+" — HIBP-exposed accounts", "accounts whose NT hash is in HIBP", time.Now().UTC(), hibp)
+}
+
+// handleExportSanitized streams a fully anonymized review export: every per-account
+// scoring signal + audit aggregates, with no identity or secret data. It reads the
+// UNREDACTED accounts because the NT hash is needed to compute opaque reuse groups
+// (the hash itself is never emitted). The download filename is generic so the
+// operator-chosen audit name does not leak.
+func (s *Server) handleExportSanitized(w http.ResponseWriter, r *http.Request) {
+	ver := s.Build.Version
+	if ver == "" {
+		ver = "dev"
+	}
+	writeEmpty := func(w http.ResponseWriter) { _ = report.SanitizedJSON(w, nil, model.Summary{}, time.Now().UTC(), ver) }
+	_, id, ok := s.exportResolveRead(w, r, "sanitized JSON", "patd-sanitized", "", "json", writeEmpty)
+	if !ok {
+		return
+	}
+	accts, err := s.Store.Accounts(id, true) // unredacted: NT hash for reuse grouping only; output is sanitized
+	if err != nil {
+		download(w, "patd-sanitized", "", "json")
+		writeEmpty(w)
+		return
+	}
+	sum, _ := s.Store.Summary(id)
+	download(w, "patd-sanitized", "", "json")
+	_ = report.SanitizedJSON(w, accts, sum, time.Now().UTC(), ver)
 }
 
 func (s *Server) handleExportReuseHTML(w http.ResponseWriter, r *http.Request) {
