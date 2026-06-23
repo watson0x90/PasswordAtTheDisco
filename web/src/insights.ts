@@ -1,6 +1,6 @@
 // Pure functions that derive chart/scorecard data from the redacted account set.
 // All inputs come from /api/accounts (no cleartext) so everything is safe to chart.
-import type { Account } from "./api"
+import type { Account, Report, Summary } from "./api"
 import { hasDA } from "./util"
 import { impactIsKnown } from "./matrix"
 
@@ -372,64 +372,42 @@ export function topRiskiest(accts: Account[], n: number): Account[] {
 export interface GraphNode { id: string; label: string; size: number; color: string }
 export interface GraphEdge { source: string; target: string; weight: number; label?: string }
 
-// crossDomainReuseGraph: builds nodes (domains) and edges (# shared accounts between them).
-// This requires the reuse groups from the Report (which have domain counts + members).
-export function crossDomainReuseGraph(accts: Account[]): { nodes: GraphNode[]; edges: GraphEdge[] } {
-  // Group by domain, compute domain stats
-  const domainMap = new Map<string, { total: number; cracked: number; critical: number }>()
+// crossDomainReuseGraph: domains as nodes, edges between domains that GENUINELY share a
+// credential (co-occur in a Report reuse group). Mirrors exposure.ts:crossDomainBridges --
+// no fabricated links. accts is used only for node sizing/color.
+export function crossDomainReuseGraph(report: Report | null, accts: Account[]): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  if (!report) return { nodes: [], edges: [] }
+  const domainMap = new Map<string, { total: number; critical: number }>()
   for (const a of accts) {
-    let d = domainMap.get(a.domain)
-    if (!d) { d = { total: 0, cracked: 0, critical: 0 }; domainMap.set(a.domain, d) }
+    const d = domainMap.get(a.domain) ?? { total: 0, critical: 0 }
     d.total++
-    if (a.cracked) d.cracked++
     if (a.risk_level === "Critical") d.critical++
+    domainMap.set(a.domain, d)
   }
-  // Build edges: accounts sharing credentials across domains.
-  // We detect this by shared_with > 0 — but for cross-domain links we need accounts
-  // in different domains with shared_with > 0. Since we don't have the NT hash, we
-  // approximate: for each pair of domains, count accounts that share passwords (shared_with > 0).
-  // A better approach uses the Report's reuse groups, but this is a quick heuristic from accounts data.
-  const domainPairs = new Map<string, number>()
-  const domains = [...domainMap.keys()]
-  if (domains.length < 2) {
-    // Single domain — no cross-domain graph
-    return { nodes: [], edges: [] }
-  }
-  // Heuristic: for each account with shared_with > 0, count its domain contribution
-  // The real cross-domain link count comes from the report's reuse groups (see domainData.ts).
-  // Here we'll use a simpler proxy: count shared accounts per domain pair based on
-  // the fact that shared_with includes cross-domain sharing.
-  // For the graph, we show domains as nodes sized by account count, and link them
-  // with edge weight = min of shared accounts in each domain (conservative estimate).
-  const sharedPerDomain = new Map<string, number>()
-  for (const a of accts) {
-    if (a.shared_with > 0) {
-      sharedPerDomain.set(a.domain, (sharedPerDomain.get(a.domain) || 0) + 1)
-    }
-  }
-  // Connect all domain pairs with edges weighted by min shared count
-  for (let i = 0; i < domains.length; i++) {
-    for (let j = i + 1; j < domains.length; j++) {
-      const w1 = sharedPerDomain.get(domains[i]) || 0
-      const w2 = sharedPerDomain.get(domains[j]) || 0
-      const w = Math.min(w1, w2)
-      if (w > 0) {
-        domainPairs.set(`${domains[i]}|${domains[j]}`, w)
+  const pairWeight = new Map<string, number>()
+  const connected = new Set<string>()
+  for (const g of [...report.cracked_reuse, ...report.uncracked_reuse]) {
+    const doms = [...new Set(g.members.map((m) => m.domain))].sort()
+    if (doms.length < 2) continue
+    for (let i = 0; i < doms.length; i++) {
+      for (let j = i + 1; j < doms.length; j++) {
+        const key = `${doms[i]}|${doms[j]}`
+        pairWeight.set(key, (pairWeight.get(key) ?? 0) + g.size)
+        connected.add(doms[i])
+        connected.add(doms[j])
       }
     }
   }
-
-  const nodes: GraphNode[] = domains.map((d) => {
-    const stats = domainMap.get(d)!
-    const crit = stats.critical
-    const color = crit > 20 ? "#fb7185" : crit > 5 ? "#fbbf24" : "#22d3ee"
-    return { id: d, label: d, size: 12 + Math.sqrt(stats.total) * 2, color }
+  if (pairWeight.size === 0) return { nodes: [], edges: [] }
+  const nodes: GraphNode[] = [...connected].map((d) => {
+    const s = domainMap.get(d) ?? { total: 0, critical: 0 }
+    const color = s.critical > 20 ? "#fb7185" : s.critical > 5 ? "#fbbf24" : "#22d3ee"
+    return { id: d, label: d, size: 12 + Math.sqrt(s.total) * 2, color }
   })
-  const edges: GraphEdge[] = []
-  for (const [key, weight] of domainPairs) {
-    const [src, tgt] = key.split("|")
-    edges.push({ source: src, target: tgt, weight: Math.ceil(weight / 10), label: `${weight} shared` })
-  }
+  const edges: GraphEdge[] = [...pairWeight].map(([key, w]) => {
+    const [source, target] = key.split("|")
+    return { source, target, weight: Math.max(1, Math.ceil(w / 10)), label: `${w} shared` }
+  })
   return { nodes, edges }
 }
 
@@ -473,4 +451,19 @@ export function similarityNetwork(accts: Account[], maxNodes: number = 60): { no
     }
   }
   return { nodes, edges }
+}
+
+// kpiCounts returns the four primary Overview KPIs from the authoritative Summary counts
+// (matching the report/export), falling back to client-derived counts only while Summary is
+// still loading (null). Kills the client-predicate-vs-Go-counter drift.
+export function kpiCounts(
+  summary: Summary | null,
+  accounts: Account[],
+): { total: number; cracked: number; breached: number; da: number } {
+  return {
+    total: summary?.total_accounts ?? accounts.length,
+    cracked: summary?.cracked ?? accounts.filter((a) => a.cracked).length,
+    breached: summary?.hibp_breached ?? accounts.filter((a) => a.hibp_breached).length,
+    da: summary?.da_pathways ?? accounts.filter((a) => hasDA(a.da_domains)).length,
+  }
 }

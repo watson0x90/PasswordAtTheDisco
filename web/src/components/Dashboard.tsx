@@ -4,8 +4,7 @@ import { useAuth } from "../auth"
 import { useAudits } from "../auditsData"
 import { useAccountsData } from "../accountsData"
 import { useNav } from "../nav"
-import { hasDA } from "../util"
-import { riskDistribution, hibpSplit, lengthBuckets } from "../insights"
+import { riskDistribution, hibpSplit, lengthBuckets, kpiCounts } from "../insights"
 import { coverageStats, exposureImpactMatrix, isProvisional } from "../matrix"
 import { Bars, ChartCard, Donut, MatrixHeatmap, PostureGauge } from "./Charts"
 import { ExposureHeadline } from "./ExposureHeadline"
@@ -61,10 +60,7 @@ export function Dashboard() {
   if (!accounts) return <div className="center-state"><div className="spinner">loading</div></div>
   if (accounts.length === 0) return <GetStarted />
 
-  const total = accounts.length
-  const cracked = accounts.filter((a) => a.cracked).length
-  const breached = accounts.filter((a) => a.hibp_breached).length
-  const da = accounts.filter((a) => hasDA(a.da_domains)).length
+  const { total, cracked, breached, da } = kpiCounts(summary, accounts)
   const crackPct = total ? Math.round((cracked / total) * 100) : 0
 
   const p = summary?.posture
@@ -127,7 +123,7 @@ export function Dashboard() {
                 Estimated breach likelihood:{" "}
                 <b style={{ color: LIKELIHOOD_COLOR[p.likelihood] }}>{p.likelihood}</b>
               </div>
-              <div className="posture-cap">Security health · higher is better · target ≥ 75</div>
+              <div className="posture-cap">Security health · higher is better · aim for Strong (≥ 85)</div>
             </div>
             <div className="posture-breakdown">
               <div className="posture-cap">Each bar: more filled = healthier</div>
@@ -187,7 +183,7 @@ export function Dashboard() {
         </ChartCard>
       </div>
 
-      <Insights />
+      <Insights report={report} />
       <BackgroundJobsCard />
     </>
   )
