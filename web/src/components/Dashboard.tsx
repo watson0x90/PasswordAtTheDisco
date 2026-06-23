@@ -194,7 +194,11 @@ function PostureCard({ posture: p, breachImpact, dormantPrivileged, enabledCount
         {isGated && (
           <div className="pex-overall-pill">
             Overall {Math.round(p.overall)}/100
-            <span className="pex-overall-reason"> — capped by reachable Tier-0 path</span>
+            <span className="pex-overall-reason">
+              {p.verdict_reason === "Tier-0 Reachable"
+                ? " — capped by reachable Tier-0 path"
+                : " — capped by breach reachability"}
+            </span>
           </div>
         )}
       </div>
@@ -238,12 +242,16 @@ function PostureCard({ posture: p, breachImpact, dormantPrivileged, enabledCount
         <div className="pex-gate-block">
           <div className="pex-gate-reason">
             <span className="pex-gate-label">Why the verdict is {p.verdict}:</span>{" "}
-            one reachable Tier-0 / DCSync path can compromise the whole domain regardless of
-            password hygiene — fix the path to lift it.
+            {p.verdict_reason === "Tier-0 Reachable"
+              ? "one reachable Tier-0 / DCSync path can compromise the whole domain regardless of password hygiene — fix the path to lift it."
+              : p.verdict_reason
+                ? `${p.verdict_reason} — a reachable path to domain-control exists.`
+                : "a reachable path to domain-control exists — remediate to lift the verdict."}
           </div>
           <div className="pex-action">
-            Remediate the reachable Tier-0 / DA path(s) before the password-reset backlog;
-            hygiene is already {p.rating} — the exposure is structural.
+            {p.rating === "Strong" || p.rating === "Fair"
+              ? <>Remediate the reachable path(s) before the password-reset backlog; hygiene is already {p.rating} — the exposure is structural, not credential-quality.</>
+              : <>Both credential hygiene and the reachable domain-control path need remediation — reset weak credentials and close the attack path.</>}
           </div>
         </div>
       )}
