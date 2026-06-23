@@ -1,10 +1,10 @@
 # Password!AtTheDisco
 
-**Active Directory password-exposure auditing — without leaving cracked credentials lying around.**
+**Windows Active Directory password-exposure auditing — without leaving cracked credentials lying around.**
 
 [![CI](https://github.com/watson0x90/PasswordAtTheDisco/actions/workflows/ci.yml/badge.svg)](https://github.com/watson0x90/PasswordAtTheDisco/actions/workflows/ci.yml)
 
-Password!AtTheDisco ingests credential dumps from an AD password audit, correlates
+Password!AtTheDisco ingests credential dumps from a Windows AD password audit, correlates
 them against Have I Been Pwned, enriches them with BloodHound (Domain Admin
 pathways, controlled objects), scores each account with a CVSS-style risk model,
 and serves the results through an authenticated web console — as a single Go

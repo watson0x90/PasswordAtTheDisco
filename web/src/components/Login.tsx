@@ -29,7 +29,7 @@ export function Login({ onShowHelp }: { onShowHelp?: () => void }) {
           <Logo size={34} />
           <span className="word">Password<b>!AtTheDisco</b></span>
         </div>
-        <div className="login-tag">credential exposure console</div>
+        <div className="login-tag">Windows Active Directory · credential exposure console</div>
 
         {error && <div className="error">{error}</div>}
 
