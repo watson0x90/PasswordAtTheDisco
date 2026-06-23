@@ -1889,6 +1889,46 @@ func TestUploadBHEUsersPreservesEnabledWhenAbsent(t *testing.T) {
 	}
 }
 
+func TestUploadBHEUsersExplicitFalseDisables(t *testing.T) {
+	// The counterpart to the absent case: an explicit "enabled":false MUST disable
+	// the account (the merge guard's *imp.Enabled deref flows the real value).
+	srv := newServer("secret")
+	srv.Engine = &engine.Engine{Policies: policy.DefaultSet()}
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	id := createAudit(t, srv, lc, lcsrf, "BHE Disable Test")
+
+	if err := srv.Store.Replace(id, model.Dataset{
+		Name:     "BHE Disable Test",
+		Accounts: []model.Account{{Username: "svc", Domain: "CORP", NTHash: "ABC", Enabled: true}},
+	}); err != nil {
+		t.Fatalf("seed Replace: %v", err)
+	}
+
+	body := `[{"username":"svc","domain":"CORP","enabled":false}]`
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, _ := mw.CreateFormFile("bheusers", "users.json")
+	_, _ = io.WriteString(fw, body)
+	_ = mw.Close()
+	req := httptest.NewRequest("POST", "/api/upload/bheusers", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.AddCookie(lc)
+	req.Header.Set("X-CSRF-Token", lcsrf)
+
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("bheusers upload: want 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	accts, err := srv.Store.Accounts(id, false)
+	if err != nil {
+		t.Fatalf("read accounts: %v", err)
+	}
+	if accts[0].Enabled {
+		t.Errorf("explicit enabled=false must disable the account, but Enabled stayed true")
+	}
+}
+
 func TestUploadBHEUsersMergesRoastable(t *testing.T) {
 	srv := newServer("secret")
 	srv.Engine = &engine.Engine{Policies: policy.DefaultSet()}
