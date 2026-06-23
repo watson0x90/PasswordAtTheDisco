@@ -651,12 +651,10 @@ func (b BulkBloodhoundEnricher) Enrich(username string) Enrichment {
 		PwdLastSet:        pwdLastSet,
 		HasSPN:            &hasSPN,
 		DontReqPreauth:    &dontReqPreauth,
-		// BulkBloodhoundEnricher: the 3-query bulk Cypher prefetch does not currently
-		// collect Tier-0 control edges, so ControlsTier0 is conservatively false here.
-		// The live BloodhoundEnricher path sets it; bulk under-reports Tier-0 by design
-		// until the bulk Cypher is extended (tracked separately). False (not true) keeps
-		// it conservative: a missed Tier-0 lowers Impact, never falsely inflates it.
-		ControlsTier0: false,
+		// Tier-0 control comes from the 4th bulk prefetch (FetchTier0Controllers), using
+		// the same definition as the per-user ExtractControlsTier0. A miss/empty set keeps
+		// it false (conservative -- a missed Tier-0 lowers Impact, never falsely inflates).
+		ControlsTier0: b.Bulk.Tier0(username),
 		// Enriched is the "was this account found in BloodHound" signal. A bulk
 		// MISS returns the zero BulkUserProps{} (empty ObjectID). A HIT is a parsed
 		// Cypher row: the parsers in internal/bloodhound/cypher.go only emit a row

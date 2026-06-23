@@ -498,6 +498,20 @@ func TestAgePenaltyWired(t *testing.T) {
 	}
 }
 
+func TestBulkEnricherSetsControlsTier0(t *testing.T) {
+	bulk := bloodhound.NewBulkEnricherFromData(bloodhound.BulkEnrichment{
+		Props: map[string]bloodhound.BulkUserProps{"svc@CORP": {ObjectID: "S-1-5-21-9"}},
+		Tier0: map[string]bool{"svc@CORP": true},
+	})
+	be := BulkBloodhoundEnricher{Bulk: bulk}
+	if enr := be.Enrich("svc@CORP"); !enr.ControlsTier0 {
+		t.Errorf("ControlsTier0 = false, want true (user in bulk Tier-0 set)")
+	}
+	if enr := be.Enrich("other@CORP"); enr.ControlsTier0 {
+		t.Errorf("ControlsTier0 = true for a user not in the set, want false (conservative)")
+	}
+}
+
 func TestRescorePreservesHIBPWhenIndexUnavailable(t *testing.T) {
 	// Build a bare engine with no HIBP index attached (HIBP == nil).
 	eng := &Engine{
