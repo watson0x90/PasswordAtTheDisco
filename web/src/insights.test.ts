@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
-import type { Account } from "./api"
-import { posture, riskDistribution, hibpSplit, complexityLabel, similarityNetwork, axisFactorBars } from "./insights"
+import type { Account, Report, ReuseGroup } from "./api"
+import { posture, riskDistribution, hibpSplit, complexityLabel, similarityNetwork, axisFactorBars, crossDomainReuseGraph } from "./insights"
 
 function acct(p: Partial<Account>): Account {
   return {
@@ -165,5 +165,36 @@ describe("axisFactorBars", () => {
     ])
     const high = bars.find((b) => b.tier === "High")!
     expect(high.impactKnown).toBe(false)
+  })
+})
+
+const grp = (size: number, domains: string[], cracked = true): ReuseGroup =>
+  ({ group_id: 1, size, cracked, has_da_pathway: false, hibp_breach_count: 0, domains: domains.length, members: domains.map((d, i) => ({ username: `u${i}`, domain: d } as any)) } as ReuseGroup)
+const rep = (cracked: ReuseGroup[], uncracked: ReuseGroup[] = []): Report =>
+  ({ cracked_reuse: cracked, uncracked_reuse: uncracked } as Report)
+const acctD = (domain: string): Account => ({ domain, risk_level: "Low", cracked: true } as Account)
+
+describe("crossDomainReuseGraph (real reuse groups)", () => {
+  it("links exactly the domains that co-occur in a reuse group", () => {
+    const g = crossDomainReuseGraph(rep([grp(3, ["CORP", "EU"])]), [acctD("CORP"), acctD("EU")])
+    expect(g.edges).toHaveLength(1)
+    expect(new Set([g.edges[0].source, g.edges[0].target])).toEqual(new Set(["CORP", "EU"]))
+    expect(g.nodes.map((n) => n.id).sort()).toEqual(["CORP", "EU"])
+  })
+  it("emits NO edge for a single-domain group", () => {
+    const g = crossDomainReuseGraph(rep([grp(5, ["CORP", "CORP"])]), [acctD("CORP")])
+    expect(g.edges).toHaveLength(0)
+  })
+  it("does NOT fabricate an edge between domains that share no group", () => {
+    // CORP and LAB BOTH have shared accounts (shared_with>0) but in SEPARATE single-domain
+    // groups -> no real bridge. The old heuristic linked any two domains with shared accounts,
+    // so it would fabricate a CORP-LAB edge here; the real-reuse-group version must not.
+    const corp = { ...acctD("CORP"), shared_with: 2 } as Account
+    const lab = { ...acctD("LAB"), shared_with: 2 } as Account
+    const g = crossDomainReuseGraph(rep([grp(4, ["CORP", "CORP"]), grp(4, ["LAB", "LAB"])]), [corp, lab])
+    expect(g.edges).toHaveLength(0)
+  })
+  it("returns empty when report is null", () => {
+    expect(crossDomainReuseGraph(null, [acctD("CORP")])).toEqual({ nodes: [], edges: [] })
   })
 })

@@ -6,8 +6,9 @@ import { AxisFactorBars, Bars, ChartCard, Donut, HBars, ScatterPlot } from "./Ch
 import { NetworkGraph } from "./NetworkGraph"
 import { SimilarityClusters } from "./SimilarityClusters"
 import { RISK_CLASS, hasDA } from "../util"
+import type { Report } from "../api"
 
-export function Insights() {
+export function Insights({ report }: { report: Report | null }) {
   const { activeId } = useAudits()
   const { accounts, error } = useAccountsData()
 
@@ -24,7 +25,7 @@ export function Insights() {
   const axisBars = axisFactorBars(accounts)
   const ageScatter = passwordAgeScatter(accounts)
   const expirSlices = expirationSplit(accounts)
-  const crossDomain = crossDomainReuseGraph(accounts)
+  const crossDomain = crossDomainReuseGraph(report, accounts)
   const topN = topRiskiest(accounts, 10)
 
   return (

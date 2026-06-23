@@ -187,7 +187,7 @@ export function Dashboard() {
         </ChartCard>
       </div>
 
-      <Insights />
+      <Insights report={report} />
       <BackgroundJobsCard />
     </>
   )
