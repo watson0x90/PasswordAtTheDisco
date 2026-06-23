@@ -1,23 +1,19 @@
-import { useEffect, useMemo, useState } from "react"
-import { api, type IngestEvent } from "../api"
+import { useMemo } from "react"
 import { useAccountsData } from "../accountsData"
 import { RISK_CLASS } from "../util"
 import { unenrichedAccounts, coverageWhy, coverageCsv } from "../coverage"
 
 // EnrichmentCoverage: read-only list of accounts BloodHound did NOT enrich, with a
-// why-diagnosis (from ingest history) and a client-side CSV export. Visible to all
-// operators (the Integrations page makes this section analyst-reachable).
+// why-diagnosis and a client-side CSV export. Visible to all operators (the Integrations
+// page makes this section analyst-reachable). "Has enrichment run?" is derived from the
+// accounts themselves (any account with coverage "full" => it ran and matched >=1) rather
+// than the ingest log, because /api/ingests is lead-only -- this keeps the analyst view
+// accurate and avoids a 403.
 export function EnrichmentCoverage() {
   const { accounts } = useAccountsData()
-  const [ingests, setIngests] = useState<IngestEvent[] | null>(null)
-  useEffect(() => {
-    let alive = true
-    api.ingests().then((evs) => { if (alive) setIngests(evs) }).catch(() => { if (alive) setIngests([]) })
-    return () => { alive = false }
-  }, [])
 
   const unenriched = useMemo(() => (accounts ? unenrichedAccounts(accounts) : []), [accounts])
-  const enrichRan = useMemo(() => (ingests ?? []).some((e) => e.kind === "enrich"), [ingests])
+  const enrichRan = useMemo(() => (accounts ?? []).some((a) => a.coverage === "full"), [accounts])
   const why = coverageWhy({ unenrichedCount: unenriched.length, totalCount: accounts?.length ?? 0, enrichRan })
 
   function downloadCsv() {
