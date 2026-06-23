@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 _Nothing yet._
 
+## [2.24.0] — 2026-06-22 — BloodHound user-properties upload fidelity
+
+> Uploading a SharpHound/BHE **users** export (Setup → BloodHound → "Upload user data")
+> now enriches accounts faithfully — without a live Neo4j query.
+
+### Fixed
+- **Uploaded properties no longer vanish on Recalculate.** A users-export upload sets
+  per-account AD properties (enabled, password-last-set, controlled-object count) on
+  accounts that BloodHound has not graph-enriched. A subsequent **Recalculate** used to
+  silently wipe them back to defaults; now they survive — the account keeps its uploaded
+  properties and Impact correctly stays **Unknown** (no Domain-Admin graph was collected).
+- **An export that omits `enabled` no longer force-disables accounts** — a missing
+  `enabled` key is treated as "unknown" (left as-is) instead of `false`.
+
+### Added
+- **Kerberoast / AS-REP from a users export.** The upload now reads and applies `hasspn`
+  and `dontreqpreauth`, so the roastability scoring (incl. the AS-REP Exposure floor) works
+  from an offline SharpHound/BHE export — not only a live BloodHound connection.
+- **Recalculate nudge after an upload.** A lead is prompted to recalculate so the uploaded
+  properties (credential age, roastability, the disabled-latent-risk flag) actually take
+  effect — the same one-click affordance shown after policy / forbidden-words / HIBP edits.
+
 ## [2.23.0] — 2026-06-22 — Sharper Exposure weights (roastability, reuse, credential age)
 
 > **Scoring was refined again** (Exposure axis only; Impact is unchanged). Existing audits keep

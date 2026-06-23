@@ -41,23 +41,23 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
-## What's new in 2.23
+## What's new in 2.24
 
-**Sharper Exposure weights — roastability by attack economics, reuse that scales, and credential age.**
+**BloodHound user-properties upload, done right — offline enrichment that sticks.**
 
-- **Roastability weighted by reality** — AS-REP-roastable accounts (no foothold needed) now
-  outweigh Kerberoastable ones (SPN +0.5, AS-REP +0.75), and AS-REP also raises an Exposure
-  **floor** so a roastable service account can't read as harmless on a strong-looking password.
-- **Reuse scales with the cluster** — a large cluster (100+ accounts sharing one hash) now raises
-  a credential's Exposure **floor** on its own: crack one, own the cluster.
-- **Credential age scores** — a long-unrotated password adds a bounded Exposure bump (shown as an
-  **Age** row in the drawer and on the Insights radar), and a **"Latent risk"** badge flags a
-  *disabled* account that still controls Tier-0 / has a DA path / reuses a hash. *Impact axis
-  unchanged; existing audits adopt the new Exposure on their next Recalculate.*
+- **Uploaded properties survive a Recalculate.** Uploading a SharpHound/BHE *users* export
+  (Setup → BloodHound → "Upload user data") enriches accounts with no live Neo4j query; those
+  properties used to be silently wiped by the next Recalculate — now they persist, and Impact
+  stays **Unknown** for accounts without a Domain-Admin graph (as it should).
+- **Kerberoast / AS-REP from an export** — the upload now applies `hasspn` / `dontreqpreauth`,
+  so roastability scoring (incl. the AS-REP Exposure floor) works offline, not just live.
+- **A recalculate nudge** after the upload so credential-age, roastability, and the
+  disabled-latent-risk flag actually take effect; and an export omitting `enabled` no longer
+  force-disables accounts.
 
-Earlier: Recalculate scoring + BloodHound-coverage view (2.22), an **MCP server** for AI agents
-(2.21), the Exposure × Impact danger-map grid (2.20), the **two-axis Exposure × Impact** scoring
-rebuild (2.18), and the in-app **Help / methodology** section (2.19).
+Earlier: sharper Exposure weights — roastability/reuse-floor/credential-age (2.23); Recalculate
+scoring + BloodHound-coverage view (2.22); an **MCP server** for AI agents (2.21); the Exposure ×
+Impact danger-map grid (2.20); the **two-axis Exposure × Impact** scoring rebuild (2.18).
 
 See **[CHANGELOG.md](CHANGELOG.md)** for the full release history.
 
