@@ -532,6 +532,7 @@ func TestPostureGolden(t *testing.T) {
 		ControlsTier0        bool   `json:"controls_tier0"`
 		EscalatedBySharedDA  bool   `json:"escalated_by_shared_da"`
 		EscalatedByMassReuse bool   `json:"escalated_by_mass_reuse"`
+		ImpactKnown          bool   `json:"impact_known"`
 	}
 	type goldenExpect struct {
 		Score           float64 `json:"score"`
@@ -572,6 +573,7 @@ func TestPostureGolden(t *testing.T) {
 					ControlsTier0:        ga.ControlsTier0,
 					EscalatedBySharedDA:  ga.EscalatedBySharedDA,
 					EscalatedByMassReuse: ga.EscalatedByMassReuse,
+					ImpactKnown:          ga.ImpactKnown,
 				}
 			}
 			p := PostureScore(accts)

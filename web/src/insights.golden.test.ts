@@ -16,6 +16,7 @@ interface GoldenAccount {
   controls_tier0: boolean
   escalated_by_shared_da: boolean
   escalated_by_mass_reuse: boolean
+  impact_known: boolean
 }
 
 interface GoldenExpect {
@@ -56,7 +57,7 @@ function toAccount(ga: GoldenAccount): Account {
     complexity: "",
     exposure_score: 0,
     impact_score: null,
-    impact_known: false,
+    impact_known: ga.impact_known,
     percentile: 0,
     controls_tier0: ga.controls_tier0,
     escalated_by_shared_da: ga.escalated_by_shared_da,

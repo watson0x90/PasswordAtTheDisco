@@ -66,7 +66,7 @@ export function posture(accts: Account[]): Posture {
       if (hasDA(a.da_domains)) da++
       if (a.controls_tier0) t0++
     }
-    if (a.risk_level === "Critical" && !hasDA(a.da_domains) && !a.controls_tier0) critN++
+    if (a.risk_level === "Critical" && a.impact_known && !hasDA(a.da_domains) && !a.controls_tier0) critN++
     if (!a.enabled) continue
     active++
     if (a.risk_level === "Critical") crit++

@@ -84,8 +84,8 @@ func breachReachability(accts []Account) (L float64, da, t0, critN, dormant int)
 			(a.Cracked || a.EscalatedBySharedDA || a.EscalatedByMassReuse) {
 			dormant++ // disabled landmine
 		}
-		if a.RiskLevel == "Critical" && !a.HasDAPathway() && !a.ControlsTier0 {
-			critN++ // Critical that is not ALREADY the catastrophe (de-dup vs da/t0)
+		if a.RiskLevel == "Critical" && a.ImpactKnown && !a.HasDAPathway() && !a.ControlsTier0 {
+			critN++ // Critical + Impact-known (enriched) that is not ALREADY the catastrophe (de-dup vs da/t0)
 		}
 	}
 	if critN > reachCapCrit {

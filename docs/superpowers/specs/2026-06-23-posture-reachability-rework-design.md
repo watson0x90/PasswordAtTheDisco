@@ -48,7 +48,7 @@ Define **reachable(a)** = `a.Enabled && (a.Cracked || a.EscalatedBySharedDA || a
 ```
 da          = #{ a : a.HasDAPathway() && reachable(a) }                       // p_da   = 0.55  ⟐
 t0Reachable = #{ a : a.ControlsTier0  && reachable(a) }                       // p_t0   = 0.70
-critN       = min( #{ a : a.RiskLevel=="Critical" && !a.HasDAPathway() && !a.ControlsTier0 }, capCrit )  // p_crit=0.15, capCrit=5 ⟐
+critN       = min( #{ a : a.RiskLevel=="Critical" && a.ImpactKnown && !a.HasDAPathway() && !a.ControlsTier0 }, capCrit )  // p_crit=0.15, capCrit=5 ⟐  (ImpactKnown required: unenriched "Critical" = high Exposure only, not blast-radius — no BloodHound data means the Impact axis is unknown, so the account cannot contribute evidence of domain-control reachability)
 
 L = 1 − (1−p_da)^da · (1−p_t0)^t0Reachable · (1−p_crit)^critN
 ```
