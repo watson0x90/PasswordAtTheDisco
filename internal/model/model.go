@@ -123,9 +123,28 @@ func reachPct(band string) string {
 	}
 }
 
-// STUB: Task 4 — replaced by real implementation in Task 4.
+// gateVerdict: one-register, one-way (only-lowers) headline. Verdict is machine-stable;
+// VerdictReason carries the human "why" (SSL-Labs "grade capped because…" pattern).
 func gateVerdict(hygieneRating, band string, t0, active int) (verdict, reason string) {
-	return "No Data", ""
+	switch {
+	case active == 0 && t0 == 0:
+		return "No Data", ""
+	case t0 >= 1:
+		return "Critical", "Tier-0 Reachable"
+	case band == "Very High":
+		return "Critical", "multiple reachable domain-control paths"
+	case band == "High":
+		return "High Risk", "a reachable path to domain-control exists"
+	default:
+		switch hygieneRating {
+		case "Strong":
+			return "Sound", ""
+		case "Fair":
+			return "Guarded", ""
+		default:
+			return "Elevated", ""
+		}
+	}
 }
 
 func hygieneRating(h float64) string {

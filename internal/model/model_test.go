@@ -350,6 +350,29 @@ func TestUnicodeAndPolicyViolationsRoundTripAndSurviveRedaction(t *testing.T) {
 	}
 }
 
+func TestGateVerdict(t *testing.T) {
+	cases := []struct {
+		name, rating, band string
+		t0, active         int
+		verdict, reason    string
+	}{
+		{"tier0 caps to critical even if hygiene strong", "Strong", "Low", 1, 100, "Critical", "Tier-0 Reachable"},
+		{"very-high L -> critical", "Strong", "Very High", 0, 100, "Critical", "multiple reachable domain-control paths"},
+		{"high L -> high risk", "Strong", "High", 0, 100, "High Risk", "a reachable path to domain-control exists"},
+		{"strong hygiene, low L -> sound", "Strong", "Low", 0, 100, "Sound", ""},
+		{"fair hygiene -> guarded", "Fair", "Low", 0, 100, "Guarded", ""},
+		{"weak hygiene -> elevated", "Weak", "Medium", 0, 100, "Elevated", ""},
+		{"all disabled, no t0 -> no data", "No Data", "Low", 0, 0, "No Data", ""},
+		{"all disabled but reachable tier0 -> critical", "No Data", "Low", 1, 0, "Critical", "Tier-0 Reachable"},
+	}
+	for _, c := range cases {
+		v, r := gateVerdict(c.rating, c.band, c.t0, c.active)
+		if v != c.verdict || r != c.reason {
+			t.Errorf("%s: got %q/%q want %q/%q", c.name, v, r, c.verdict, c.reason)
+		}
+	}
+}
+
 func TestReachabilityBandsAndReachable(t *testing.T) {
 	mk := func(da, t0 bool, cracked, enabled bool) Account {
 		a := Account{Enabled: enabled, Cracked: cracked, ControlsTier0: t0}
