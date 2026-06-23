@@ -472,6 +472,95 @@ func parseControllablesFromResults(data []json.RawMessage) map[string]int {
 	return out
 }
 
+// tier0NameList builds the Cypher list literal of Tier-0 object-name fragments from
+// tier0Names (the single source of truth), e.g. "'DOMAIN ADMINS','ENTERPRISE ADMINS',...".
+// tier0Names are hard-coded constants (no user input), so this string-building is injection-safe.
+func tier0NameList() string {
+	return "'" + strings.Join(tier0Names, "','") + "'"
+}
+
+// FetchTier0Controllers returns the set (key "user@DOMAIN") of users who control a
+// Tier-0 / DA-equivalent object -- the same definition the per-user ExtractControlsTier0
+// uses: a control edge onto an object whose name matches tier0Names, OR onto the domain
+// object itself (DCSync). Best-effort: on error returns the error; an empty/unrecognized
+// response yields an empty set (conservative -- never a false positive).
+func (c *Client) FetchTier0Controllers() (map[string]bool, error) {
+	query := `MATCH (u:User)-[r]->(n) WHERE type(r) IN ['GenericAll','GenericWrite','WriteOwner','WriteDacl','Owns','ForceChangePassword','AddMember'] AND (n:Domain OR ANY(t IN [` + tier0NameList() + `] WHERE toUpper(coalesce(n.name,'')) CONTAINS t)) RETURN DISTINCT u.samaccountname, u.domain`
+	data, err := c.RunCypher(query)
+	if err != nil {
+		return nil, fmt.Errorf("FetchTier0Controllers: %w", err)
+	}
+	var literalsResult struct {
+		Literals []literal `json:"literals"`
+	}
+	if json.Unmarshal(data, &literalsResult) == nil && len(literalsResult.Literals) > 0 {
+		return parseTier0Literals(literalsResult.Literals), nil
+	}
+	var rows [][]interface{}
+	if json.Unmarshal(data, &rows) == nil && len(rows) > 0 {
+		return parseTier0(rows), nil
+	}
+	var tabular struct {
+		Results []struct {
+			Data []json.RawMessage `json:"data"`
+		} `json:"results"`
+	}
+	if json.Unmarshal(data, &tabular) == nil && len(tabular.Results) > 0 {
+		return parseTier0FromResults(tabular.Results[0].Data), nil
+	}
+	log.Printf("bloodhound: FetchTier0Controllers: unrecognized response format")
+	return map[string]bool{}, nil
+}
+
+func parseTier0Literals(lits []literal) map[string]bool {
+	const cols = 2 // samaccountname, domain
+	out := map[string]bool{}
+	for i := 0; i+cols-1 < len(lits); i += cols {
+		sam := toString(lits[i].Value)
+		domain := toString(lits[i+1].Value)
+		if sam == "" {
+			continue
+		}
+		out[strings.ToLower(sam)+"@"+strings.ToUpper(domain)] = true
+	}
+	return out
+}
+
+func parseTier0(rows [][]interface{}) map[string]bool {
+	out := map[string]bool{}
+	for _, row := range rows {
+		if len(row) < 2 {
+			continue
+		}
+		sam, _ := row[0].(string)
+		domain, _ := row[1].(string)
+		if sam == "" {
+			continue
+		}
+		out[strings.ToLower(sam)+"@"+strings.ToUpper(domain)] = true
+	}
+	return out
+}
+
+func parseTier0FromResults(data []json.RawMessage) map[string]bool {
+	out := map[string]bool{}
+	for _, raw := range data {
+		var item struct {
+			Row []interface{} `json:"row"`
+		}
+		if json.Unmarshal(raw, &item) != nil || len(item.Row) < 2 {
+			continue
+		}
+		sam, _ := item.Row[0].(string)
+		domain, _ := item.Row[1].(string)
+		if sam == "" {
+			continue
+		}
+		out[strings.ToLower(sam)+"@"+strings.ToUpper(domain)] = true
+	}
+	return out
+}
+
 func truncate(data json.RawMessage, n int) string {
 	if len(data) <= n {
 		return string(data)
