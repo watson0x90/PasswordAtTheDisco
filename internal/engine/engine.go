@@ -304,6 +304,7 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 		DADomains:           enrData.DADomains,
 		ControlledObjects:   enrData.ControlledObjects,
 		DaysOutOfCompliance: daysOOC,
+		PasswordAgeDays:     passwordAgeDays(enrData.PwdLastSet, now),
 		PasswordExpires:     passwordExpires(enrData.PwdNeverExpires),
 		HIBPBreachCount:     count,
 		DomainRiskLevel:     pol.DomainRiskLevel,
@@ -386,6 +387,7 @@ func (e *Engine) scoreCracked(domain string, a secretsdump.ParsedAccount, shared
 			CrackedFloor:      res.Breakdown.CrackedFloor,
 			ReuseBump:         res.Breakdown.ReuseBump,
 			RoastableBump:     res.Breakdown.RoastableBump,
+			AgePenalty:        res.Breakdown.AgePenalty,
 			ImpactScore:       res.Breakdown.ImpactScore,
 			PrivilegeSubScore: res.Breakdown.PrivilegeSubScore,
 			DAComponent:       res.Breakdown.DAComponent,
@@ -420,6 +422,7 @@ func (e *Engine) scoreUncracked(domain string, a secretsdump.ParsedAccount, shar
 		Coverage:          coverageState(enrData.Enriched),
 		DomainRiskLevel:   pol.DomainRiskLevel,
 		HIBPBreachCount:   count,
+		PasswordAgeDays:   passwordAgeDays(enrData.PwdLastSet, now),
 	}
 	res := risk.Score(risk.Analysis{}, rctx)
 	var impactPtr *float64
@@ -469,6 +472,7 @@ func (e *Engine) scoreUncracked(domain string, a secretsdump.ParsedAccount, shar
 			CrackedFloor:      res.Breakdown.CrackedFloor,
 			ReuseBump:         res.Breakdown.ReuseBump,
 			RoastableBump:     res.Breakdown.RoastableBump,
+			AgePenalty:        res.Breakdown.AgePenalty,
 			ImpactScore:       res.Breakdown.ImpactScore,
 			PrivilegeSubScore: res.Breakdown.PrivilegeSubScore,
 			DAComponent:       res.Breakdown.DAComponent,
@@ -501,6 +505,19 @@ func enrichVia(enr Enricher, username, domain string) Enrichment {
 		return Enrichment{}
 	}
 	return enr.Enrich(NormalizeUsername(username, domain))
+}
+
+// passwordAgeDays returns the absolute age of the password in days since pwdLastSet
+// (nil when pwdLastSet is nil/zero). Feeds risk.Context.PasswordAgeDays -> ageBump.
+func passwordAgeDays(pwdLastSet *int64, now time.Time) *int {
+	if pwdLastSet == nil || *pwdLastSet <= 0 {
+		return nil
+	}
+	d := int(now.Sub(time.Unix(*pwdLastSet, 0).UTC()).Hours() / 24)
+	if d < 0 {
+		d = 0
+	}
+	return &d
 }
 
 func daysOutOfCompliance(pwdLastSet *int64, now time.Time, maxAge int) *int {

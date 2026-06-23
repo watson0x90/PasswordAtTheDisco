@@ -241,6 +241,7 @@ type ScoreBreakdown struct {
 	CrackedFloor      float64 `json:"cracked_floor,omitempty"`
 	ReuseBump         float64 `json:"reuse_bump,omitempty"`
 	RoastableBump     float64 `json:"roastable_bump,omitempty"`
+	AgePenalty        float64 `json:"age_penalty,omitempty"`
 	ImpactScore       float64 `json:"impact_score,omitempty"`
 	PrivilegeSubScore float64 `json:"privilege_sub_score,omitempty"`
 	DAComponent       float64 `json:"da_component,omitempty"`
