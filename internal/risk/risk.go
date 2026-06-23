@@ -660,8 +660,9 @@ func tier0Code(c Context) string {
 	return "N"
 }
 
-// roastableCode encodes Kerberoast (SPN) / AS-REP roastability, the +0.5 Exposure bumps
-// that otherwise have no vector token. K=SPN only, A=AS-REP only, KA=both, N=neither.
+// roastableCode encodes Kerberoast (SPN) / AS-REP roastability, the Exposure bumps
+// (SPN +0.5, AS-REP +0.75) that otherwise have no vector token. K=SPN only, A=AS-REP
+// only, KA=both, N=neither.
 func roastableCode(c Context) string {
 	switch {
 	case c.HasSPN && c.DontReqPreauth:
