@@ -400,23 +400,52 @@ func TestReachabilityBandsAndReachable(t *testing.T) {
 	if b := reachBand(0); b != "Low" {
 		t.Fatalf("reachBand(0) = %q, want Low", b)
 	}
-	// 1 reachable DA path -> L=0.55 -> High
+	// 1 reachable DA path -> L=0.55 exactly -> High
 	one := []Account{mk(true, false, true, true)}
 	L, da, _, _, _ := breachReachability(one)
 	if da != 1 || reachBand(L) != "High" {
 		t.Fatalf("1 reachable DA: da=%d band=%s L=%.4f, want da=1 High L=0.55", da, reachBand(L), L)
 	}
-	// 2 reachable DA paths -> L=0.7975 -> Very High
+	if L != 0.55 {
+		t.Fatalf("1 reachable DA: L = %.17g, want exactly 0.55", L)
+	}
+	// 2 reachable DA paths -> L=0.7975 exactly -> Very High
 	two := []Account{mk(true, false, true, true), mk(true, false, true, true)}
 	L2, _, _, _, _ := breachReachability(two)
 	if reachBand(L2) != "Very High" {
 		t.Fatalf("2 reachable DA: band=%s L=%.4f, want Very High", reachBand(L2), L2)
+	}
+	if L2 != 0.7975 {
+		t.Fatalf("2 reachable DA: L2 = %.17g, want exactly 0.7975", L2)
 	}
 	// DA path through a DISABLED account is NOT reachable -> contributes 0, +1 dormant
 	dis := []Account{mk(true, false, true, false)}
 	Ld, dad, _, _, dorm := breachReachability(dis)
 	if dad != 0 || reachBand(Ld) != "Low" || dorm != 1 {
 		t.Fatalf("disabled DA: da=%d band=%s dormant=%d, want da=0 Low dormant=1", dad, reachBand(Ld), dorm)
+	}
+}
+
+func TestBreachImpactNoData(t *testing.T) {
+	// A Posture with Verdict "No Data" must produce all-"—" BreachImpact fields.
+	p := Posture{Verdict: "No Data", Reachability: "—", ReachabilityPct: ""}
+	bi := EstimateBreachImpact(p)
+	if bi.Probability != "—" || bi.ProbabilityPct != "" || bi.EstimatedCost != "—" || bi.RecoveryTime != "—" {
+		t.Fatalf("no-data posture: want Probability=—, ProbabilityPct=, Cost=—, Recovery=—; got %+v", bi)
+	}
+
+	// PostureScore(all-disabled) must yield Verdict "No Data" with no dollar estimate.
+	p2 := PostureScore([]Account{{Enabled: false}})
+	if p2.Verdict != "No Data" {
+		t.Fatalf("all-disabled PostureScore: want Verdict=No Data, got %q", p2.Verdict)
+	}
+	if p2.Reachability != "—" || p2.ReachabilityPct != "" || p2.Likelihood != "—" {
+		t.Fatalf("all-disabled PostureScore: want Reachability=—, ReachabilityPct=, Likelihood=—; got Reachability=%q ReachabilityPct=%q Likelihood=%q",
+			p2.Reachability, p2.ReachabilityPct, p2.Likelihood)
+	}
+	bi2 := EstimateBreachImpact(p2)
+	if bi2.EstimatedCost != "—" || bi2.RecoveryTime != "—" || bi2.Probability != "—" {
+		t.Fatalf("EstimateBreachImpact(no-data PostureScore): want all-—, got %+v", bi2)
 	}
 }
 

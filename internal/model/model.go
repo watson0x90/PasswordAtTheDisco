@@ -46,10 +46,10 @@ type Posture struct {
 
 // PostureBreakdown is each posture component's weighted contribution.
 type PostureBreakdown struct {
-	Risk       float64 `json:"risk"`       // /40
-	Strength   float64 `json:"strength"`   // /30
-	Privilege  float64 `json:"privilege"`  // /15
-	Compliance float64 `json:"compliance"` // /15
+	Risk       float64 `json:"risk"`       // /45
+	Strength   float64 `json:"strength"`   // /35
+	Privilege  float64 `json:"privilege"`  // always 0 (privilege term removed; kept for back-compat)
+	Compliance float64 `json:"compliance"` // /20
 }
 
 func round1(f float64) float64 { return math.Round(f*10) / 10 }
@@ -97,7 +97,7 @@ func breachReachability(accts []Account) (L float64, da, t0, critN, dormant int)
 }
 
 func reachBand(L float64) string {
-	ls := int(L*reachScale + 0.5) // floor(L*scale+0.5); identical to Math.floor(L*scale+0.5) in TS
+	ls := int(L*reachScale + 0.5) // truncation == floor for L in [0,1); identical to Math.floor(L*reachScale+0.5) in the TS mirror
 	switch {
 	case ls >= reachBandVeryHi:
 		return "Very High"
@@ -192,6 +192,12 @@ func PostureScore(accounts []Account) Posture {
 		p := Posture{Score: 0, Rating: "No Data", Reachability: band,
 			ReachabilityScore: L, ReachabilityPct: reachPct(band), Likelihood: band}
 		p.Verdict, p.VerdictReason = gateVerdict("No Data", band, t0, active)
+		if p.Verdict == "No Data" {
+			// No active accounts and no Tier-0 reachable: claiming a band is misleading.
+			p.Reachability = "—"
+			p.ReachabilityPct = ""
+			p.Likelihood = "—"
+		}
 		return p
 	}
 	af := float64(active)
@@ -217,6 +223,11 @@ func PostureScore(accounts []Account) Posture {
 
 // EstimateBreachImpact: reachability-driven (single-source with Posture so $ and verdict agree).
 func EstimateBreachImpact(p Posture) BreachImpact {
+	// No-Data guard: an audit with no active accounts (or explicitly marked no-data)
+	// must not claim a dollar estimate or recovery time — those figures require real data.
+	if p.Verdict == "No Data" || p.Reachability == "—" || p.Reachability == "" {
+		return BreachImpact{Probability: "—", ProbabilityPct: "", EstimatedCost: "—", RecoveryTime: "—"}
+	}
 	var bi BreachImpact
 	bi.Probability = p.Reachability
 	bi.ProbabilityPct = p.ReachabilityPct
@@ -229,9 +240,6 @@ func EstimateBreachImpact(p Posture) BreachImpact {
 		bi.EstimatedCost, bi.RecoveryTime = "$100K – $500K", "1–3 months"
 	default:
 		bi.EstimatedCost, bi.RecoveryTime = "$50K – $100K", "2–4 weeks"
-	}
-	if p.Reachability == "" || p.Reachability == "—" { // No-Data guard
-		bi.Probability, bi.ProbabilityPct = "—", ""
 	}
 	return bi
 }
