@@ -53,7 +53,7 @@ export function AppShell({ view, onNav, children }: { view: View; onNav: (v: Vie
             <Logo size={28} />
             <span className="word">Password<b>!AtTheDisco</b></span>
           </div>
-          <NavMenu view={view} onNav={onNav} showAdmin={me?.role === "lead"} />
+          <NavMenu view={view} onNav={onNav} showAdmin={me?.role === "lead"} showAnalystIntegrations={me?.role === "analyst"} />
           <nav className="nav">
             {TABS.map((t) => (
               <button key={t.id} className={t.id === view ? "nav-tab active" : "nav-tab"} onClick={() => onNav(t.id)}>
@@ -65,6 +65,14 @@ export function AppShell({ view, onNav, children }: { view: View; onNav: (v: Vie
                 <NavDropdown label="Setup" items={SETUP_ITEMS} view={view} onNav={onNav} />
                 <NavDropdown label="Admin" items={ADMIN_ITEMS} view={view} onNav={onNav} />
               </>
+            )}
+            {me?.role === "analyst" && (
+              <button
+                className={view === "integrations" ? "nav-tab active" : "nav-tab"}
+                onClick={() => onNav("integrations")}
+              >
+                Integrations
+              </button>
             )}
           </nav>
         </div>
@@ -179,10 +187,12 @@ function NavMenu({
   view,
   onNav,
   showAdmin,
+  showAnalystIntegrations,
 }: {
   view: View
   onNav: (v: View) => void
   showAdmin: boolean
+  showAnalystIntegrations?: boolean
 }) {
   const [open, setOpen] = useState(false)
   useEffect(() => {
@@ -198,6 +208,9 @@ function NavMenu({
   if (showAdmin) {
     groups.push({ label: "Setup", items: SETUP_ITEMS })
     groups.push({ label: "Admin", items: ADMIN_ITEMS })
+  }
+  if (showAnalystIntegrations) {
+    groups.push({ label: "Integrations", items: [{ id: "integrations", label: "Integrations" }] })
   }
 
   return (
