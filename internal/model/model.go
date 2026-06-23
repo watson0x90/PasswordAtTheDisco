@@ -8,12 +8,40 @@ import (
 	"time"
 )
 
+const (
+	// Credential Hygiene component weights (sum 100); privilege term removed.
+	hygieneRiskWeight       = 45.0
+	hygieneStrengthWeight   = 35.0
+	hygieneComplianceWeight = 20.0
+	hygieneStrongMin        = 85.0
+	hygieneFairMin          = 70.0
+
+	// Breach Reachability: per-enabler "exploitable" probabilities and caps.
+	reachPDA     = 0.55 // one reachable DA path -> L=0.55 (High); two -> 0.7975 (Very High)
+	reachPT0     = 0.70
+	reachPCrit   = 0.15
+	reachCapCrit = 5 // cap supporting-evidence count so estate SIZE can't auto-pin Very High
+	// reuseN deferred (v1): redacted /api/accounts has no reuse-group token -> TS parity; see spec §2.2.
+
+	// Reachability bands on integer-scaled L (L*reachScale), parity-safe.
+	reachScale      = 1_000_000
+	reachBandMedium = 250_000 // >= -> Medium  (>=25%)
+	reachBandHigh   = 500_000 // >= -> High     (>=50%)
+	reachBandVeryHi = 750_000 // >= -> Very High (>=75%)
+)
+
 // Posture is the executive Security Posture Score and its components.
 type Posture struct {
-	Score      float64          `json:"score"`
-	Rating     string           `json:"rating"`
-	Likelihood string           `json:"likelihood"`
-	Breakdown  PostureBreakdown `json:"breakdown"`
+	Score             float64          `json:"score"`      // = Credential Hygiene (0-100)
+	Rating            string           `json:"rating"`     // Strong|Fair|Weak|No Data (hygiene)
+	Likelihood        string           `json:"likelihood"` // back-compat alias = Reachability band
+	Breakdown         PostureBreakdown `json:"breakdown"`
+	Reachability      string           `json:"reachability"`       // Low|Medium|High|Very High|—
+	ReachabilityScore float64          `json:"reachability_score"` // L in [0,1)
+	ReachabilityPct   string           `json:"reachability_pct"`   // band range, e.g. ">75%" (never a point %)
+	Overall           float64          `json:"overall"`            // Hygiene*(1-L); trend/sort key only
+	Verdict           string           `json:"verdict"`            // Sound|Guarded|Elevated|High Risk|Critical|No Data
+	VerdictReason     string           `json:"verdict_reason,omitempty"`
 }
 
 // PostureBreakdown is each posture component's weighted contribution.
@@ -574,6 +602,7 @@ type Summary struct {
 	EscalatedByMassReuse int `json:"escalated_by_mass_reuse"` // escalated via a large cracked-reuse cluster
 	PolicyViolations     int `json:"policy_violations"`       // cracked && !meets_policy
 	HighControlled       int `json:"high_controlled"`         // controlled_object_count > 100
+	DormantPrivileged    int `json:"dormant_privileged"`      // disabled but privileged & credential-compromisable
 
 	// Executive breach impact estimate.
 	BreachImpact BreachImpact `json:"breach_impact"`
