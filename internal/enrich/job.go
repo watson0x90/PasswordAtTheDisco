@@ -155,37 +155,27 @@ func (m *Manager) run(ctx context.Context, id string) {
 	bulkEnr := m.eng.BuildBulkEnricher()
 	if bulkEnr != nil {
 		m.setTotal(len(accts))
-		// Run DA path checks for credential-relevant accounts only:
-		// cracked, shared (hash reuse), or HIBP-exposed.
-		m.setMessage("Checking DA paths for credential-relevant accounts…")
-		type acctInfo struct {
-			Key     string
-			Cracked bool
-			Shared  bool
-			HIBPHit bool
-		}
+		// Enrich the credential-obtainable candidate set: cracked, HIBP-exposed, or
+		// roastable (HasSPN/DontReqPreauth).  Roastability is derived inside
+		// EnrichCandidates from the pre-fetched Props; Shared is no longer a gate.
+		m.setMessage("Enriching credential-obtainable accounts (true transitive control + reachable Tier-0/DA)…")
 		relevant := make([]struct {
-			Key     string
-			Cracked bool
-			Shared  bool
-			HIBPHit bool
+			Key              string
+			Cracked, HIBPHit bool
 		}, 0, len(accts))
 		for _, a := range accts {
 			key := engine.NormalizeUsername(a.Username, a.Domain)
 			relevant = append(relevant, struct {
-				Key     string
-				Cracked bool
-				Shared  bool
-				HIBPHit bool
+				Key              string
+				Cracked, HIBPHit bool
 			}{
 				Key:     key,
 				Cracked: a.Cracked,
-				Shared:  a.SharedWith > 0,
 				HIBPHit: a.HIBPBreached,
 			})
 		}
 		if bbe, ok := bulkEnr.(engine.BulkBloodhoundEnricher); ok {
-			bbe.Bulk.CheckDAForAccounts(relevant)
+			bbe.Bulk.EnrichCandidates(relevant)
 		}
 		m.setMessage("Rescoring accounts…")
 		if err := m.store.Mutate(id, func(current []model.Account) []model.Account {
