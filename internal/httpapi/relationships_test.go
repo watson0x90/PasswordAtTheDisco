@@ -96,6 +96,9 @@ func TestRelationships_ReuseGroupIdentitiesOnly(t *testing.T) {
 	if resp.ReuseGroup.Total != 2 {
 		t.Errorf("total = %d, want 2 (bob + administrator)", resp.ReuseGroup.Total)
 	}
+	if resp.ReuseGroup.CrackedCount != 2 {
+		t.Errorf("cracked_count = %d, want 2", resp.ReuseGroup.CrackedCount)
+	}
 	if resp.ReuseGroup.DACount != 1 {
 		t.Errorf("da_count = %d, want 1", resp.ReuseGroup.DACount)
 	}
@@ -123,6 +126,22 @@ func TestRelationships_NotFound(t *testing.T) {
 	rec := do(srv, "GET", "/api/accounts/nobody/relationships?domain=CORP", lc)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 for unknown account, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestRelationships_NoAuditSelected verifies that a request with no audit open
+// returns 404 (not 409) — activeAuditRead writes nothing; the handler normalises
+// the "no context" case as account-not-found.
+func TestRelationships_NoAuditSelected(t *testing.T) {
+	srv := newServer("secret")
+	// Ingest data so the store is populated, but do NOT open any audit.
+	ingestDataset(t, srv, reuseDataset)
+
+	lc, _ := loginCSRF(t, srv, "lead", "leadpw")
+
+	rec := do(srv, "GET", "/api/accounts/alice/relationships?domain=CORP", lc)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 (no audit selected), got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

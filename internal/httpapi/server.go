@@ -1528,8 +1528,10 @@ func (s *Server) handleAccountRelationships(w http.ResponseWriter, r *http.Reque
 	sess, _ := sessionFrom(r.Context())
 	username := r.PathValue("username")
 	domain := r.URL.Query().Get("domain")
-	id, ok := s.activeAudit(w, sess)
+	id, ok := s.activeAuditRead(sess)
 	if !ok {
+		// No audit selected → the account simply can't be found.
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "account not found"})
 		return
 	}
 	accts, err := s.Store.Accounts(id, true) // unredacted: NT hash for grouping only; never returned
