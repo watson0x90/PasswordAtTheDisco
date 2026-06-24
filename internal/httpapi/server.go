@@ -167,6 +167,8 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /api/ingests", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleIngests))))
 	// Cleartext reveal -- requires lead role, always audit-logged
 	mux.Handle("GET /api/accounts/{username}/secret", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleReveal))))
+	// Identity-only reuse-group relationships -- available to any authenticated operator
+	mux.Handle("GET /api/accounts/{username}/relationships", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleAccountRelationships))))
 	// Web upload of dump files into the active audit (lead)
 	mux.Handle("POST /api/upload", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleAudit)))))
 	mux.Handle("POST /api/upload/cracks", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleApplyCracks)))))
@@ -1516,6 +1518,50 @@ func (s *Server) handleReveal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"username": acct.Username, "password": acct.Password})
+}
+
+// handleAccountRelationships returns the focus account's NT-hash reuse group as
+// IDENTITIES ONLY (username/domain/risk/flags) — never the NT hash or cleartext. The
+// page derives the reuse group, the Shared-DA peers (has_da_path), and the mass-reuse
+// summary from this; near-duplicate peers come from the account's own similar_peers.
+func (s *Server) handleAccountRelationships(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	username := r.PathValue("username")
+	domain := r.URL.Query().Get("domain")
+	id, ok := s.activeAudit(w, sess)
+	if !ok {
+		return
+	}
+	accts, err := s.Store.Accounts(id, true) // unredacted: NT hash for grouping only; never returned
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load accounts"})
+		return
+	}
+	var focus model.Account
+	found := false
+	for _, a := range accts {
+		if a.Username == username && (domain == "" || a.Domain == domain) {
+			focus, found = a, true
+			break
+		}
+	}
+	if !found {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "account not found"})
+		return
+	}
+	peers, total, crackedCount, daCount := model.ReuseGroupPeers(accts, focus, 100)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"username": focus.Username,
+		"domain":   focus.Domain,
+		"reuse_group": map[string]any{
+			"shares_hash":   total > 0,
+			"total":         total,
+			"cracked_count": crackedCount,
+			"da_count":      daCount,
+			"truncated":     total > len(peers),
+			"members":       peers,
+		},
+	})
 }
 
 // auditOrFail writes an audit event; if the write fails it responds 500 and returns
