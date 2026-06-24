@@ -151,43 +151,33 @@ func (m *Manager) run(ctx context.Context, id string) {
 
 	// Try bulk Cypher approach first (3 queries total, fast).
 	// Falls back to per-user REST if the client doesn't support Cypher or fails.
-	m.setMessage("Querying BloodHound (bulk Cypher)…")
+	m.setMessage("Step 1 of 2 · BloodHound bulk baseline (all accounts)…")
 	bulkEnr := m.eng.BuildBulkEnricher()
 	if bulkEnr != nil {
 		m.setTotal(len(accts))
-		// Run DA path checks for credential-relevant accounts only:
-		// cracked, shared (hash reuse), or HIBP-exposed.
-		m.setMessage("Checking DA paths for credential-relevant accounts…")
-		type acctInfo struct {
-			Key     string
-			Cracked bool
-			Shared  bool
-			HIBPHit bool
-		}
+		// Enrich the credential-obtainable candidate set: cracked, HIBP-exposed, or
+		// roastable (HasSPN/DontReqPreauth).  Roastability is derived inside
+		// EnrichCandidates from the pre-fetched Props; Shared is no longer a gate.
+		m.setMessage("Step 2 of 2 · Detailed enrichment — transitive control + reachable Tier-0/DA…")
 		relevant := make([]struct {
-			Key     string
-			Cracked bool
-			Shared  bool
-			HIBPHit bool
+			Key              string
+			Cracked, HIBPHit bool
 		}, 0, len(accts))
 		for _, a := range accts {
 			key := engine.NormalizeUsername(a.Username, a.Domain)
 			relevant = append(relevant, struct {
-				Key     string
-				Cracked bool
-				Shared  bool
-				HIBPHit bool
+				Key              string
+				Cracked, HIBPHit bool
 			}{
 				Key:     key,
 				Cracked: a.Cracked,
-				Shared:  a.SharedWith > 0,
 				HIBPHit: a.HIBPBreached,
 			})
 		}
 		if bbe, ok := bulkEnr.(engine.BulkBloodhoundEnricher); ok {
-			bbe.Bulk.CheckDAForAccounts(relevant)
+			bbe.Bulk.EnrichCandidates(relevant)
 		}
-		m.setMessage("Rescoring accounts…")
+		m.setMessage("Step 2 of 2 · Rescoring accounts…")
 		if err := m.store.Mutate(id, func(current []model.Account) []model.Account {
 			rescored := m.eng.RescoreWith(current, bulkEnr)
 			m.mu.Lock()

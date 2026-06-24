@@ -87,7 +87,8 @@ type Client struct {
 	domCache    []Domain
 	domCachedAt time.Time
 	domTTL      time.Duration
-	daGroups    map[string]string // cached DA group SID per domain
+	daGroups    map[string]string // cached DA group SID per domain (keyed by domain)
+	anchorSIDs  map[string]string // cached Tier-0 anchor SID per (domain,anchorName) — key: "domain|anchorName"
 }
 
 // New builds a Client from a Config.

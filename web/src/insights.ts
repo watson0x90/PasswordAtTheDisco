@@ -40,13 +40,26 @@ const reachPct = (b: string) =>
 
 // Mirrors Go model.CredentialObtainable + reachable: HIBP-breached (uncracked but in the breach
 // corpus -> effectively obtainable) counts; an uncracked hash NOT in HIBP does not.
-const reachable = (a: Account) =>
+// Exported as isReachable so the blast-radius table and the scoring verdict can never disagree.
+export const isReachable = (a: Account): boolean =>
   !!a.enabled && (!!a.cracked || !!a.hibp_breached || !!a.escalated_by_shared_da || !!a.escalated_by_mass_reuse)
 
-// gateVerdict mirrors Go's gateVerdict exactly (one-register, one-way).
-function gateVerdict(hygieneRating: string, band: string, t0: number, active: number): [Verdict, string] {
+// Alias for internal use so posture() continues to read naturally.
+const reachable = isReachable
+
+function daPathsPhrase(da: number): string {
+  if (da === 1) return "1 reachable DA pathway"
+  return `${da} reachable DA pathways`
+}
+
+// gateVerdict mirrors Go's gateVerdict exactly (one-register, one-way). Critical is reserved for
+// justified Tier-0 accumulation (>=2 reachable Tier-0 controllers, or 1 + a reachable DA path);
+// a lone reachable Tier-0 is High Risk. Keep byte-for-byte identical to Go gateVerdict.
+function gateVerdict(hygieneRating: string, band: string, t0: number, da: number, active: number): [Verdict, string] {
   if (active === 0 && t0 === 0) return ["No Data", ""]
-  if (t0 >= 1) return ["Critical", "Tier-0 Reachable"]
+  if (t0 >= 2) return ["Critical", `${t0} reachable Tier-0 controllers`]
+  if (t0 >= 1 && da >= 1) return ["Critical", "1 reachable Tier-0 controller + " + daPathsPhrase(da)]
+  if (t0 >= 1) return ["High Risk", "1 reachable Tier-0 controller — one compromised account reaches domain-control"]
   if (band === "Very High") return ["Critical", "multiple reachable domain-control paths"]
   if (band === "High") return ["High Risk", "a reachable path to domain-control exists"]
   if (hygieneRating === "Strong") return ["Sound", ""]
@@ -81,7 +94,7 @@ export function posture(accts: Account[]): Posture {
   const L = 1 - powi(1 - P_DA, da) * powi(1 - P_T0, t0) * powi(1 - P_CRIT, cN)
   const band = reachBand(L)
   if (!active) {
-    const [verdict, verdict_reason] = gateVerdict("No Data", band, t0, 0)
+    const [verdict, verdict_reason] = gateVerdict("No Data", band, t0, da, 0)
     const noDataReachability = verdict === "No Data" ? "—" : band
     const noDataPct = verdict === "No Data" ? "" : reachPct(band)
     return {
@@ -97,7 +110,7 @@ export function posture(accts: Account[]): Posture {
   const compliance = ((active - viol) / active) * W_COMP
   const score = r1(risk + strength + compliance)
   const rating: Rating = score >= 85 ? "Strong" : score >= 70 ? "Fair" : "Weak"
-  const [verdict, verdict_reason] = gateVerdict(rating, band, t0, active)
+  const [verdict, verdict_reason] = gateVerdict(rating, band, t0, da, active)
   return {
     score, rating,
     breakdown: { risk: r1(risk), strength: r1(strength), privilege: 0, compliance: r1(compliance) },
@@ -298,6 +311,23 @@ export function topControlled(accts: Account[], n: number): Account[] {
     .filter((a) => a.controlled_object_count > 0)
     .sort((a, b) => b.controlled_object_count - a.controlled_object_count)
     .slice(0, n)
+}
+
+// topControllers returns the top N controllers (controlled_object_count > 0) sorted
+// descending by count (tie-broken alphabetically by username for stability), plus the count
+// of remaining accounts (beyond the top N) that still control >100 objects — so the footer
+// can tell the operator nothing is silently hidden.
+export function topControllers(accts: Account[], n: number): { rows: Account[]; moreOver100: number } {
+  const controllers = accts
+    .filter((a) => (a.controlled_object_count || 0) > 0)
+    .sort(
+      (x, y) =>
+        (y.controlled_object_count || 0) - (x.controlled_object_count || 0) ||
+        (x.username || "").localeCompare(y.username || ""),
+    )
+  const rows = controllers.slice(0, n)
+  const moreOver100 = controllers.slice(n).filter((a) => (a.controlled_object_count || 0) > 100).length
+  return { rows, moreOver100 }
 }
 
 // Similarity distribution among cracked accounts (buckets by similarity score).

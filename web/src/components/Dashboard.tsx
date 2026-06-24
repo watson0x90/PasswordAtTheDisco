@@ -195,7 +195,7 @@ function PostureCard({ posture: p, breachImpact, dormantPrivileged, enabledCount
           <div className="pex-overall-pill">
             Overall {Math.round(p.overall)}/100
             <span className="pex-overall-reason">
-              {p.verdict_reason === "Tier-0 Reachable"
+              {p.verdict_reason?.includes("Tier-0 controller")
                 ? " — capped by reachable Tier-0 path"
                 : " — capped by breach reachability"}
             </span>
@@ -242,11 +242,11 @@ function PostureCard({ posture: p, breachImpact, dormantPrivileged, enabledCount
         <div className="pex-gate-block">
           <div className="pex-gate-reason">
             <span className="pex-gate-label">Why the verdict is {p.verdict}:</span>{" "}
-            {p.verdict_reason === "Tier-0 Reachable"
-              ? "one reachable Tier-0 / DCSync path can compromise the whole domain regardless of password hygiene — fix the path to lift it."
+            {p.verdict_reason?.includes("Tier-0 controller")
+              ? `${p.verdict_reason}. Remediate the Tier-0 foothold to lift the verdict.`
               : p.verdict_reason
-                ? `${p.verdict_reason} — remediate to lift the verdict.`
-                : "a reachable path to domain-control exists — remediate to lift the verdict."}
+                ? `${p.verdict_reason}. Remediate to lift the verdict.`
+                : "A reachable path to domain-control exists. Remediate to lift the verdict."}
           </div>
           <div className="pex-action">
             {p.rating === "Strong" || p.rating === "Fair"

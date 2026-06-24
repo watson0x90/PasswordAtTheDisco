@@ -322,47 +322,6 @@ func (c *Client) FetchDAUsers() (map[string][]string, error) {
 	return result, nil
 }
 
-// CheckDAPathsREST checks DA paths for a batch of users using the per-user REST
-// endpoint. Called after bulk prefetch for users with controllables who aren't
-// already identified as DA members. Returns additional DA users found.
-func (c *Client) CheckDAPathsREST(objectIDs map[string]string, existing map[string][]string) map[string][]string {
-	additional := map[string][]string{}
-	domains, err := c.GetDomains()
-	if err != nil || len(domains) == 0 {
-		return additional
-	}
-	var collected []string
-	for _, d := range domains {
-		if d.Collected {
-			collected = append(collected, d.Name)
-		}
-	}
-	if len(collected) == 0 {
-		return additional
-	}
-
-	checked := 0
-	for key, sid := range objectIDs {
-		if _, already := existing[key]; already {
-			continue // already known DA member
-		}
-		if sid == "" {
-			continue
-		}
-		for _, domainName := range collected {
-			hp := c.ProcessUserDAPath(domainName, sid)
-			if hp != nil && *hp {
-				additional[key] = append(additional[key], domainName)
-			}
-		}
-		checked++
-	}
-	if checked > 0 {
-		log.Printf("bloodhound: REST DA path checks: %d users checked, %d additional paths found", checked, len(additional))
-	}
-	return additional
-}
-
 func parseDAPaths(rows [][]interface{}) map[string][]string {
 	out := map[string][]string{}
 	for _, row := range rows {
@@ -381,31 +340,10 @@ func parseDAPaths(rows [][]interface{}) map[string][]string {
 	return out
 }
 
-func parseDAPathsFromResults(data []json.RawMessage) map[string][]string {
-	out := map[string][]string{}
-	for _, raw := range data {
-		var item struct {
-			Row []interface{} `json:"row"`
-		}
-		if json.Unmarshal(raw, &item) != nil || len(item.Row) < 3 {
-			continue
-		}
-		sam, _ := item.Row[0].(string)
-		userDomain, _ := item.Row[1].(string)
-		daDomain, _ := item.Row[2].(string)
-		if sam == "" {
-			continue
-		}
-		key := strings.ToLower(sam) + "@" + strings.ToUpper(userDomain)
-		out[key] = append(out[key], daDomain)
-	}
-	return out
-}
-
 // FetchControllableCounts returns the number of objects each user controls.
 // Single Cypher query: count outbound control edges per user.
 func (c *Client) FetchControllableCounts() (map[string]int, error) {
-	query := `MATCH (u:User)-[r]->(n) WHERE type(r) IN ['GenericAll','GenericWrite','WriteOwner','WriteDacl','Owns','ForceChangePassword','AddMember'] WITH u, count(n) as cnt WHERE cnt > 0 RETURN u.samaccountname, u.domain, cnt`
+	query := controllableCountQuery()
 	data, err := c.RunCypher(query)
 	if err != nil {
 		return nil, fmt.Errorf("FetchControllableCounts: %w", err)
@@ -472,6 +410,19 @@ func parseControllablesFromResults(data []json.RawMessage) map[string]int {
 	return out
 }
 
+// controlEdgeTypes is the Cypher fragment "['GenericAll','GenericWrite',...]" of AD object-control
+// relationship types, shared by the controllable-count and Tier-0 queries so they never drift.
+func controlEdgeTypes() string {
+	return "['GenericAll','GenericWrite','WriteOwner','WriteDacl','Owns','ForceChangePassword'," +
+		"'AddMember','AllExtendedRights','AddKeyCredentialLink','AddSelf','WriteSPN'," +
+		"'ReadLAPSPassword','ReadGMSAPassword','SyncLAPSPassword']"
+}
+
+func controllableCountQuery() string {
+	return `MATCH (u:User)-[r]->(n) WHERE type(r) IN ` + controlEdgeTypes() +
+		` WITH u, count(n) as cnt WHERE cnt > 0 RETURN u.samaccountname, u.domain, cnt`
+}
+
 // tier0ControllersQuery is the bulk Tier-0 prefetch Cypher. Its predicate mirrors the
 // per-user isTier0Name + ExtractControlsTier0 (kept testable so a refactor can't silently
 // weaken it). It uses ONLY the Cypher subset BloodHound CE accepts -- validated live:
@@ -484,7 +435,8 @@ func parseControllablesFromResults(data []json.RawMessage) map[string]int {
 //	                                        names are always "NAME@DOMAIN", so '@' anchors it)
 //	n.name CONTAINS any tier0Names fragment -> the substring-matched DA-equivalent names
 func tier0ControllersQuery() string {
-	return `MATCH (u:User)-[r]->(n) WHERE type(r) IN ['GenericAll','GenericWrite','WriteOwner','WriteDacl','Owns','ForceChangePassword','AddMember'] AND (n:Domain OR toUpper(coalesce(n.name,'')) STARTS WITH 'ADMINISTRATORS@' OR ANY(t IN [` + tier0NameList() + `] WHERE toUpper(coalesce(n.name,'')) CONTAINS t)) RETURN DISTINCT u.samaccountname, u.domain`
+	return `MATCH (u:User)-[r]->(n) WHERE type(r) IN ` + controlEdgeTypes() +
+		` AND (n:Domain OR toUpper(coalesce(n.name,'')) STARTS WITH 'ADMINISTRATORS@' OR ANY(t IN [` + tier0NameList() + `] WHERE toUpper(coalesce(n.name,'')) CONTAINS t)) RETURN DISTINCT u.samaccountname, u.domain`
 }
 
 // tier0NameList builds the Cypher list literal of Tier-0 object-name fragments from

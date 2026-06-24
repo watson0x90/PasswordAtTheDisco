@@ -543,3 +543,74 @@ func TestRescorePreservesHIBPWhenIndexUnavailable(t *testing.T) {
 		t.Fatalf("HIBPBreached should remain true (floor preserved)")
 	}
 }
+
+// TestE2ETransitiveControllerToCritical proves the full chain:
+// EnrichCandidates populates the bulk cache with 4k transitive-controlled
+// objects + a DA pathway + Tier-0 control for a cracked user, which then
+// flows through BulkBloodhoundEnricher.Enrich → RescoreWith to produce a
+// Critical account.  This is the exact scenario that was previously broken
+// (first-degree Controllables=0 gated the user out → scored Low instead of Critical).
+func TestE2ETransitiveControllerToCritical(t *testing.T) {
+	const (
+		uKey   = "alice@CORP.LOCAL"
+		objID  = "S-1-5-21-1000"
+		domain = "CORP.LOCAL"
+	)
+
+	// Build a BulkEnricher whose cache represents the post-EnrichCandidates state:
+	// 4000 transitive controlled objects, a DA pathway, and Tier-0 control.
+	// ObjectID != "" → Enriched=true → Coverage="full" → Impact is known.
+	bulk := bloodhound.NewBulkEnricherFromData(bloodhound.BulkEnrichment{
+		Props: map[string]bloodhound.BulkUserProps{
+			uKey: {ObjectID: objID, Enabled: true},
+		},
+		Controllables: map[string]int{uKey: 4000},
+		DAUsers:       map[string][]string{uKey: {domain}},
+		Tier0:         map[string]bool{uKey: true},
+	})
+	be := BulkBloodhoundEnricher{Bulk: bulk}
+
+	// Verify the enrichment values before rescore (unit-level sanity).
+	enr := be.Enrich(uKey)
+	if enr.ControlledObjects == nil || *enr.ControlledObjects != 4000 {
+		t.Fatalf("Enrich: ControlledObjects = %v, want &4000", enr.ControlledObjects)
+	}
+	if len(enr.DADomains) == 0 || enr.DADomains[0] != domain {
+		t.Fatalf("Enrich: DADomains = %v, want [%s]", enr.DADomains, domain)
+	}
+	if !enr.ControlsTier0 {
+		t.Fatal("Enrich: ControlsTier0 = false, want true")
+	}
+	if !enr.Enriched {
+		t.Fatal("Enrich: Enriched = false, want true (Coverage must be full for Impact-known)")
+	}
+
+	// Rescore a cracked account through the engine using the bulk enricher.
+	e := newEngine()
+	accts := []model.Account{{
+		Username: "alice",
+		Domain:   domain,
+		NTHash:   "AABBCCDDEEFF00112233445566778899",
+		Password: "Summer2024!", // cracked
+		Cracked:  true,
+	}}
+	out := e.RescoreWith(accts, be)
+	if len(out) != 1 {
+		t.Fatalf("RescoreWith: want 1 account, got %d", len(out))
+	}
+	a := out[0]
+
+	// Assert the four properties the task spec demands.
+	if a.Controlled != 4000 {
+		t.Errorf("Controlled = %d, want 4000", a.Controlled)
+	}
+	if !a.HasDAPathway() {
+		t.Errorf("HasDAPathway() = false, want true (DADomains=%q)", a.DADomains)
+	}
+	if !a.ControlsTier0 {
+		t.Errorf("ControlsTier0 = false, want true")
+	}
+	if a.RiskLevel != "Critical" {
+		t.Errorf("RiskLevel = %q, want Critical (cracked + DA pathway → daOverride; Tier0 → Impact 10)", a.RiskLevel)
+	}
+}

@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, test } from "vitest"
 import type { Account, Report, ReuseGroup } from "./api"
-import { posture, riskDistribution, hibpSplit, complexityLabel, similarityNetwork, axisFactorBars, crossDomainReuseGraph } from "./insights"
+import { posture, riskDistribution, hibpSplit, complexityLabel, similarityNetwork, axisFactorBars, crossDomainReuseGraph, isReachable, topControllers } from "./insights"
 
 function acct(p: Partial<Account>): Account {
   return {
@@ -241,4 +241,41 @@ describe("kpiCounts", () => {
   it("falls back to client counts when Summary is null", () => {
     expect(kpiCounts(null, accts)).toEqual({ total: 2, cracked: 1, breached: 1, da: 1 })
   })
+})
+
+// Task C1: isReachable + topControllers helpers
+test("isReachable: enabled && any obtainable signal", () => {
+  expect(isReachable({ enabled: true, cracked: true } as any)).toBe(true)
+  expect(isReachable({ enabled: true, hibp_breached: true } as any)).toBe(true)
+  expect(isReachable({ enabled: true, escalated_by_shared_da: true } as any)).toBe(true)
+  expect(isReachable({ enabled: true, escalated_by_mass_reuse: true } as any)).toBe(true)
+  expect(isReachable({ enabled: false, cracked: true } as any)).toBe(false)
+  expect(isReachable({ enabled: true } as any)).toBe(false)
+  expect(isReachable({ enabled: false } as any)).toBe(false)
+})
+
+test("topControllers: filter >0, sort desc, top N + remaining >100 count", () => {
+  const a = (n: number, username = `u${n}`) => ({ controlled_object_count: n, username } as any)
+  const { rows, moreOver100 } = topControllers([a(0), a(5), a(16778), a(101), a(2542), a(150)], 2)
+  expect(rows.map((r: any) => r.controlled_object_count)).toEqual([16778, 2542]) // desc, top 2
+  expect(moreOver100).toBe(2) // 101 and 150 are >100 and not in rows; 5 is not >100
+})
+
+test("topControllers: stable tie-break by username localeCompare", () => {
+  const a = (n: number, username: string) => ({ controlled_object_count: n, username } as any)
+  const { rows } = topControllers([a(10, "zebra"), a(10, "alpha"), a(10, "mango")], 3)
+  expect(rows.map((r: any) => r.username)).toEqual(["alpha", "mango", "zebra"])
+})
+
+test("topControllers: filters out zero-count accounts", () => {
+  const a = (n: number) => ({ controlled_object_count: n, username: `u${n}` } as any)
+  const { rows } = topControllers([a(0), a(0), a(0)], 5)
+  expect(rows).toHaveLength(0)
+})
+
+test("topControllers: moreOver100 is 0 when remaining are all <=100", () => {
+  const a = (n: number) => ({ controlled_object_count: n, username: `u${n}` } as any)
+  const { rows, moreOver100 } = topControllers([a(50), a(40), a(30)], 1)
+  expect(rows[0].controlled_object_count).toBe(50)
+  expect(moreOver100).toBe(0) // 40 and 30 are not >100
 })

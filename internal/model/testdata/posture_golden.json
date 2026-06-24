@@ -68,7 +68,7 @@
     }
   },
   {
-    "name": "1 reachable Tier-0 Critical Tier-0 Reachable",
+    "name": "1 reachable Tier-0 lone High Risk",
     "accounts": [
       {"enabled": true, "cracked": true, "risk_level": "Low", "meets_policy": false, "da_domains": "", "controls_tier0": true, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false, "impact_known": false}
     ],
@@ -78,8 +78,8 @@
       "reachability": "High",
       "reachability_pct": "50-75%",
       "overall": 13.5,
-      "verdict": "Critical",
-      "verdict_reason": "Tier-0 Reachable",
+      "verdict": "High Risk",
+      "verdict_reason": "1 reachable Tier-0 controller — one compromised account reaches domain-control",
       "likelihood": "High"
     }
   },
@@ -195,6 +195,40 @@
       "verdict": "High Risk",
       "verdict_reason": "a reachable path to domain-control exists",
       "likelihood": "High"
+    }
+  },
+  {
+    "name": "tier0-two-critical",
+    "accounts": [
+      {"enabled": true, "cracked": false, "hibp_breached": true, "risk_level": "Low", "meets_policy": true, "da_domains": "", "controls_tier0": true, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false, "impact_known": false},
+      {"enabled": true, "cracked": false, "hibp_breached": true, "risk_level": "Low", "meets_policy": true, "da_domains": "", "controls_tier0": true, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false, "impact_known": false}
+    ],
+    "expect": {
+      "score": 100,
+      "rating": "Strong",
+      "reachability": "Very High",
+      "reachability_pct": ">75%",
+      "overall": 9,
+      "verdict": "Critical",
+      "verdict_reason": "2 reachable Tier-0 controllers",
+      "likelihood": "Very High"
+    }
+  },
+  {
+    "name": "tier0-one-plus-da",
+    "accounts": [
+      {"enabled": true, "cracked": true, "risk_level": "Low", "meets_policy": false, "da_domains": "", "controls_tier0": true, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false, "impact_known": false},
+      {"enabled": true, "cracked": true, "risk_level": "Low", "meets_policy": false, "da_domains": "CORP.LOCAL", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false, "impact_known": false}
+    ],
+    "expect": {
+      "score": 45,
+      "rating": "Weak",
+      "reachability": "Very High",
+      "reachability_pct": ">75%",
+      "overall": 6.1,
+      "verdict": "Critical",
+      "verdict_reason": "1 reachable Tier-0 controller + 1 reachable DA pathway",
+      "likelihood": "Very High"
     }
   }
 ]

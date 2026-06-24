@@ -1411,6 +1411,26 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
 .tier-head.t2 { border-left-color: #fbbf24; }
 .triage-note { font-size: 12px; margin: 10px 0; }
 
+/* ---- Blast-radius table (Exposure tab) ---- */
+.blast-radius-row { cursor: pointer; }
+.blast-radius-rank { color: var(--faint); font-family: var(--mono); font-size: 12px; }
+.blast-radius-count { font-family: var(--mono); font-weight: 600; }
+.blast-radius-flags { display: inline-flex; gap: var(--space-xs); align-items: center; flex-wrap: wrap; }
+/* T0 and RCH: solid danger badges — draws the eye to the highest-risk rows */
+.badge.blast-flag-danger {
+  color: #fff;
+  background: rgba(251, 113, 133, 0.85);
+  border-color: var(--crit);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  padding: 2px 7px;
+}
+.blast-radius-empty {
+  padding: var(--space-xl) var(--space-lg);
+  font-size: 13px;
+}
+
 .forbidden-words-area {
   width: 100%;
   min-height: 220px;
