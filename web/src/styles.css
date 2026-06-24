@@ -1937,6 +1937,40 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
   white-space: nowrap;
 }
 
+/* ── Account detail page (pivot / expand-details) ───────────────────── */
+.detail-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  overflow-y: auto;
+  background: #0a0e1a;
+  padding: 1.5rem clamp(1rem, 5vw, 3rem) 3rem;
+}
+.detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+.detail-crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 0.35rem; }
+.crumb-root { color: var(--faint); }
+.crumb-sep { color: var(--faint); margin: 0 0.15rem; }
+.crumb-current { font-weight: 600; }
+.detail-head-actions { display: flex; gap: 0.75rem; }
+.detail-body { display: flex; flex-direction: column; gap: 1.25rem; max-width: 70rem; }
+.detail-title-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.detail-title { font-size: 1.25rem; font-weight: 700; }
+.detail-section-title { font-weight: 600; margin-bottom: 0.5rem; }
+.detail-why .why-headline { font-weight: 600; }
+.detail-why .why-detail { color: var(--faint); }
+.detail-rel { border-top: 1px solid var(--glass-border); padding-top: 1rem; }
+.detail-rel.rel-da { border-color: #b62324; }
+.peer-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.peer-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.badge-da { background: #b62324; color: #fff; }
+.btn-reveal { font-size: 0.8rem; padding: 0.1rem 0.5rem; }
+
 /* CSS grid reusing the MatrixHeatmap row/header classes; 1 label col + 5 cols. */
 .score-grid { display: flex; flex-direction: column; gap: var(--space-sm); }
 /* The corner is the first cell of the header row (over the row-label column),
