@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 _Nothing yet._
 
+## [2.29.0] — 2026-06-24 — Get Tier-0 right (transitive detection + verdict graduation + blast-radius table)
+
+> A three-part release. Existing audits adopt the scoring changes on their next **Recalculate**; the
+> enrichment change applies on the next **BloodHound enrichment** run.
+
+### Fixed
+- **Transitive outbound-control detection.** The bulk enricher's first-degree-only Cypher count
+  (`MATCH (u)-[control]->(n)`) missed group-delegated/multi-hop control, so a cracked account controlling
+  thousands of objects *transitively* read as `Controlled=0` → Low, and the same under-count gated it out
+  of the DA-path check. Now: a bulk baseline + per-candidate REST pass (`/controllables` `env.Count` true
+  transitive magnitude + a `only_traversable` shortest-path sweep to Tier-0 anchors — DA group, EA, KRBTGT,
+  AdminSDHolder, Administrators, the Domain object) for the **cracked ∪ HIBP ∪ roastable** candidate set,
+  gated on `env.Count > 0` (full anchor sweep at `≥100`). The first-degree candidate gate is removed.
+
+### Changed
+- **Tier-0 verdict graduation.** "Critical" is reserved for `≥2` reachable Tier-0 controllers OR
+  `1 + a reachable DA path`; a lone reachable Tier-0 → **High Risk**. Every Tier-0 verdict carries a
+  counted, composed `verdict_reason` (e.g. "7 reachable Tier-0 controllers", "1 reachable Tier-0
+  controller + 3 reachable DA pathways"). Breach impact keys the $1M+ tier on Tier-0 reachability
+  (blast radius), independent of the graduated verdict severity. Go⇄TS parity pinned by golden cases.
+- **Exposure "blast radius" table.** A descending table of the cracked/HIBP-exposed accounts controlling
+  the most AD objects (top 25 + "+N more >100"), each flagged T0/DA/Crk/RCH; rows open the account drawer.
+- Enrichment progress is labelled **Step 1 of 2** (bulk baseline) / **Step 2 of 2** (per-candidate detail).
+
 ## [2.28.0] — 2026-06-23 — Executive scoring rework (Hygiene × Reachability + Tier-0 gate)
 
 > Resolves the "Strong posture next to Very-High breach" contradiction surfaced by auditing a sanitized

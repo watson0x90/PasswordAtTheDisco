@@ -41,6 +41,27 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
+## What's new in 2.29
+
+**Getting Tier-0 right — accurate detection, a justified verdict, and the receipts.**
+
+- **Transitive outbound-control detection.** The bulk BloodHound enricher counted only *first-degree*
+  control, so an account that controls thousands of objects *through group membership* read as harmless.
+  It now fetches BloodHound's **true transitive** outbound-control count and runs a **reachable** Tier-0/DA
+  shortest-path sweep for the credential-obtainable set (cracked / HIBP / roastable) — a cracked admin
+  controlling 16k objects with a DA path now scores **Critical**, not Low. (Enrichment runs in two labelled
+  phases: *Step 1* bulk baseline, *Step 2* per-candidate detail.)
+- **A justified verdict, not a tripwire.** "Critical" is reserved for accumulation an org will believe —
+  **≥2 reachable Tier-0 controllers, or 1 + a reachable DA path**; a *lone* reachable Tier-0 reads **High
+  Risk**. Every Tier-0 verdict states its composition ("Critical — 7 reachable Tier-0 controllers"), so the
+  rating always carries its receipts.
+- **Exposure "blast radius" table.** A ranked, flagged (T0/DA/Crk/RCH) table of the cracked/HIBP-exposed
+  accounts controlling the most objects — the on-screen evidence behind the verdict.
+
+Earlier: the executive scoring rework — Hygiene × Reachability + Tier-0 gate (2.28); reuse-floor mid tier
+(2.27); mass-reuse escalation + bulk Tier-0 flagging (2.26); BloodHound upload fidelity (2.24); an **MCP
+server** for AI agents (2.21).
+
 ## What's new in 2.28
 
 **Executive scoring rework — the headline can no longer contradict itself.**
