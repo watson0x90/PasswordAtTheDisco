@@ -256,3 +256,7 @@ web/test-enrich.mjs
 
 .vscode/
 .github/
+
+# Sanitized review exports — anonymized but org-sensitive; never commit/push
+patd_sanitized*.json
+*.exe~
