@@ -405,7 +405,7 @@ func parseDAPathsFromResults(data []json.RawMessage) map[string][]string {
 // FetchControllableCounts returns the number of objects each user controls.
 // Single Cypher query: count outbound control edges per user.
 func (c *Client) FetchControllableCounts() (map[string]int, error) {
-	query := `MATCH (u:User)-[r]->(n) WHERE type(r) IN ['GenericAll','GenericWrite','WriteOwner','WriteDacl','Owns','ForceChangePassword','AddMember'] WITH u, count(n) as cnt WHERE cnt > 0 RETURN u.samaccountname, u.domain, cnt`
+	query := controllableCountQuery()
 	data, err := c.RunCypher(query)
 	if err != nil {
 		return nil, fmt.Errorf("FetchControllableCounts: %w", err)
@@ -472,6 +472,19 @@ func parseControllablesFromResults(data []json.RawMessage) map[string]int {
 	return out
 }
 
+// controlEdgeTypes is the Cypher fragment "['GenericAll','GenericWrite',...]" of AD object-control
+// relationship types, shared by the controllable-count and Tier-0 queries so they never drift.
+func controlEdgeTypes() string {
+	return "['GenericAll','GenericWrite','WriteOwner','WriteDacl','Owns','ForceChangePassword'," +
+		"'AddMember','AllExtendedRights','AddKeyCredentialLink','AddSelf','WriteSPN'," +
+		"'ReadLAPSPassword','ReadGMSAPassword','SyncLAPSPassword']"
+}
+
+func controllableCountQuery() string {
+	return `MATCH (u:User)-[r]->(n) WHERE type(r) IN ` + controlEdgeTypes() +
+		` WITH u, count(n) as cnt WHERE cnt > 0 RETURN u.samaccountname, u.domain, cnt`
+}
+
 // tier0ControllersQuery is the bulk Tier-0 prefetch Cypher. Its predicate mirrors the
 // per-user isTier0Name + ExtractControlsTier0 (kept testable so a refactor can't silently
 // weaken it). It uses ONLY the Cypher subset BloodHound CE accepts -- validated live:
@@ -484,7 +497,8 @@ func parseControllablesFromResults(data []json.RawMessage) map[string]int {
 //	                                        names are always "NAME@DOMAIN", so '@' anchors it)
 //	n.name CONTAINS any tier0Names fragment -> the substring-matched DA-equivalent names
 func tier0ControllersQuery() string {
-	return `MATCH (u:User)-[r]->(n) WHERE type(r) IN ['GenericAll','GenericWrite','WriteOwner','WriteDacl','Owns','ForceChangePassword','AddMember'] AND (n:Domain OR toUpper(coalesce(n.name,'')) STARTS WITH 'ADMINISTRATORS@' OR ANY(t IN [` + tier0NameList() + `] WHERE toUpper(coalesce(n.name,'')) CONTAINS t)) RETURN DISTINCT u.samaccountname, u.domain`
+	return `MATCH (u:User)-[r]->(n) WHERE type(r) IN ` + controlEdgeTypes() +
+		` AND (n:Domain OR toUpper(coalesce(n.name,'')) STARTS WITH 'ADMINISTRATORS@' OR ANY(t IN [` + tier0NameList() + `] WHERE toUpper(coalesce(n.name,'')) CONTAINS t)) RETURN DISTINCT u.samaccountname, u.domain`
 }
 
 // tier0NameList builds the Cypher list literal of Tier-0 object-name fragments from

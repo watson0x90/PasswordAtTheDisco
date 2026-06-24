@@ -6,6 +6,23 @@ import (
 	"testing"
 )
 
+func TestControlEdgeTypesBroadened(t *testing.T) {
+	q := controlEdgeTypes()
+	for _, want := range []string{"GenericAll", "GenericWrite", "WriteOwner", "WriteDacl", "Owns",
+		"ForceChangePassword", "AddMember", "AllExtendedRights", "AddKeyCredentialLink", "AddSelf",
+		"WriteSPN", "ReadLAPSPassword", "ReadGMSAPassword", "SyncLAPSPassword"} {
+		if !strings.Contains(q, "'"+want+"'") {
+			t.Errorf("controlEdgeTypes() missing %q", want)
+		}
+	}
+	if !strings.Contains(controllableCountQuery(), controlEdgeTypes()) {
+		t.Error("FetchControllableCounts query must embed controlEdgeTypes()")
+	}
+	if !strings.Contains(tier0ControllersQuery(), controlEdgeTypes()) {
+		t.Error("tier0ControllersQuery must embed controlEdgeTypes()")
+	}
+}
+
 func TestTier0NameList(t *testing.T) {
 	got := tier0NameList()
 	for _, name := range tier0Names {
