@@ -2,6 +2,7 @@
 package model
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -133,14 +134,26 @@ func reachPct(band string) string {
 	}
 }
 
-// gateVerdict: one-register, one-way (only-lowers) headline. Verdict is machine-stable;
-// VerdictReason carries the human "why" (SSL-Labs "grade capped because…" pattern).
-func gateVerdict(hygieneRating, band string, t0, active int) (verdict, reason string) {
+func daPathsPhrase(da int) string {
+	if da == 1 {
+		return "1 reachable DA pathway"
+	}
+	return fmt.Sprintf("%d reachable DA pathways", da)
+}
+
+// gateVerdict: one-register, one-way headline. Critical is reserved for justified Tier-0 accumulation
+// (>=2 reachable Tier-0 controllers, or 1 + a reachable DA path); a lone reachable Tier-0 is High Risk.
+// Every Tier-0 verdict states its composition (reason), so a Critical always carries its receipts.
+func gateVerdict(hygieneRating, band string, t0, da, active int) (verdict, reason string) {
 	switch {
 	case active == 0 && t0 == 0:
 		return "No Data", ""
+	case t0 >= 2:
+		return "Critical", fmt.Sprintf("%d reachable Tier-0 controllers", t0)
+	case t0 >= 1 && da >= 1:
+		return "Critical", "1 reachable Tier-0 controller + " + daPathsPhrase(da)
 	case t0 >= 1:
-		return "Critical", "Tier-0 Reachable"
+		return "High Risk", "1 reachable Tier-0 controller — one compromised account reaches domain-control"
 	case band == "Very High":
 		return "Critical", "multiple reachable domain-control paths"
 	case band == "High":
@@ -195,13 +208,13 @@ func PostureScore(accounts []Account) Posture {
 		}
 	}
 	// Reachability is computed over the FULL set so the Tier-0 gate can fire even when active==0.
-	L, _, t0, _, _ := breachReachability(accounts)
+	L, da, t0, _, _ := breachReachability(accounts)
 	band := reachBand(L)
 
 	if active == 0 {
 		p := Posture{Score: 0, Rating: "No Data", Reachability: band,
 			ReachabilityScore: L, ReachabilityPct: reachPct(band), Likelihood: band}
-		p.Verdict, p.VerdictReason = gateVerdict("No Data", band, t0, active)
+		p.Verdict, p.VerdictReason = gateVerdict("No Data", band, t0, da, active)
 		if p.Verdict == "No Data" {
 			// No active accounts and no Tier-0 reachable: claiming a band is misleading.
 			p.Reachability = "—"
@@ -227,7 +240,7 @@ func PostureScore(accounts []Account) Posture {
 		Likelihood:        band,
 	}
 	p.Overall = round1(hygiene * (1 - L))
-	p.Verdict, p.VerdictReason = gateVerdict(rating, band, t0, active)
+	p.Verdict, p.VerdictReason = gateVerdict(rating, band, t0, da, active)
 	return p
 }
 

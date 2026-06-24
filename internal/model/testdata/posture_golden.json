@@ -68,7 +68,7 @@
     }
   },
   {
-    "name": "1 reachable Tier-0 Critical Tier-0 Reachable",
+    "name": "1 reachable Tier-0 lone High Risk",
     "accounts": [
       {"enabled": true, "cracked": true, "risk_level": "Low", "meets_policy": false, "da_domains": "", "controls_tier0": true, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false, "impact_known": false}
     ],
@@ -78,8 +78,8 @@
       "reachability": "High",
       "reachability_pct": "50-75%",
       "overall": 13.5,
-      "verdict": "Critical",
-      "verdict_reason": "Tier-0 Reachable",
+      "verdict": "High Risk",
+      "verdict_reason": "1 reachable Tier-0 controller — one compromised account reaches domain-control",
       "likelihood": "High"
     }
   },

@@ -371,20 +371,47 @@ func TestBreachImpactReachabilityDriven(t *testing.T) {
 func TestGateVerdict(t *testing.T) {
 	cases := []struct {
 		name, rating, band string
-		t0, active         int
+		t0, da, active     int
 		verdict, reason    string
 	}{
-		{"tier0 caps to critical even if hygiene strong", "Strong", "Low", 1, 100, "Critical", "Tier-0 Reachable"},
-		{"very-high L -> critical", "Strong", "Very High", 0, 100, "Critical", "multiple reachable domain-control paths"},
-		{"high L -> high risk", "Strong", "High", 0, 100, "High Risk", "a reachable path to domain-control exists"},
-		{"strong hygiene, low L -> sound", "Strong", "Low", 0, 100, "Sound", ""},
-		{"fair hygiene -> guarded", "Fair", "Low", 0, 100, "Guarded", ""},
-		{"weak hygiene -> elevated", "Weak", "Medium", 0, 100, "Elevated", ""},
-		{"all disabled, no t0 -> no data", "No Data", "Low", 0, 0, "No Data", ""},
-		{"all disabled but reachable tier0 -> critical", "No Data", "Low", 1, 0, "Critical", "Tier-0 Reachable"},
+		// lone t0 is now High Risk (not Critical) under the graduated rule
+		{"tier0 lone -> high risk even if hygiene strong", "Strong", "Low", 1, 0, 100, "High Risk", "1 reachable Tier-0 controller — one compromised account reaches domain-control"},
+		{"very-high L -> critical", "Strong", "Very High", 0, 0, 100, "Critical", "multiple reachable domain-control paths"},
+		{"high L -> high risk", "Strong", "High", 0, 0, 100, "High Risk", "a reachable path to domain-control exists"},
+		{"strong hygiene, low L -> sound", "Strong", "Low", 0, 0, 100, "Sound", ""},
+		{"fair hygiene -> guarded", "Fair", "Low", 0, 0, 100, "Guarded", ""},
+		{"weak hygiene -> elevated", "Weak", "Medium", 0, 0, 100, "Elevated", ""},
+		{"all disabled, no t0 -> no data", "No Data", "Low", 0, 0, 0, "No Data", ""},
+		// lone t0 with no active accounts is now High Risk (not Critical) under the graduated rule
+		{"all disabled but reachable lone tier0 -> high risk", "No Data", "Low", 1, 0, 0, "High Risk", "1 reachable Tier-0 controller — one compromised account reaches domain-control"},
 	}
 	for _, c := range cases {
-		v, r := gateVerdict(c.rating, c.band, c.t0, c.active)
+		v, r := gateVerdict(c.rating, c.band, c.t0, c.da, c.active)
+		if v != c.verdict || r != c.reason {
+			t.Errorf("%s: got %q/%q want %q/%q", c.name, v, r, c.verdict, c.reason)
+		}
+	}
+}
+
+func TestGateVerdictTier0Graduation(t *testing.T) {
+	cases := []struct {
+		name, rating, band string
+		t0, da, active     int
+		verdict, reason    string
+	}{
+		{"2 tier0 -> critical", "Strong", "Very High", 2, 0, 100, "Critical", "2 reachable Tier-0 controllers"},
+		{"7 tier0 -> critical counted", "Strong", "Very High", 7, 7, 100, "Critical", "7 reachable Tier-0 controllers"},
+		{"1 tier0 + 1 da -> critical", "Strong", "High", 1, 1, 100, "Critical", "1 reachable Tier-0 controller + 1 reachable DA pathway"},
+		{"1 tier0 + 3 da -> critical plural", "Strong", "High", 1, 3, 100, "Critical", "1 reachable Tier-0 controller + 3 reachable DA pathways"},
+		{"lone tier0 -> high risk", "Strong", "High", 1, 0, 100, "High Risk", "1 reachable Tier-0 controller — one compromised account reaches domain-control"},
+		{"no tier0, very-high L -> critical", "Strong", "Very High", 0, 2, 100, "Critical", "multiple reachable domain-control paths"},
+		{"no tier0, high L -> high risk", "Fair", "High", 0, 1, 100, "High Risk", "a reachable path to domain-control exists"},
+		{"clean strong -> sound", "Strong", "Low", 0, 0, 100, "Sound", ""},
+		{"all disabled no t0 -> no data", "No Data", "Low", 0, 0, 0, "No Data", ""},
+		{"all disabled but t0>=2 -> critical", "No Data", "Low", 2, 0, 0, "Critical", "2 reachable Tier-0 controllers"},
+	}
+	for _, c := range cases {
+		v, r := gateVerdict(c.rating, c.band, c.t0, c.da, c.active)
 		if v != c.verdict || r != c.reason {
 			t.Errorf("%s: got %q/%q want %q/%q", c.name, v, r, c.verdict, c.reason)
 		}
