@@ -322,47 +322,6 @@ func (c *Client) FetchDAUsers() (map[string][]string, error) {
 	return result, nil
 }
 
-// CheckDAPathsREST checks DA paths for a batch of users using the per-user REST
-// endpoint. Called after bulk prefetch for users with controllables who aren't
-// already identified as DA members. Returns additional DA users found.
-func (c *Client) CheckDAPathsREST(objectIDs map[string]string, existing map[string][]string) map[string][]string {
-	additional := map[string][]string{}
-	domains, err := c.GetDomains()
-	if err != nil || len(domains) == 0 {
-		return additional
-	}
-	var collected []string
-	for _, d := range domains {
-		if d.Collected {
-			collected = append(collected, d.Name)
-		}
-	}
-	if len(collected) == 0 {
-		return additional
-	}
-
-	checked := 0
-	for key, sid := range objectIDs {
-		if _, already := existing[key]; already {
-			continue // already known DA member
-		}
-		if sid == "" {
-			continue
-		}
-		for _, domainName := range collected {
-			hp := c.ProcessUserDAPath(domainName, sid)
-			if hp != nil && *hp {
-				additional[key] = append(additional[key], domainName)
-			}
-		}
-		checked++
-	}
-	if checked > 0 {
-		log.Printf("bloodhound: REST DA path checks: %d users checked, %d additional paths found", checked, len(additional))
-	}
-	return additional
-}
-
 func parseDAPaths(rows [][]interface{}) map[string][]string {
 	out := map[string][]string{}
 	for _, row := range rows {
@@ -372,27 +331,6 @@ func parseDAPaths(rows [][]interface{}) map[string][]string {
 		sam, _ := row[0].(string)
 		userDomain, _ := row[1].(string)
 		daDomain, _ := row[2].(string)
-		if sam == "" {
-			continue
-		}
-		key := strings.ToLower(sam) + "@" + strings.ToUpper(userDomain)
-		out[key] = append(out[key], daDomain)
-	}
-	return out
-}
-
-func parseDAPathsFromResults(data []json.RawMessage) map[string][]string {
-	out := map[string][]string{}
-	for _, raw := range data {
-		var item struct {
-			Row []interface{} `json:"row"`
-		}
-		if json.Unmarshal(raw, &item) != nil || len(item.Row) < 3 {
-			continue
-		}
-		sam, _ := item.Row[0].(string)
-		userDomain, _ := item.Row[1].(string)
-		daDomain, _ := item.Row[2].(string)
 		if sam == "" {
 			continue
 		}

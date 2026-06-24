@@ -4,6 +4,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 )
 
 // BulkEnrichment holds the pre-fetched BHE data for all users, loaded via Cypher.
@@ -39,7 +40,7 @@ func newBulkEnricherWithClient(c candidateClient) *BulkEnricher {
 // Call this before Enrich() to ensure data is loaded.
 func (b *BulkEnricher) Prefetch() error {
 	b.once.Do(func() {
-		log.Printf("bloodhound: bulk prefetch starting (Cypher + REST DA checks)...")
+		log.Printf("bloodhound: bulk prefetch starting (Cypher baseline; per-candidate REST done in EnrichCandidates)...")
 
 		props, err := b.client.FetchAllUserProps()
 		if err != nil {
@@ -72,7 +73,7 @@ func (b *BulkEnricher) Prefetch() error {
 		}
 
 		b.data = BulkEnrichment{Props: props, DAUsers: da, Controllables: ctrl, Tier0: t0}
-		log.Printf("bloodhound: bulk prefetch complete (DA paths will be checked per credential-relevant accounts at rescore time)")
+		log.Printf("bloodhound: bulk prefetch complete (per-candidate transitive control + reachable Tier-0/DA paths checked in EnrichCandidates)")
 	})
 	return b.err
 }
@@ -157,8 +158,10 @@ func (b *BulkEnricher) EnrichCandidates(accounts []struct {
 	Key              string
 	Cracked, HIBPHit bool
 }) {
+	start := time.Now()
 	domains := b.collectedDomains()
 
+	var withControllables, swept, daHits, t0Hits int
 	seen := map[string]struct{}{}
 	for _, a := range accounts {
 		k := normKey(a.Key)
@@ -178,14 +181,22 @@ func (b *BulkEnricher) EnrichCandidates(accounts []struct {
 		total, da, t0 := enrichCandidate(b.client, p.ObjectID, domains)
 		if total > 0 {
 			b.data.Controllables[k] = total
+			withControllables++
 		}
 		if len(da) > 0 {
 			b.data.DAUsers[k] = appendUnique(b.data.DAUsers[k], da...)
+			daHits++
 		}
 		if t0 {
 			b.data.Tier0[k] = true
+			t0Hits++
+		}
+		// enrichCandidate runs the reachability sweep only when total > 0
+		if total > 0 {
+			swept++
 		}
 	}
 
-	log.Printf("bloodhound: EnrichCandidates enriched %d credential-obtainable candidates (true transitive control + reachable Tier-0/DA)", len(seen))
+	log.Printf("bloodhound: EnrichCandidates: %d candidates, %d with controllables, %d reachability-swept, %d DA, %d Tier-0, %s",
+		len(seen), withControllables, swept, daHits, t0Hits, time.Since(start))
 }
