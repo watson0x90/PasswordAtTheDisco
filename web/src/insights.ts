@@ -1,6 +1,6 @@
 // Pure functions that derive chart/scorecard data from the redacted account set.
 // All inputs come from /api/accounts (no cleartext) so everything is safe to chart.
-import type { Account, Report, Summary } from "./api"
+import type { Account, Report, Summary, Verdict } from "./api"
 import { hasDA } from "./util"
 import { impactIsKnown } from "./matrix"
 
@@ -11,50 +11,99 @@ export interface Posture {
   rating: Rating
   breakdown: { risk: number; strength: number; privilege: number; compliance: number }
   likelihood: "Very High" | "High" | "Medium" | "Low" | "—"
+  reachability: string
+  reachability_score: number
+  reachability_pct: string
+  overall: number
+  verdict: Verdict
+  verdict_reason?: string
 }
 
 const r1 = (n: number) => Math.round(n * 10) / 10
+
+// Mirror of Go constants (internal/model/model.go) — keep in lockstep.
+const P_DA = 0.55, P_T0 = 0.70, P_CRIT = 0.15 // reuseN deferred (v1) — see spec §2.2
+const CAP_CRIT = 5
+const REACH_SCALE = 1_000_000, B_MED = 250_000, B_HIGH = 500_000, B_VHI = 750_000
+const W_RISK = 45, W_STR = 35, W_COMP = 20
+
+// powi: integer power by repeated multiply — IDENTICAL to Go powi (avoids Math.pow cross-libm drift).
+const powi = (base: number, n: number) => { let r = 1; for (let i = 0; i < n; i++) r *= base; return r }
+
+const reachBand = (L: number) => {
+  const ls = Math.floor(L * REACH_SCALE + 0.5)
+  return ls >= B_VHI ? "Very High" : ls >= B_HIGH ? "High" : ls >= B_MED ? "Medium" : "Low"
+}
+
+const reachPct = (b: string) =>
+  b === "Very High" ? ">75%" : b === "High" ? "50-75%" : b === "Medium" ? "25-50%" : "<25%"
+
+// Mirrors Go model.CredentialObtainable + reachable: HIBP-breached (uncracked but in the breach
+// corpus -> effectively obtainable) counts; an uncracked hash NOT in HIBP does not.
+const reachable = (a: Account) =>
+  !!a.enabled && (!!a.cracked || !!a.hibp_breached || !!a.escalated_by_shared_da || !!a.escalated_by_mass_reuse)
+
+// gateVerdict mirrors Go's gateVerdict exactly (one-register, one-way).
+function gateVerdict(hygieneRating: string, band: string, t0: number, active: number): [Verdict, string] {
+  if (active === 0 && t0 === 0) return ["No Data", ""]
+  if (t0 >= 1) return ["Critical", "Tier-0 Reachable"]
+  if (band === "Very High") return ["Critical", "multiple reachable domain-control paths"]
+  if (band === "High") return ["High Risk", "a reachable path to domain-control exists"]
+  if (hygieneRating === "Strong") return ["Sound", ""]
+  if (hygieneRating === "Fair") return ["Guarded", ""]
+  return ["Elevated", ""]
+}
 
 // posture computes the score for an arbitrary account subset (used by the
 // per-domain mini-dashboards, which have no server endpoint). The authoritative
 // WHOLE-AUDIT posture is served by /api/summary (Go model.PostureScore) and drives
 // the Overview, HTML export, and Compare -- keep this formula in sync with it
-// (Go's golden test pins that side).
+// (Go's golden test pins that side via the posture_golden.json fixture).
 export function posture(accts: Account[]): Posture {
-  const total = accts.length
-  if (!total) return { score: 0, rating: "No Data", breakdown: { risk: 0, strength: 0, privilege: 0, compliance: 0 }, likelihood: "—" }
-
-  let crit = 0, high = 0, med = 0, cracked = 0, uncracked = 0, da = 0, violations = 0
+  // hygiene over enabled only; reachability over the full subset
+  let active = 0, crit = 0, high = 0, med = 0, uncracked = 0, viol = 0
+  let da = 0, t0 = 0, critN = 0
   for (const a of accts) {
+    if (reachable(a)) {
+      if (hasDA(a.da_domains)) da++
+      if (a.controls_tier0) t0++
+    }
+    if (a.risk_level === "Critical" && a.impact_known && !hasDA(a.da_domains) && !a.controls_tier0) critN++
+    if (!a.enabled) continue
+    active++
     if (a.risk_level === "Critical") crit++
     else if (a.risk_level === "High") high++
     else if (a.risk_level === "Medium") med++
-    if (a.cracked) cracked++
-    else uncracked++
-    if (hasDA(a.da_domains)) da++
-    if (a.cracked && !a.meets_policy) violations++
+    if (!a.cracked) uncracked++
+    if (a.cracked && !a.meets_policy) viol++
   }
-
-  let risk = Math.max(0, 100 - (crit / total) * 200 - (high / total) * 150 - (med / total) * 50)
-  risk = (risk / 100) * 40
-  const strength = cracked + uncracked > 0 ? (uncracked / (cracked + uncracked)) * 30 : 0
-  const privilege = Math.max(0, 15 - (da / total) * 100)
-  const compliance = ((total - violations) / total) * 15
-
-  const score = r1(risk + strength + privilege + compliance)
+  const cN = Math.min(critN, CAP_CRIT)
+  const L = 1 - powi(1 - P_DA, da) * powi(1 - P_T0, t0) * powi(1 - P_CRIT, cN)
+  const band = reachBand(L)
+  if (!active) {
+    const [verdict, verdict_reason] = gateVerdict("No Data", band, t0, 0)
+    const noDataReachability = verdict === "No Data" ? "—" : band
+    const noDataPct = verdict === "No Data" ? "" : reachPct(band)
+    return {
+      score: 0, rating: "No Data",
+      breakdown: { risk: 0, strength: 0, privilege: 0, compliance: 0 },
+      likelihood: noDataReachability as Posture["likelihood"],
+      reachability: noDataReachability, reachability_score: L, reachability_pct: noDataPct,
+      overall: 0, verdict, verdict_reason,
+    }
+  }
+  const risk = Math.max(0, 100 - (crit / active) * 200 - (high / active) * 150 - (med / active) * 50) / 100 * W_RISK
+  const strength = (uncracked / active) * W_STR
+  const compliance = ((active - viol) / active) * W_COMP
+  const score = r1(risk + strength + compliance)
   const rating: Rating = score >= 85 ? "Strong" : score >= 70 ? "Fair" : "Weak"
-
-  // Breach-likelihood estimate (legacy estimate_breach_impact tiers)
-  let likelihood: Posture["likelihood"] = "Low"
-  if (crit > 50 || da > 20) likelihood = "Very High"
-  else if (crit > 20 || da > 10) likelihood = "High"
-  else if (crit > 5 || da > 3) likelihood = "Medium"
-
+  const [verdict, verdict_reason] = gateVerdict(rating, band, t0, active)
   return {
-    score,
-    rating,
-    breakdown: { risk: r1(risk), strength: r1(strength), privilege: r1(privilege), compliance: r1(compliance) },
-    likelihood,
+    score, rating,
+    breakdown: { risk: r1(risk), strength: r1(strength), privilege: 0, compliance: r1(compliance) },
+    likelihood: band as Posture["likelihood"],
+    reachability: band, reachability_score: L, reachability_pct: reachPct(band),
+    overall: r1(score * (1 - L)), verdict, verdict_reason,
   }
 }
 

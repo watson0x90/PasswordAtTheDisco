@@ -37,6 +37,61 @@ func TestComputeDiff(t *testing.T) {
 	}
 }
 
+// TestComputeDiffReachability verifies that ComputeDiff populates ReachabilityA/B and
+// OverallA/B from the PostureScore of each side, and that PostureScore is not called
+// more than once per side (verified structurally — the fields must be consistent with
+// a single PostureScore call, not double-computed with possible drift).
+//
+// "Before" (a): four enabled accounts, none cracked, no DA pathway — Reachability "Low",
+// hygiene near 100.
+// "After" (b): same four accounts but svcadmin is now cracked+DA — single DA reachable
+// path pushes L = 1-(1-0.55)^1 = 0.55 → "High" band; hygiene drops (one Critical
+// cracked), so Overall = hygiene*(1-0.55) is lower than OverallA.
+func TestComputeDiffReachability(t *testing.T) {
+	// Baseline: four enabled uncracked accounts, no DA pathway → Reachability "Low".
+	a := []model.Account{
+		{Username: "user1", Domain: "CORP", Enabled: true, Cracked: false, RiskLevel: "Low"},
+		{Username: "user2", Domain: "CORP", Enabled: true, Cracked: false, RiskLevel: "Low"},
+		{Username: "user3", Domain: "CORP", Enabled: true, Cracked: false, RiskLevel: "Low"},
+		{Username: "svcadmin", Domain: "CORP", Enabled: true, Cracked: false, RiskLevel: "Low"},
+	}
+	// Current: svcadmin is now cracked+Critical with a DA pathway; others unchanged.
+	// One DA reachable path: L = 1-(1-0.55)^1 = 0.55 → "High".
+	b := []model.Account{
+		{Username: "user1", Domain: "CORP", Enabled: true, Cracked: false, RiskLevel: "Low"},
+		{Username: "user2", Domain: "CORP", Enabled: true, Cracked: false, RiskLevel: "Low"},
+		{Username: "user3", Domain: "CORP", Enabled: true, Cracked: false, RiskLevel: "Low"},
+		{Username: "svcadmin", Domain: "CORP", Enabled: true, Cracked: true, RiskLevel: "Critical",
+			DADomains: "CORP", MeetsPolicy: false},
+	}
+
+	d := ComputeDiff(a, b)
+
+	if d.ReachabilityA != "Low" {
+		t.Errorf("ReachabilityA: want %q, got %q", "Low", d.ReachabilityA)
+	}
+	if d.ReachabilityB != "High" {
+		t.Errorf("ReachabilityB: want %q, got %q", "High", d.ReachabilityB)
+	}
+	// OverallA: hygiene ≈ 100 (all uncracked, all Low), L≈0 → Overall ≈ 100.
+	if d.OverallA <= 0 {
+		t.Errorf("OverallA: want > 0, got %v", d.OverallA)
+	}
+	// OverallB: hygiene is degraded (1 of 4 is Critical+cracked+non-compliant) AND L=0.55;
+	// Overall = hygiene*(1-0.55) < OverallA.
+	if d.OverallB >= d.OverallA {
+		t.Errorf("OverallB (%v) should be less than OverallA (%v) after DA compromise", d.OverallB, d.OverallA)
+	}
+	// PostureA: all Low+uncracked+enabled → hygiene near 100.
+	if d.PostureA <= 80 {
+		t.Errorf("PostureA: want > 80 (all uncracked+Low), got %v", d.PostureA)
+	}
+	// PostureB: one Critical account (1/4 = 25%) → hygiene significantly degraded.
+	if d.PostureB >= d.PostureA {
+		t.Errorf("PostureB (%v) should be less than PostureA (%v)", d.PostureB, d.PostureA)
+	}
+}
+
 func TestReportsRedactCleartext(t *testing.T) {
 	// Even if an Account still carries a password, the reports must not emit it.
 	accts := []model.Account{
@@ -227,6 +282,44 @@ func TestCSVEscapesFormulaInjection(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), `'=cmd`) {
 		t.Errorf("formula-injection username not neutralized (want leading '): %s", buf.String())
+	}
+}
+
+// TestHTMLDormantPrivileged verifies that HTML() counts disabled+privileged+cracked
+// accounts and renders the "Dormant privileged" warning, and that a dataset without
+// such accounts does NOT render the warning.
+func TestHTMLDormantPrivileged(t *testing.T) {
+	when := time.Unix(1_700_000_000, 0)
+
+	// Dataset WITH one dormant privileged account.
+	withDormant := []model.Account{
+		// disabled + has DA pathway + cracked → should be counted
+		{Username: "svc_priv", Domain: "CORP", Enabled: false, DADomains: "CORP", Cracked: true, RiskLevel: "Critical", RiskScore: 9.5},
+		// enabled + cracked → NOT dormant
+		{Username: "user1", Domain: "CORP", Enabled: true, Cracked: true, RiskLevel: "High", RiskScore: 7},
+	}
+	var b bytes.Buffer
+	if err := HTML(&b, "Engagement", when, withDormant); err != nil {
+		t.Fatalf("HTML with dormant: %v", err)
+	}
+	out := b.String()
+	if !strings.Contains(out, "Dormant privileged") {
+		t.Errorf("HTML with dormant privileged account should render 'Dormant privileged' warning; got none\noutput:\n%s", out)
+	}
+
+	// Dataset WITHOUT any dormant privileged account.
+	b.Reset()
+	noDormant := []model.Account{
+		// disabled but no DA pathway and not cracked → not dormant
+		{Username: "disabled_user", Domain: "CORP", Enabled: false, Cracked: false, RiskLevel: "Low", RiskScore: 1},
+		// enabled + DA pathway + cracked → enabled, so not dormant
+		{Username: "active_da", Domain: "CORP", Enabled: true, DADomains: "CORP", Cracked: true, RiskLevel: "Critical", RiskScore: 9},
+	}
+	if err := HTML(&b, "Engagement", when, noDormant); err != nil {
+		t.Fatalf("HTML without dormant: %v", err)
+	}
+	if strings.Contains(b.String(), "Dormant privileged") {
+		t.Errorf("HTML without dormant privileged accounts should NOT render 'Dormant privileged' warning")
 	}
 }
 

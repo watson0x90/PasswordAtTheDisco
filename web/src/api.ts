@@ -47,6 +47,10 @@ export interface DiffAccount {
 export interface AuditDiff {
   posture_a: number
   posture_b: number
+  reachability_a?: string
+  reachability_b?: string
+  overall_a?: number
+  overall_b?: number
   still_cracked: number
   newly_cracked: DiffAccount[]
   remediated: DiffAccount[]
@@ -60,11 +64,19 @@ export interface DiffResult {
   diff: AuditDiff
 }
 
+export type Verdict = "Sound" | "Guarded" | "Elevated" | "High Risk" | "Critical" | "No Data"
+
 export interface Posture {
   score: number
   rating: string
   likelihood: string
   breakdown: { risk: number; strength: number; privilege: number; compliance: number }
+  reachability: string
+  reachability_score: number
+  reachability_pct: string
+  overall: number
+  verdict: Verdict
+  verdict_reason?: string
 }
 
 export interface Summary {
@@ -83,6 +95,7 @@ export interface Summary {
   escalated_by_mass_reuse: number
   policy_violations: number
   high_controlled: number
+  dormant_privileged: number
   // Executive breach impact
   breach_impact: BreachImpact
 }

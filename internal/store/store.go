@@ -723,8 +723,11 @@ func (s *Store) Summary(id string) (model.Summary, error) {
 		if acc.Controlled > 100 {
 			sum.HighControlled++
 		}
+		if !acc.Enabled && (acc.ControlsTier0 || acc.HasDAPathway()) && model.CredentialObtainable(acc) {
+			sum.DormantPrivileged++
+		}
 	}
-	sum.Posture = model.PostureScore(a.ds.Accounts) // single source for the dashboard gauge
-	sum.BreachImpact = model.EstimateBreachImpact(sum.RiskCounts["Critical"], sum.DAPathways)
+	sum.Posture = model.PostureScore(a.ds.Accounts) // Hygiene + Reachability + Verdict (single source)
+	sum.BreachImpact = model.EstimateBreachImpact(sum.Posture)
 	return sum, nil
 }

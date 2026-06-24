@@ -1,44 +1,47 @@
 package model
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestPostureScoreGolden(t *testing.T) {
-	// Pins the formula; web/src/insights.ts:posture() must match. 2 accounts:
-	// 1 Critical cracked+breached non-compliant, 1 Low cracked compliant.
+	// Pins the new Hygiene×Reachability formula over ENABLED accounts.
+	// Weights: risk=45, strength=35, compliance=20 (privilege term removed).
+	// 2 enabled accounts: 1 Critical cracked+breached non-compliant, 1 Low cracked compliant.
+	// active=2: risk=max(0,100-1/2*200)/100*45=0; strength=0/2*35=0; compliance=(2-1)/2*20=10 -> 10.0
 	p := PostureScore([]Account{
-		{RiskLevel: "Critical", Cracked: true, HIBPBreached: true, MeetsPolicy: false},
-		{RiskLevel: "Low", Cracked: true, MeetsPolicy: true},
+		{Enabled: true, RiskLevel: "Critical", Cracked: true, HIBPBreached: true, MeetsPolicy: false},
+		{Enabled: true, RiskLevel: "Low", Cracked: true, MeetsPolicy: true},
 	})
-	// risk: max(0,100-(1/2)*200)=0 ; strength 0 ; priv 15 ; compliance (2-1)/2*15=7.5
-	if p.Score != 22.5 || p.Rating != "Weak" {
-		t.Fatalf("posture = %.1f %s, want 22.5 Weak", p.Score, p.Rating)
+	if p.Score != 10.0 || p.Rating != "Weak" {
+		t.Fatalf("posture = %.1f %s, want 10.0 Weak", p.Score, p.Rating)
 	}
-	if p.Breakdown != (PostureBreakdown{Risk: 0, Strength: 0, Privilege: 15, Compliance: 7.5}) {
-		t.Fatalf("breakdown = %+v, want {0 0 15 7.5}", p.Breakdown)
+	if p.Breakdown.Risk != 0 || p.Breakdown.Strength != 0 || p.Breakdown.Privilege != 0 || p.Breakdown.Compliance != 10.0 {
+		t.Fatalf("breakdown = %+v, want {Risk:0 Strength:0 Privilege:0 Compliance:10}", p.Breakdown)
 	}
 
-	// Second golden with NON-ZERO risk + strength, so coefficient drift in either
-	// (which the all-zero fixture above would miss) is caught. 5 accounts: 1 Crit
-	// cracked non-compliant, 1 High cracked compliant, 3 Low uncracked.
-	//   risk = (100 - 1/5*200 - 1/5*150)/100*40 = 12 ; strength = 3/5*30 = 18 ;
-	//   privilege 15 ; compliance = (5-1)/5*15 = 12  -> score 57 Weak
+	// Second golden with NON-ZERO risk + strength. 5 enabled accounts:
+	// 1 Crit cracked non-compliant, 1 High cracked compliant, 3 Low uncracked.
+	// active=5: risk=max(0,100-1/5*200-1/5*150)/100*45 = (100-40-30)/100*45 = 30/100*45 = 13.5
+	// strength = 3/5*35 = 21; compliance = (5-1)/5*20 = 16 -> 50.5 Weak
 	p2 := PostureScore([]Account{
-		{RiskLevel: "Critical", Cracked: true, MeetsPolicy: false},
-		{RiskLevel: "High", Cracked: true, MeetsPolicy: true},
-		{RiskLevel: "Low", Cracked: false},
-		{RiskLevel: "Low", Cracked: false},
-		{RiskLevel: "Low", Cracked: false},
+		{Enabled: true, RiskLevel: "Critical", Cracked: true, MeetsPolicy: false},
+		{Enabled: true, RiskLevel: "High", Cracked: true, MeetsPolicy: true},
+		{Enabled: true, RiskLevel: "Low", Cracked: false},
+		{Enabled: true, RiskLevel: "Low", Cracked: false},
+		{Enabled: true, RiskLevel: "Low", Cracked: false},
 	})
-	if p2.Score != 57 || p2.Rating != "Weak" {
-		t.Fatalf("posture2 = %.1f %s, want 57 Weak", p2.Score, p2.Rating)
+	if p2.Score != 50.5 || p2.Rating != "Weak" {
+		t.Fatalf("posture2 = %.1f %s, want 50.5 Weak", p2.Score, p2.Rating)
 	}
-	if p2.Breakdown != (PostureBreakdown{Risk: 12, Strength: 18, Privilege: 15, Compliance: 12}) {
-		t.Fatalf("breakdown2 = %+v, want {12 18 15 12}", p2.Breakdown)
+	if p2.Breakdown.Risk != 13.5 || p2.Breakdown.Strength != 21.0 || p2.Breakdown.Privilege != 0 || p2.Breakdown.Compliance != 16.0 {
+		t.Fatalf("breakdown2 = %+v, want {Risk:13.5 Strength:21 Privilege:0 Compliance:16}", p2.Breakdown)
 	}
 }
 
@@ -350,6 +353,153 @@ func TestUnicodeAndPolicyViolationsRoundTripAndSurviveRedaction(t *testing.T) {
 	}
 }
 
+func TestBreachImpactReachabilityDriven(t *testing.T) {
+	t0 := Posture{Verdict: "Critical", VerdictReason: "Tier-0 Reachable", Reachability: "Very High"}
+	if bi := EstimateBreachImpact(t0); bi.EstimatedCost != "$1M – $5M+" || bi.RecoveryTime != "6–12 months" {
+		t.Fatalf("tier-0 reachable -> want $1M-$5M+/6-12mo, got %q/%q", bi.EstimatedCost, bi.RecoveryTime)
+	}
+	vh := Posture{Verdict: "Critical", VerdictReason: "multiple reachable domain-control paths", Reachability: "Very High"}
+	if bi := EstimateBreachImpact(vh); bi.EstimatedCost != "$500K – $1M" {
+		t.Fatalf("very-high (no tier0) -> want $500K-$1M, got %q", bi.EstimatedCost)
+	}
+	low := Posture{Verdict: "Sound", Reachability: "Low"}
+	if bi := EstimateBreachImpact(low); bi.Probability != "Low" || bi.EstimatedCost != "$50K – $100K" {
+		t.Fatalf("low -> want Low/$50K-$100K, got %q/%q", bi.Probability, bi.EstimatedCost)
+	}
+}
+
+func TestGateVerdict(t *testing.T) {
+	cases := []struct {
+		name, rating, band string
+		t0, active         int
+		verdict, reason    string
+	}{
+		{"tier0 caps to critical even if hygiene strong", "Strong", "Low", 1, 100, "Critical", "Tier-0 Reachable"},
+		{"very-high L -> critical", "Strong", "Very High", 0, 100, "Critical", "multiple reachable domain-control paths"},
+		{"high L -> high risk", "Strong", "High", 0, 100, "High Risk", "a reachable path to domain-control exists"},
+		{"strong hygiene, low L -> sound", "Strong", "Low", 0, 100, "Sound", ""},
+		{"fair hygiene -> guarded", "Fair", "Low", 0, 100, "Guarded", ""},
+		{"weak hygiene -> elevated", "Weak", "Medium", 0, 100, "Elevated", ""},
+		{"all disabled, no t0 -> no data", "No Data", "Low", 0, 0, "No Data", ""},
+		{"all disabled but reachable tier0 -> critical", "No Data", "Low", 1, 0, "Critical", "Tier-0 Reachable"},
+	}
+	for _, c := range cases {
+		v, r := gateVerdict(c.rating, c.band, c.t0, c.active)
+		if v != c.verdict || r != c.reason {
+			t.Errorf("%s: got %q/%q want %q/%q", c.name, v, r, c.verdict, c.reason)
+		}
+	}
+}
+
+func TestCredentialObtainableHIBP(t *testing.T) {
+	// Firm rule: uncracked + in HIBP -> obtainable (count it); uncracked + not in HIBP -> not obtainable.
+	if !CredentialObtainable(Account{HIBPBreached: true}) {
+		t.Error("uncracked but HIBP-breached must be obtainable")
+	}
+	if CredentialObtainable(Account{Cracked: false, HIBPBreached: false}) {
+		t.Error("uncracked + not in HIBP must NOT be obtainable")
+	}
+	// An uncracked, HIBP-breached, enabled account on a DA path is a REACHABLE DA path.
+	da := []Account{{Enabled: true, Cracked: false, HIBPBreached: true, DADomains: "CORP.LOCAL"}}
+	if L, n, _, _, _ := breachReachability(da); n != 1 || reachBand(L) != "High" {
+		t.Fatalf("uncracked-HIBP DA: da=%d band=%s, want da=1 High", n, reachBand(L))
+	}
+	// Same account but NOT in HIBP -> not reachable -> contributes nothing.
+	noh := []Account{{Enabled: true, Cracked: false, HIBPBreached: false, DADomains: "CORP.LOCAL"}}
+	if L, n, _, _, _ := breachReachability(noh); n != 0 || reachBand(L) != "Low" {
+		t.Fatalf("uncracked-noHIBP DA: da=%d band=%s, want da=0 Low", n, reachBand(L))
+	}
+}
+
+func TestReachabilityBandsAndReachable(t *testing.T) {
+	mk := func(da, t0 bool, cracked, enabled bool) Account {
+		a := Account{Enabled: enabled, Cracked: cracked, ControlsTier0: t0}
+		if da {
+			a.DADomains = "CORP.LOCAL" // makes HasDAPathway() true
+		}
+		return a
+	}
+	// 0 enablers -> Low
+	if b := reachBand(0); b != "Low" {
+		t.Fatalf("reachBand(0) = %q, want Low", b)
+	}
+	// 1 reachable DA path -> L=0.55 exactly -> High
+	one := []Account{mk(true, false, true, true)}
+	L, da, _, _, _ := breachReachability(one)
+	if da != 1 || reachBand(L) != "High" {
+		t.Fatalf("1 reachable DA: da=%d band=%s L=%.4f, want da=1 High L=0.55", da, reachBand(L), L)
+	}
+	if L != 0.55 {
+		t.Fatalf("1 reachable DA: L = %.17g, want exactly 0.55", L)
+	}
+	// 2 reachable DA paths -> L=0.7975 exactly -> Very High
+	two := []Account{mk(true, false, true, true), mk(true, false, true, true)}
+	L2, _, _, _, _ := breachReachability(two)
+	if reachBand(L2) != "Very High" {
+		t.Fatalf("2 reachable DA: band=%s L=%.4f, want Very High", reachBand(L2), L2)
+	}
+	if L2 != 0.7975 {
+		t.Fatalf("2 reachable DA: L2 = %.17g, want exactly 0.7975", L2)
+	}
+	// DA path through a DISABLED account is NOT reachable -> contributes 0, +1 dormant
+	dis := []Account{mk(true, false, true, false)}
+	Ld, dad, _, _, dorm := breachReachability(dis)
+	if dad != 0 || reachBand(Ld) != "Low" || dorm != 1 {
+		t.Fatalf("disabled DA: da=%d band=%s dormant=%d, want da=0 Low dormant=1", dad, reachBand(Ld), dorm)
+	}
+}
+
+func TestBreachImpactNoData(t *testing.T) {
+	// A Posture with Verdict "No Data" must produce all-"—" BreachImpact fields.
+	p := Posture{Verdict: "No Data", Reachability: "—", ReachabilityPct: ""}
+	bi := EstimateBreachImpact(p)
+	if bi.Probability != "—" || bi.ProbabilityPct != "" || bi.EstimatedCost != "—" || bi.RecoveryTime != "—" {
+		t.Fatalf("no-data posture: want Probability=—, ProbabilityPct=, Cost=—, Recovery=—; got %+v", bi)
+	}
+
+	// PostureScore(all-disabled) must yield Verdict "No Data" with no dollar estimate.
+	p2 := PostureScore([]Account{{Enabled: false}})
+	if p2.Verdict != "No Data" {
+		t.Fatalf("all-disabled PostureScore: want Verdict=No Data, got %q", p2.Verdict)
+	}
+	if p2.Reachability != "—" || p2.ReachabilityPct != "" || p2.Likelihood != "—" {
+		t.Fatalf("all-disabled PostureScore: want Reachability=—, ReachabilityPct=, Likelihood=—; got Reachability=%q ReachabilityPct=%q Likelihood=%q",
+			p2.Reachability, p2.ReachabilityPct, p2.Likelihood)
+	}
+	bi2 := EstimateBreachImpact(p2)
+	if bi2.EstimatedCost != "—" || bi2.RecoveryTime != "—" || bi2.Probability != "—" {
+		t.Fatalf("EstimateBreachImpact(no-data PostureScore): want all-—, got %+v", bi2)
+	}
+}
+
+func TestHygieneExcludesDisabledAndDropsPrivilege(t *testing.T) {
+	// 2 enabled (1 cracked-violator), 8 disabled -> hygiene computed over the 2 enabled only.
+	accts := []Account{
+		{Enabled: true, RiskLevel: "Low", Cracked: true, MeetsPolicy: false}, // enabled cracked violator
+		{Enabled: true, RiskLevel: "Low", Cracked: false, MeetsPolicy: true}, // enabled clean
+	}
+	for i := 0; i < 8; i++ { // disabled padding must NOT inflate hygiene
+		accts = append(accts, Account{Enabled: false, RiskLevel: "Critical", Cracked: true, MeetsPolicy: false})
+	}
+	p := PostureScore(accts)
+	// active=2: risk=45 (no crit/high/med among enabled), strength=(1/2)*35=17.5,
+	// compliance=((2-1)/2)*20=10 -> 72.5
+	if p.Score < 72.0 || p.Score > 73.0 {
+		t.Fatalf("hygiene = %v, want ~72.5 (disabled excluded, privilege dropped)", p.Score)
+	}
+	if p.Breakdown.Privilege != 0 {
+		t.Errorf("privilege breakdown must be 0 (term removed), got %v", p.Breakdown.Privilege)
+	}
+}
+
+func TestHygieneActiveZero(t *testing.T) {
+	accts := []Account{{Enabled: false, RiskLevel: "Low"}}
+	p := PostureScore(accts)
+	if p.Verdict != "No Data" || p.Score != 0 {
+		t.Fatalf("all-disabled -> want No Data/0, got %q/%v", p.Verdict, p.Score)
+	}
+}
+
 func TestEscalateLargeCrackedReuseMediumIdempotentAndSubThreshold(t *testing.T) {
 	// 25 cracked share a hash in a large audit -> Medium (absolute N>=25, but <5% of 1000).
 	// Plus a sub-threshold cluster of 3 cracked -> untouched.
@@ -386,5 +536,115 @@ func TestEscalateLargeCrackedReuseMediumIdempotentAndSubThreshold(t *testing.T) 
 	if after.RiskLevel != before.RiskLevel || after.RiskScore != before.RiskScore ||
 		after.RiskVector != before.RiskVector || strings.Count(after.RiskVector, "MASS-REUSE") != 1 {
 		t.Errorf("not idempotent: before=%+v after=%+v", before, after)
+	}
+}
+
+// TestPostureGolden loads the shared Go⇄TS fixture and pins the Go PostureScore output.
+// Any change to either the fixture or the Go formula that diverges from the TS mirror
+// will fail here; the companion web/src/insights.golden.test.ts asserts the same fixture.
+func TestPostureGolden(t *testing.T) {
+	type goldenAccount struct {
+		Enabled              bool   `json:"enabled"`
+		Cracked              bool   `json:"cracked"`
+		RiskLevel            string `json:"risk_level"`
+		MeetsPolicy          bool   `json:"meets_policy"`
+		DADomains            string `json:"da_domains"`
+		ControlsTier0        bool   `json:"controls_tier0"`
+		EscalatedBySharedDA  bool   `json:"escalated_by_shared_da"`
+		EscalatedByMassReuse bool   `json:"escalated_by_mass_reuse"`
+		ImpactKnown          bool   `json:"impact_known"`
+		HIBPBreached         bool   `json:"hibp_breached"`
+	}
+	type goldenExpect struct {
+		Score           float64 `json:"score"`
+		Rating          string  `json:"rating"`
+		Reachability    string  `json:"reachability"`
+		ReachabilityPct string  `json:"reachability_pct"`
+		Overall         float64 `json:"overall"`
+		Verdict         string  `json:"verdict"`
+		VerdictReason   string  `json:"verdict_reason"`
+		Likelihood      string  `json:"likelihood"`
+	}
+	type goldenCase struct {
+		Name     string          `json:"name"`
+		Accounts []goldenAccount `json:"accounts"`
+		Expect   goldenExpect    `json:"expect"`
+	}
+
+	raw, err := os.ReadFile("testdata/posture_golden.json")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	var cases []goldenCase
+	if err := json.Unmarshal(raw, &cases); err != nil {
+		t.Fatalf("parse fixture: %v", err)
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.Name, func(t *testing.T) {
+			accts := make([]Account, len(c.Accounts))
+			for i, ga := range c.Accounts {
+				accts[i] = Account{
+					Enabled:              ga.Enabled,
+					Cracked:              ga.Cracked,
+					RiskLevel:            ga.RiskLevel,
+					MeetsPolicy:          ga.MeetsPolicy,
+					DADomains:            ga.DADomains,
+					ControlsTier0:        ga.ControlsTier0,
+					EscalatedBySharedDA:  ga.EscalatedBySharedDA,
+					EscalatedByMassReuse: ga.EscalatedByMassReuse,
+					ImpactKnown:          ga.ImpactKnown,
+					HIBPBreached:         ga.HIBPBreached,
+				}
+			}
+			p := PostureScore(accts)
+			e := c.Expect
+			if p.Score != e.Score {
+				t.Errorf("score: got %v want %v", p.Score, e.Score)
+			}
+			if p.Rating != e.Rating {
+				t.Errorf("rating: got %q want %q", p.Rating, e.Rating)
+			}
+			if p.Reachability != e.Reachability {
+				t.Errorf("reachability: got %q want %q", p.Reachability, e.Reachability)
+			}
+			if p.ReachabilityPct != e.ReachabilityPct {
+				t.Errorf("reachability_pct: got %q want %q", p.ReachabilityPct, e.ReachabilityPct)
+			}
+			if p.Overall != e.Overall {
+				t.Errorf("overall: got %v want %v", p.Overall, e.Overall)
+			}
+			if p.Verdict != e.Verdict {
+				t.Errorf("verdict: got %q want %q", p.Verdict, e.Verdict)
+			}
+			if p.VerdictReason != e.VerdictReason {
+				t.Errorf("verdict_reason: got %q want %q", p.VerdictReason, e.VerdictReason)
+			}
+			if p.Likelihood != e.Likelihood {
+				t.Errorf("likelihood: got %q want %q", p.Likelihood, e.Likelihood)
+			}
+		})
+	}
+}
+
+// TestPostureGoldenFixtureInSync asserts that the two fixture copies are byte-identical.
+// If they drift, copy internal/model/testdata/posture_golden.json to web/src/__fixtures__/posture_golden.json.
+func TestPostureGoldenFixtureInSync(t *testing.T) {
+	// Resolve both paths relative to this test file's location (internal/model/).
+	goFixture := filepath.Join("testdata", "posture_golden.json")
+	// Two levels up from internal/model/ -> repo root, then into web/src/__fixtures__/.
+	webFixture := filepath.Join("..", "..", "web", "src", "__fixtures__", "posture_golden.json")
+
+	goBuf, err := os.ReadFile(goFixture)
+	if err != nil {
+		t.Fatalf("read Go fixture: %v", err)
+	}
+	webBuf, err := os.ReadFile(webFixture)
+	if err != nil {
+		t.Fatalf("read web fixture: %v", err)
+	}
+	if !bytes.Equal(goBuf, webBuf) {
+		t.Fatalf("fixture files are out of sync:\n  Go:  internal/model/testdata/posture_golden.json\n  Web: web/src/__fixtures__/posture_golden.json\nRe-copy the Go fixture to the web path to fix this.")
 	}
 }

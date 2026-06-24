@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react"
-import { api, ApiError, type Report, type Summary } from "../api"
+import { api, ApiError, type BreachImpact, type Posture, type Report, type Summary } from "../api"
 import { useAuth } from "../auth"
 import { useAudits } from "../auditsData"
 import { useAccountsData } from "../accountsData"
 import { useNav } from "../nav"
 import { riskDistribution, hibpSplit, lengthBuckets, kpiCounts } from "../insights"
 import { coverageStats, exposureImpactMatrix, isProvisional } from "../matrix"
-import { Bars, ChartCard, Donut, MatrixHeatmap, PostureGauge } from "./Charts"
+import { Bars, ChartCard, Donut, MatrixHeatmap } from "./Charts"
 import { ExposureHeadline } from "./ExposureHeadline"
 import { Insights } from "./Insights"
 import { RecalcControl } from "./RecalcControl"
@@ -15,13 +15,31 @@ import { useJobs } from "../jobs"
 import { InfoTip } from "./InfoTip"
 import { GLOSSARY } from "../glossary"
 
-const RATING_COLOR: Record<string, string> = { Strong: "#34d399", Fair: "#fbbf24", Weak: "#fb7185", "No Data": "#8a96b2" }
-const LIKELIHOOD_COLOR: Record<string, string> = {
-  "Very High": "#fb7185",
-  High: "#fb7185",
-  Medium: "#fbbf24",
-  Low: "#34d399",
-  "—": "#8a96b2",
+// Verdict → CSS class suffix (maps to --crit / --high / --med / --low color tokens)
+const VERDICT_CLS: Record<string, string> = {
+  Critical: "crit",
+  "High Risk": "high",
+  Elevated: "med",
+  Guarded: "low",
+  Sound: "low",
+  "No Data": "dim",
+}
+
+// Hygiene rating → CSS class suffix (rating scale differs from verdict scale)
+const RATING_CLS: Record<string, string> = {
+  Strong: "low",
+  Fair: "high",
+  Weak: "crit",
+  "No Data": "dim",
+}
+
+// Reachability band → CSS class suffix
+const REACH_CLS: Record<string, string> = {
+  "Very High": "crit",
+  High: "crit",
+  Medium: "high",
+  Low: "low",
+  "—": "dim",
 }
 
 export function Dashboard() {
@@ -63,7 +81,6 @@ export function Dashboard() {
   const { total, cracked, breached, da } = kpiCounts(summary, accounts)
   const crackPct = total ? Math.round((cracked / total) * 100) : 0
 
-  const p = summary?.posture
   const cov = coverageStats(accounts)
   const eiMatrix = exposureImpactMatrix(accounts)
   // Impact-Unknown count: accounts whose Impact axis is Unknown (no BloodHound
@@ -114,55 +131,15 @@ export function Dashboard() {
       )}
 
       <div className="section-label">Security Posture</div>
-      <div className="panel posture-panel">
-        {p ? (
-          <>
-            <div className="posture-gauge-wrap">
-              <PostureGauge score={p.score} color={RATING_COLOR[p.rating]} rating={p.rating} />
-              <div className="posture-likelihood">
-                Estimated breach likelihood:{" "}
-                <b style={{ color: LIKELIHOOD_COLOR[p.likelihood] }}>{p.likelihood}</b>
-              </div>
-              <div className="posture-cap">Security health · higher is better · aim for Strong (≥ 85)</div>
-            </div>
-            <div className="posture-breakdown">
-              <div className="posture-cap">Each bar: more filled = healthier</div>
-              <PostureBar label="Risk profile" value={p.breakdown.risk} max={40} />
-              <PostureBar label="Password strength" value={p.breakdown.strength} max={30} />
-              <PostureBar label="Privilege control" value={p.breakdown.privilege} max={15} />
-              <PostureBar label="Policy compliance" value={p.breakdown.compliance} max={15} />
-            </div>
-          </>
-        ) : (
-          <div className="center-state"><div className="spinner">scoring</div></div>
-        )}
-      </div>
-
-      {summary?.breach_impact && (
-        <>
-          <div className="section-label">Breach Impact Estimate <InfoTip text={GLOSSARY.breach_impact} /></div>
-          <div className="panel breach-panel">
-            <div className="breach-grid">
-              <div className="breach-item">
-                <div className="breach-label">Breach Probability</div>
-                <div className={`breach-value breach-${summary.breach_impact.probability.toLowerCase().replace(" ", "-")}`}>
-                  {summary.breach_impact.probability}
-                </div>
-                <div className="breach-sub">{summary.breach_impact.probability_pct}</div>
-              </div>
-              <div className="breach-item">
-                <div className="breach-label">Estimated Cost</div>
-                <div className="breach-value">{summary.breach_impact.estimated_cost}</div>
-                <div className="breach-sub">industry avg (IBM CODB)</div>
-              </div>
-              <div className="breach-item">
-                <div className="breach-label">Recovery Time</div>
-                <div className="breach-value">{summary.breach_impact.recovery_time}</div>
-                <div className="breach-sub">to full remediation</div>
-              </div>
-            </div>
-          </div>
-        </>
+      {summary ? (
+        <PostureCard
+          posture={summary.posture}
+          breachImpact={summary.breach_impact}
+          dormantPrivileged={summary.dormant_privileged}
+          enabledCount={summary.total_accounts - summary.disabled_accounts}
+        />
+      ) : (
+        <div className="panel"><div className="center-state"><div className="spinner">scoring</div></div></div>
       )}
 
       <div className="section-label">Exposure × Impact <InfoTip text={GLOSSARY.exposure_impact_matrix} /></div>
@@ -189,6 +166,139 @@ export function Dashboard() {
   )
 }
 
+// ---- Two-axis executive posture card ----------------------------------------
+
+interface PostureCardProps {
+  posture: Posture
+  breachImpact: BreachImpact | undefined
+  dormantPrivileged: number
+  enabledCount: number
+}
+
+function PostureCard({ posture: p, breachImpact, dormantPrivileged, enabledCount }: PostureCardProps) {
+  const verdictCls = VERDICT_CLS[p.verdict] ?? "dim"
+  const reachCls = REACH_CLS[p.reachability] ?? "dim"
+  const isGated = p.verdict === "Critical" || p.verdict === "High Risk"
+
+  return (
+    <div className="posture-exec-card panel">
+
+      {/* — Verdict headline — */}
+      <div className="pex-verdict-row">
+        <div className={`pex-verdict c-${verdictCls}`}>
+          {p.verdict}
+          {p.verdict_reason && (
+            <span className="pex-verdict-reason"> — {p.verdict_reason}</span>
+          )}
+        </div>
+        {isGated && (
+          <div className="pex-overall-pill">
+            Overall {Math.round(p.overall)}/100
+            <span className="pex-overall-reason">
+              {p.verdict_reason === "Tier-0 Reachable"
+                ? " — capped by reachable Tier-0 path"
+                : " — capped by breach reachability"}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* — Two component readouts — */}
+      <div className="pex-axes">
+        <div className="pex-axis">
+          <div className="pex-axis-label">Credential Hygiene</div>
+          <div className="pex-axis-sub">avg password health across enabled accounts (strength, crackability, compliance)</div>
+          <div className="pex-axis-value">
+            <span className={`pex-axis-score c-${RATING_CLS[p.rating] ?? "dim"}`}>{p.score}</span>
+            <span className="pex-axis-of">/100</span>
+            <span className="pex-axis-rating">{p.rating}</span>
+          </div>
+          <div className="pex-axis-footnote">over {enabledCount.toLocaleString()} enabled accounts</div>
+        </div>
+
+        <div className="pex-axis-divider" aria-hidden="true" />
+
+        <div className="pex-axis">
+          <div className="pex-axis-label">Breach Reachability</div>
+          <div className="pex-axis-sub">likelihood ≥1 path to domain-control is exploitable; attack-path driven, modeled upper bound</div>
+          <div className="pex-axis-value">
+            <span className={`pex-axis-score c-${reachCls}`}>{p.reachability}</span>
+            <span className="pex-axis-pct">{p.reachability_pct}</span>
+          </div>
+          <div className="pex-axis-footnote pex-modeled-tag">modeled upper bound · band only, not a point estimate</div>
+        </div>
+      </div>
+
+      {/* — Relationship sentence (always) — */}
+      <div className="pex-relationship">
+        Two independent questions. Credential Hygiene measures the average health of all{" "}
+        <em>enabled</em> accounts. Breach Reachability measures whether{" "}
+        <em>any single path</em> to domain-control credentials exists — and one is enough.
+        A fleet healthy on average can still be fully breachable.
+      </div>
+
+      {/* — Gate-reason + priority-action (only when gated) — */}
+      {isGated && (
+        <div className="pex-gate-block">
+          <div className="pex-gate-reason">
+            <span className="pex-gate-label">Why the verdict is {p.verdict}:</span>{" "}
+            {p.verdict_reason === "Tier-0 Reachable"
+              ? "one reachable Tier-0 / DCSync path can compromise the whole domain regardless of password hygiene — fix the path to lift it."
+              : p.verdict_reason
+                ? `${p.verdict_reason} — remediate to lift the verdict.`
+                : "a reachable path to domain-control exists — remediate to lift the verdict."}
+          </div>
+          <div className="pex-action">
+            {p.rating === "Strong" || p.rating === "Fair"
+              ? <>Remediate the reachable path(s) before the password-reset backlog; hygiene is already {p.rating} — the exposure is structural, not credential-quality.</>
+              : <>Both credential hygiene and the reachable domain-control path need remediation — reset weak credentials and close the attack path.</>}
+          </div>
+        </div>
+      )}
+
+      {/* — Dormant privileged line — */}
+      {dormantPrivileged > 0 && (
+        <div className="pex-dormant">
+          <span className="pex-dormant-count c-high">{dormantPrivileged.toLocaleString()}</span>{" "}
+          dormant privileged (disabled) account{dormantPrivileged !== 1 ? "s" : ""} —
+          pre-compromised credentials that become live if re-enabled.
+        </div>
+      )}
+
+      {/* — Breach impact block — */}
+      {breachImpact && p.verdict !== "No Data" && (
+        <div className="pex-impact">
+          <div className="pex-impact-label">
+            Illustrative breach impact <span className="pex-impact-tag">modeled / illustrative</span>
+            <InfoTip text={GLOSSARY.breach_impact} />
+          </div>
+          <div className="pex-impact-grid">
+            <div className="pex-impact-item">
+              <div className="pex-impact-k">Breach probability</div>
+              <div className={`pex-impact-v breach-${breachImpact.probability.toLowerCase().replace(" ", "-")}`}>
+                {breachImpact.probability}
+              </div>
+              <div className="pex-impact-foot">{breachImpact.probability_pct}</div>
+            </div>
+            <div className="pex-impact-item">
+              <div className="pex-impact-k">Estimated cost</div>
+              <div className="pex-impact-v">{breachImpact.estimated_cost}</div>
+              <div className="pex-impact-foot">industry avg (IBM CODB)</div>
+            </div>
+            <div className="pex-impact-item">
+              <div className="pex-impact-k">Recovery time</div>
+              <div className="pex-impact-v">{breachImpact.recovery_time}</div>
+              <div className="pex-impact-foot">to full remediation</div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---- Background jobs (unchanged) --------------------------------------------
+
 function BackgroundJobsCard() {
   const { me } = useAuth()
   const { enrich, hibp, rescore } = useJobs()
@@ -214,23 +324,6 @@ function BackgroundJobsCard() {
     </div>
   )
 }
-
-function PostureBar({ label, value, max }: { label: string; value: number; max: number }) {
-  return (
-    <div className="pbar">
-      <div className="pbar-head">
-        <span>{label}</span>
-        <span className="pbar-val">
-          {value} <span className="muted">/ {max}</span>
-        </span>
-      </div>
-      <div className="risk-track">
-        <div className="risk-fill bg-low" style={{ width: `${(value / max) * 100}%` }} />
-      </div>
-    </div>
-  )
-}
-
 
 // NoAudit is shown when the session has no audit (typically none exist yet).
 function NoAudit() {

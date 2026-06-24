@@ -130,6 +130,97 @@ func TestSanitizedCarriesMassReuse(t *testing.T) {
 	}
 }
 
+// TestSanitizedSummaryHasReachabilityFields verifies that the new executive
+// aggregate fields (reachability, verdict, dormant_privileged, etc.) are
+// present in the serialized sanitized report, and that the existing canary /
+// forbidden-key guards still pass (no per-account secret leakage).
+func TestSanitizedSummaryHasReachabilityFields(t *testing.T) {
+	now := time.Date(2026, 6, 23, 0, 0, 0, 0, time.UTC)
+
+	// One enabled, cracked account with a DA pathway → PostureScore returns
+	// Verdict="Critical", Reachability="High" (L=0.55 → band High).
+	// ControlsTier0=false so it's High not Critical-Tier0, keeping the test
+	// independent of the exact gating order.
+	accts := []model.Account{{
+		Username:  "svc_da",
+		Domain:    "CORP.LOCAL",
+		DADomains: "CORP.LOCAL",
+		Cracked:   true,
+		Enabled:   true,
+		RiskLevel: "Critical",
+	}}
+	sum := model.Summary{
+		TotalAccounts:     1,
+		Cracked:           1,
+		DormantPrivileged: 0,
+		Posture:           model.PostureScore(accts),
+	}
+	// Also verify dormant_privileged path: add a disabled cracked DA account
+	// and rebuild the summary so DormantPrivileged == 1.
+	dormantAcct := model.Account{
+		Username:  "old_da",
+		Domain:    "CORP.LOCAL",
+		DADomains: "CORP.LOCAL",
+		Cracked:   true,
+		Enabled:   false, // disabled -> dormant
+		RiskLevel: "Critical",
+	}
+	allAccts := append(accts, dormantAcct)
+	sum.Posture = model.PostureScore(allAccts)
+	sum.DormantPrivileged = 1 // simulated; normally set by store
+
+	rep := Sanitize(allAccts, sum, now, "v-test")
+
+	// ---- structural field checks (via the typed struct) ----
+	if rep.Summary.Posture.Verdict == "" {
+		t.Errorf("Summary.Posture.Verdict is empty — new fields not flowing through")
+	}
+	if rep.Summary.Posture.Reachability == "" {
+		t.Errorf("Summary.Posture.Reachability is empty")
+	}
+	if rep.Summary.Posture.ReachabilityPct == "" {
+		t.Errorf("Summary.Posture.ReachabilityPct is empty")
+	}
+	if rep.Summary.Posture.Overall < 0 {
+		t.Errorf("Summary.Posture.Overall < 0")
+	}
+	if rep.Summary.DormantPrivileged != 1 {
+		t.Errorf("Summary.DormantPrivileged = %d, want 1", rep.Summary.DormantPrivileged)
+	}
+
+	// The reachable DA account (cracked+enabled+DADomains) must drive verdict to
+	// Critical (because the DA path is High → L≈0.55, but critN also fires for
+	// the Critical risk level; overall the reachable DA → High band → "High Risk"
+	// OR if t0Reachable>=1 → Critical).  Accept either Critical or High Risk —
+	// the key property is that it is NOT "Sound" / "No Data".
+	if rep.Summary.Posture.Verdict == "Sound" || rep.Summary.Posture.Verdict == "No Data" {
+		t.Errorf("Summary.Posture.Verdict = %q — expected a gated result (High Risk or Critical), not Sound/No Data",
+			rep.Summary.Posture.Verdict)
+	}
+
+	// ---- JSON key presence check ----
+	var buf bytes.Buffer
+	if err := SanitizedJSON(&buf, allAccts, sum, now, "v-test"); err != nil {
+		t.Fatalf("SanitizedJSON: %v", err)
+	}
+	for _, key := range []string{
+		`"reachability"`, `"reachability_score"`, `"reachability_pct"`,
+		`"overall"`, `"verdict"`, `"verdict_reason"`, `"dormant_privileged"`,
+	} {
+		if !bytes.Contains(buf.Bytes(), []byte(key)) {
+			t.Errorf("sanitized JSON missing key %s", key)
+		}
+	}
+
+	// ---- canary / no-leak check ----
+	// The input accounts carry usernames; they must NOT appear in the sanitized JSON.
+	for _, secret := range []string{"svc_da", "old_da", "CORP.LOCAL"} {
+		if bytes.Contains(buf.Bytes(), []byte(secret)) {
+			t.Errorf("LEAK: sanitized output contains %q", secret)
+		}
+	}
+}
+
 func TestSanitizedNoForbiddenKeys(t *testing.T) {
 	now := time.Date(2026, 6, 23, 0, 0, 0, 0, time.UTC)
 	accts := []model.Account{{

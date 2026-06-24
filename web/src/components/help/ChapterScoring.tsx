@@ -121,6 +121,59 @@ export function ChapterScoring() {
         </p>
       </section>
 
+      {/* Audit-level executive view: Hygiene × Reachability + Tier-0 gate. */}
+      <section className="score-concepts" aria-label="Audit-level executive posture: two axes plus the Tier-0 gate">
+        <div className="score-concept">
+          <span className="score-concept-k">Credential Hygiene (0–100)</span>
+          <p>
+            The first axis of the executive rollup measures the <strong>average password health across all enabled
+            accounts</strong>. It combines three terms — risk profile (weighted by proportion of Critical/High/Medium
+            accounts), password strength (proportion of uncracked credentials), and policy compliance (proportion of
+            enabled accounts that are cracked but also fail policy). Disabled accounts are excluded from the denominator:
+            they cannot authenticate and would only dilute or inflate a score that should reflect live exposure. The weights
+            are 45 / 35 / 20. A score of 85 or above rates <em>Strong</em>; 70–85 is <em>Fair</em>; below 70 is{" "}
+            <em>Weak</em>. Hygiene is an intensive average — the right operator for &ldquo;how healthy is the fleet on
+            average?&rdquo; — but the wrong one for existential risk, which is why Reachability is separate.
+          </p>
+        </div>
+        <div className="score-concept">
+          <span className="score-concept-k">Breach Reachability — modeled upper bound</span>
+          <p>
+            The second axis measures whether <strong>any single path to domain-control credentials currently exists</strong>.
+            It counts <em>reachable enablers</em>: accounts that are enabled <em>and</em> already cracked (or escalated by
+            shared-DA reuse), and that hold a Domain-Admin pathway or Tier-0 control. A smooth probability formula,
+            L&nbsp;=&nbsp;1&nbsp;−&nbsp;(1−p<sub>da</sub>)<sup>da</sup>·(1−p<sub>t0</sub>)<sup>t0</sup>·…, combines
+            independent enabler probabilities. The result is reported as a <em>band</em> (Low / Medium / High / Very High)
+            with a range (e.g., &ldquo;&gt;75%&rdquo;) — never a point percentage, because the independence assumption
+            overstates L when paths share choke points. The band is a conservative upper bound; use it as a structural
+            signal, not a precise probability.
+          </p>
+        </div>
+        <div className="score-concept">
+          <span className="score-concept-k">The Tier-0 gate — one path is enough</span>
+          <p>
+            Hygiene and Reachability combine into a single contradiction-proof <strong>Verdict</strong> through a one-way
+            gate: any reachable Tier-0 / DCSync path forces the Verdict to <strong>Critical</strong> regardless of how high
+            Hygiene is. A Very-High Reachability band (without a confirmed Tier-0 path) also forces Critical; a High band
+            forces <em>High Risk</em>. Below that, the Verdict is derived from Hygiene alone. This mirrors the SSL-Labs
+            principle that &ldquo;one fatal flaw caps the grade&rdquo; — a 94-point fleet is not <em>Sound</em> if an
+            attacker can reach a Domain Controller through one enabled, cracked, DCSync-controlling account. The{" "}
+            <em>Overall</em> value (Hygiene&nbsp;×&nbsp;(1−L)) is computed and surfaced as a labeled trend signal for
+            tracking improvement over time, but it is never displayed as the headline — only the Verdict is.
+          </p>
+        </div>
+        <div className="score-concept">
+          <span className="score-concept-k">Dormant privileged accounts</span>
+          <p>
+            Disabled accounts with a DA pathway or Tier-0 control that are already cracked (or escalated by reuse) are
+            excluded from both Hygiene and Reachability — they cannot currently authenticate. However, they are surfaced
+            explicitly on the dashboard as <em>dormant privileged</em> accounts, because their credentials are
+            pre-compromised: if any of them is re-enabled, it immediately becomes a live breach path. They are a latent
+            risk that a password reset programme must address before any re-activation.
+          </p>
+        </div>
+      </section>
+
       {/* Coverage, provisional, percentile. */}
       <section className="score-concepts" aria-label="Coverage, provisional levels, and percentile">
         <div className="score-concept">

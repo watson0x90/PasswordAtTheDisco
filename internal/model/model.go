@@ -8,36 +8,177 @@ import (
 	"time"
 )
 
+const (
+	// Credential Hygiene component weights (sum 100); privilege term removed.
+	hygieneRiskWeight       = 45.0
+	hygieneStrengthWeight   = 35.0
+	hygieneComplianceWeight = 20.0
+	hygieneStrongMin        = 85.0
+	hygieneFairMin          = 70.0
+
+	// Breach Reachability: per-enabler "exploitable" probabilities and caps.
+	reachPDA     = 0.55 // one reachable DA path -> L=0.55 (High); two -> 0.7975 (Very High)
+	reachPT0     = 0.70
+	reachPCrit   = 0.15
+	reachCapCrit = 5 // cap supporting-evidence count so estate SIZE can't auto-pin Very High
+	// reuseN deferred (v1): redacted /api/accounts has no reuse-group token -> TS parity; see spec §2.2.
+
+	// Reachability bands on integer-scaled L (L*reachScale), parity-safe.
+	reachScale      = 1_000_000
+	reachBandMedium = 250_000 // >= -> Medium  (>=25%)
+	reachBandHigh   = 500_000 // >= -> High     (>=50%)
+	reachBandVeryHi = 750_000 // >= -> Very High (>=75%)
+)
+
 // Posture is the executive Security Posture Score and its components.
 type Posture struct {
-	Score      float64          `json:"score"`
-	Rating     string           `json:"rating"`
-	Likelihood string           `json:"likelihood"`
-	Breakdown  PostureBreakdown `json:"breakdown"`
+	Score             float64          `json:"score"`      // = Credential Hygiene (0-100)
+	Rating            string           `json:"rating"`     // Strong|Fair|Weak|No Data (hygiene)
+	Likelihood        string           `json:"likelihood"` // back-compat alias = Reachability band
+	Breakdown         PostureBreakdown `json:"breakdown"`
+	Reachability      string           `json:"reachability"`       // Low|Medium|High|Very High|—
+	ReachabilityScore float64          `json:"reachability_score"` // L in [0,1)
+	ReachabilityPct   string           `json:"reachability_pct"`   // band range, e.g. ">75%" (never a point %)
+	Overall           float64          `json:"overall"`            // Hygiene*(1-L); trend/sort key only
+	Verdict           string           `json:"verdict"`            // Sound|Guarded|Elevated|High Risk|Critical|No Data
+	VerdictReason     string           `json:"verdict_reason,omitempty"`
 }
 
 // PostureBreakdown is each posture component's weighted contribution.
 type PostureBreakdown struct {
-	Risk       float64 `json:"risk"`       // /40
-	Strength   float64 `json:"strength"`   // /30
-	Privilege  float64 `json:"privilege"`  // /15
-	Compliance float64 `json:"compliance"` // /15
+	Risk       float64 `json:"risk"`       // /45
+	Strength   float64 `json:"strength"`   // /35
+	Privilege  float64 `json:"privilege"`  // always 0 (privilege term removed; kept for back-compat)
+	Compliance float64 `json:"compliance"` // /20
 }
 
 func round1(f float64) float64 { return math.Round(f*10) / 10 }
 
-// PostureScore is the executive Security Posture Score (0-100) from the redacted
-// account set: risk distribution (40) + password strength (30) + privilege
-// exposure (15) + policy compliance (15). THIS IS THE SINGLE SOURCE OF TRUTH --
-// the HTML report, audit diff, and the /api/summary the dashboard renders all use
-// it, so the on-screen gauge can never drift from the exported report.
-func PostureScore(accounts []Account) Posture {
-	total := len(accounts)
-	if total == 0 {
-		return Posture{Rating: "No Data", Likelihood: "—"}
+// CredentialObtainable reports whether an attacker can realistically obtain this account's
+// credential: it is cracked, or its NT hash is in the HIBP breach corpus (a known-breached
+// password — trivially crackable, so effectively obtainable), or it shares a hash with a DA /
+// large cracked-reuse cluster. An uncracked password that is NOT in HIBP is unknown to attackers
+// and is deliberately not held against the estate. Single source of truth for "reachable" and the
+// dormant-privileged predicate (Go store/report mirror this; keep web/src/insights.ts reachable in
+// lockstep).
+func CredentialObtainable(a Account) bool {
+	return a.Cracked || a.HIBPBreached || a.EscalatedBySharedDA || a.EscalatedByMassReuse
+}
+
+// reachable: a privileged object the auditor can actually obtain/authenticate as.
+func reachable(a Account) bool {
+	return a.Enabled && CredentialObtainable(a)
+}
+
+// powi: integer power by repeated multiply — IDENTICAL in Go and JS (avoids math.Pow/Math.pow
+// cross-libm last-ULP drift). Keep web/src/insights.ts powi in lockstep.
+func powi(base float64, n int) float64 {
+	r := 1.0
+	for i := 0; i < n; i++ {
+		r *= base
 	}
-	var crit, high, med, cracked, uncracked, da, viol int
+	return r
+}
+
+// breachReachability returns L plus the component counts (da, t0Reachable, critN, dormant).
+func breachReachability(accts []Account) (L float64, da, t0, critN, dormant int) {
+	for i := range accts {
+		a := accts[i]
+		if reachable(a) {
+			if a.HasDAPathway() {
+				da++
+			}
+			if a.ControlsTier0 {
+				t0++
+			}
+		} else if !a.Enabled && (a.ControlsTier0 || a.HasDAPathway()) && CredentialObtainable(a) {
+			dormant++ // disabled landmine
+		}
+		if a.RiskLevel == "Critical" && a.ImpactKnown && !a.HasDAPathway() && !a.ControlsTier0 {
+			critN++ // Critical + Impact-known (enriched) that is not ALREADY the catastrophe (de-dup vs da/t0)
+		}
+	}
+	if critN > reachCapCrit {
+		critN = reachCapCrit
+	}
+	// reuseN deferred (v1) — see spec §2.2.
+	L = 1 - powi(1-reachPDA, da)*powi(1-reachPT0, t0)*powi(1-reachPCrit, critN)
+	return
+}
+
+func reachBand(L float64) string {
+	ls := int(L*reachScale + 0.5) // truncation == floor for L in [0,1); identical to Math.floor(L*reachScale+0.5) in the TS mirror
+	switch {
+	case ls >= reachBandVeryHi:
+		return "Very High"
+	case ls >= reachBandHigh:
+		return "High"
+	case ls >= reachBandMedium:
+		return "Medium"
+	default:
+		return "Low"
+	}
+}
+
+func reachPct(band string) string {
+	switch band {
+	case "Very High":
+		return ">75%"
+	case "High":
+		return "50-75%"
+	case "Medium":
+		return "25-50%"
+	default:
+		return "<25%"
+	}
+}
+
+// gateVerdict: one-register, one-way (only-lowers) headline. Verdict is machine-stable;
+// VerdictReason carries the human "why" (SSL-Labs "grade capped because…" pattern).
+func gateVerdict(hygieneRating, band string, t0, active int) (verdict, reason string) {
+	switch {
+	case active == 0 && t0 == 0:
+		return "No Data", ""
+	case t0 >= 1:
+		return "Critical", "Tier-0 Reachable"
+	case band == "Very High":
+		return "Critical", "multiple reachable domain-control paths"
+	case band == "High":
+		return "High Risk", "a reachable path to domain-control exists"
+	default:
+		switch hygieneRating {
+		case "Strong":
+			return "Sound", ""
+		case "Fair":
+			return "Guarded", ""
+		default:
+			return "Elevated", ""
+		}
+	}
+}
+
+func hygieneRating(h float64) string {
+	switch {
+	case h >= hygieneStrongMin:
+		return "Strong"
+	case h >= hygieneFairMin:
+		return "Fair"
+	default:
+		return "Weak"
+	}
+}
+
+// PostureScore computes the executive Credential Hygiene (0–100) over ENABLED accounts
+// plus Breach Reachability (L) over the full account set, and a gated Verdict.
+// THIS IS THE SINGLE SOURCE OF TRUTH — the HTML report, audit diff, and the /api/summary
+// the dashboard renders all use it, so the on-screen gauge can never drift from the exported report.
+func PostureScore(accounts []Account) Posture {
+	var active, crit, high, med, uncracked, viol int
 	for _, a := range accounts {
+		if !a.Enabled {
+			continue // disabled excluded from hygiene (they padded "Strong")
+		}
+		active++
 		switch a.RiskLevel {
 		case "Critical":
 			crit++
@@ -46,78 +187,69 @@ func PostureScore(accounts []Account) Posture {
 		case "Medium":
 			med++
 		}
-		if a.Cracked {
-			cracked++
-		} else {
+		if !a.Cracked {
 			uncracked++
-		}
-		if a.HasDAPathway() {
-			da++
 		}
 		if a.Cracked && !a.MeetsPolicy {
 			viol++
 		}
 	}
-	ft := float64(total)
-	risk := math.Max(0, 100-float64(crit)/ft*200-float64(high)/ft*150-float64(med)/ft*50) / 100 * 40
-	strength := 0.0
-	if cracked+uncracked > 0 {
-		strength = float64(uncracked) / float64(cracked+uncracked) * 30
+	// Reachability is computed over the FULL set so the Tier-0 gate can fire even when active==0.
+	L, _, t0, _, _ := breachReachability(accounts)
+	band := reachBand(L)
+
+	if active == 0 {
+		p := Posture{Score: 0, Rating: "No Data", Reachability: band,
+			ReachabilityScore: L, ReachabilityPct: reachPct(band), Likelihood: band}
+		p.Verdict, p.VerdictReason = gateVerdict("No Data", band, t0, active)
+		if p.Verdict == "No Data" {
+			// No active accounts and no Tier-0 reachable: claiming a band is misleading.
+			p.Reachability = "—"
+			p.ReachabilityPct = ""
+			p.Likelihood = "—"
+		}
+		return p
 	}
-	priv := math.Max(0, 15-float64(da)/ft*100)
-	comp := float64(total-viol) / ft * 15
+	af := float64(active)
+	risk := math.Max(0, 100-float64(crit)/af*200-float64(high)/af*150-float64(med)/af*50) / 100 * hygieneRiskWeight
+	strength := float64(uncracked) / af * hygieneStrengthWeight
+	compliance := float64(active-viol) / af * hygieneComplianceWeight
+	hygiene := round1(risk + strength + compliance)
+	rating := hygieneRating(hygiene)
+
 	p := Posture{
-		Score:     round1(risk + strength + priv + comp),
-		Rating:    "Weak",
-		Breakdown: PostureBreakdown{Risk: round1(risk), Strength: round1(strength), Privilege: round1(priv), Compliance: round1(comp)},
+		Score:             hygiene,
+		Rating:            rating,
+		Breakdown:         PostureBreakdown{Risk: round1(risk), Strength: round1(strength), Privilege: 0, Compliance: round1(compliance)},
+		Reachability:      band,
+		ReachabilityScore: L,
+		ReachabilityPct:   reachPct(band),
+		Likelihood:        band,
 	}
-	if p.Score >= 85 {
-		p.Rating = "Strong"
-	} else if p.Score >= 70 {
-		p.Rating = "Fair"
-	}
-	p.Likelihood = "Low"
-	if crit > 50 || da > 20 {
-		p.Likelihood = "Very High"
-	} else if crit > 20 || da > 10 {
-		p.Likelihood = "High"
-	} else if crit > 5 || da > 3 {
-		p.Likelihood = "Medium"
-	}
+	p.Overall = round1(hygiene * (1 - L))
+	p.Verdict, p.VerdictReason = gateVerdict(rating, band, t0, active)
 	return p
 }
 
-// EstimateBreachImpact produces a simplified breach-impact estimate for the
-// executive summary, mirroring the legacy Python report's approach.
-func EstimateBreachImpact(crit, da int) BreachImpact {
-	var bi BreachImpact
-	switch {
-	case crit > 50 || da > 20:
-		bi.Probability = "Very High"
-		bi.ProbabilityPct = ">75%"
-	case crit > 20 || da > 10:
-		bi.Probability = "High"
-		bi.ProbabilityPct = "50-75%"
-	case crit > 5 || da > 3:
-		bi.Probability = "Medium"
-		bi.ProbabilityPct = "25-50%"
-	default:
-		bi.Probability = "Low"
-		bi.ProbabilityPct = "<25%"
+// EstimateBreachImpact: reachability-driven (single-source with Posture so $ and verdict agree).
+func EstimateBreachImpact(p Posture) BreachImpact {
+	// No-Data guard: an audit with no active accounts (or explicitly marked no-data)
+	// must not claim a dollar estimate or recovery time — those figures require real data.
+	if p.Verdict == "No Data" || p.Reachability == "—" || p.Reachability == "" {
+		return BreachImpact{Probability: "—", ProbabilityPct: "", EstimatedCost: "—", RecoveryTime: "—"}
 	}
+	var bi BreachImpact
+	bi.Probability = p.Reachability
+	bi.ProbabilityPct = p.ReachabilityPct
 	switch {
-	case crit > 50:
-		bi.EstimatedCost = "$1M – $5M+"
-		bi.RecoveryTime = "6–12 months"
-	case crit > 20:
-		bi.EstimatedCost = "$500K – $1M"
-		bi.RecoveryTime = "3–6 months"
-	case crit > 5:
-		bi.EstimatedCost = "$100K – $500K"
-		bi.RecoveryTime = "1–3 months"
+	case p.VerdictReason == "Tier-0 Reachable":
+		bi.EstimatedCost, bi.RecoveryTime = "$1M – $5M+", "6–12 months"
+	case p.Reachability == "Very High":
+		bi.EstimatedCost, bi.RecoveryTime = "$500K – $1M", "3–6 months"
+	case p.Reachability == "High":
+		bi.EstimatedCost, bi.RecoveryTime = "$100K – $500K", "1–3 months"
 	default:
-		bi.EstimatedCost = "$50K – $100K"
-		bi.RecoveryTime = "2–4 weeks"
+		bi.EstimatedCost, bi.RecoveryTime = "$50K – $100K", "2–4 weeks"
 	}
 	return bi
 }
@@ -574,6 +706,7 @@ type Summary struct {
 	EscalatedByMassReuse int `json:"escalated_by_mass_reuse"` // escalated via a large cracked-reuse cluster
 	PolicyViolations     int `json:"policy_violations"`       // cracked && !meets_policy
 	HighControlled       int `json:"high_controlled"`         // controlled_object_count > 100
+	DormantPrivileged    int `json:"dormant_privileged"`      // disabled but privileged & credential-compromisable
 
 	// Executive breach impact estimate.
 	BreachImpact BreachImpact `json:"breach_impact"`
