@@ -255,7 +255,12 @@ func EstimateBreachImpact(p Posture) BreachImpact {
 	bi.Probability = p.Reachability
 	bi.ProbabilityPct = p.ReachabilityPct
 	switch {
-	case p.VerdictReason == "Tier-0 Reachable":
+	case strings.Contains(p.VerdictReason, "Tier-0 controller"):
+		// Matches all three graduated Tier-0 reasons:
+		//   "N reachable Tier-0 controllers"
+		//   "1 reachable Tier-0 controller + N reachable DA pathway(s)"
+		//   "1 reachable Tier-0 controller — one compromised account reaches domain-control"
+		// Impact (full-domain credential theft) is identical regardless of severity graduation.
 		bi.EstimatedCost, bi.RecoveryTime = "$1M – $5M+", "6–12 months"
 	case p.Reachability == "Very High":
 		bi.EstimatedCost, bi.RecoveryTime = "$500K – $1M", "3–6 months"

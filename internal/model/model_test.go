@@ -354,9 +354,14 @@ func TestUnicodeAndPolicyViolationsRoundTripAndSurviveRedaction(t *testing.T) {
 }
 
 func TestBreachImpactReachabilityDriven(t *testing.T) {
-	t0 := Posture{Verdict: "Critical", VerdictReason: "Tier-0 Reachable", Reachability: "Very High"}
-	if bi := EstimateBreachImpact(t0); bi.EstimatedCost != "$1M – $5M+" || bi.RecoveryTime != "6–12 months" {
-		t.Fatalf("tier-0 reachable -> want $1M-$5M+/6-12mo, got %q/%q", bi.EstimatedCost, bi.RecoveryTime)
+	// graduated Tier-0: all three new reason strings must trigger the $1M+ tier
+	t0multi := Posture{Verdict: "Critical", VerdictReason: "7 reachable Tier-0 controllers", Reachability: "Very High"}
+	if bi := EstimateBreachImpact(t0multi); bi.EstimatedCost != "$1M – $5M+" || bi.RecoveryTime != "6–12 months" {
+		t.Fatalf("7 tier-0 -> want $1M-$5M+/6-12mo, got %q/%q", bi.EstimatedCost, bi.RecoveryTime)
+	}
+	t0lone := Posture{Verdict: "High Risk", VerdictReason: "1 reachable Tier-0 controller — one compromised account reaches domain-control", Reachability: "High"}
+	if bi := EstimateBreachImpact(t0lone); bi.EstimatedCost != "$1M – $5M+" || bi.RecoveryTime != "6–12 months" {
+		t.Fatalf("lone tier-0 -> want $1M-$5M+/6-12mo, got %q/%q", bi.EstimatedCost, bi.RecoveryTime)
 	}
 	vh := Posture{Verdict: "Critical", VerdictReason: "multiple reachable domain-control paths", Reachability: "Very High"}
 	if bi := EstimateBreachImpact(vh); bi.EstimatedCost != "$500K – $1M" {
@@ -365,6 +370,26 @@ func TestBreachImpactReachabilityDriven(t *testing.T) {
 	low := Posture{Verdict: "Sound", Reachability: "Low"}
 	if bi := EstimateBreachImpact(low); bi.Probability != "Low" || bi.EstimatedCost != "$50K – $100K" {
 		t.Fatalf("low -> want Low/$50K-$100K, got %q/%q", bi.Probability, bi.EstimatedCost)
+	}
+}
+
+func TestBreachImpactTier0Controllers(t *testing.T) {
+	// All three graduated Tier-0 verdict reasons must yield $1M – $5M+ / 6-12 months (B1 fix).
+	cases := []struct {
+		name, reason, reachability string
+		wantCost                   string
+	}{
+		{"7 t0 controllers", "7 reachable Tier-0 controllers", "Very High", "$1M – $5M+"},
+		{"1 t0 lone high risk", "1 reachable Tier-0 controller — one compromised account reaches domain-control", "High", "$1M – $5M+"},
+		{"1 t0 + 1 DA", "1 reachable Tier-0 controller + 1 reachable DA pathway", "Very High", "$1M – $5M+"},
+		{"non-t0 very-high L", "multiple reachable domain-control paths", "Very High", "$500K – $1M"},
+	}
+	for _, c := range cases {
+		p := Posture{VerdictReason: c.reason, Reachability: c.reachability, ReachabilityPct: ">75%"}
+		bi := EstimateBreachImpact(p)
+		if bi.EstimatedCost != c.wantCost {
+			t.Errorf("%s: EstimatedCost = %q, want %q", c.name, bi.EstimatedCost, c.wantCost)
+		}
 	}
 }
 
