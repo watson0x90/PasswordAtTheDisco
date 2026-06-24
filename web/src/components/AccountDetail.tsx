@@ -41,6 +41,7 @@ export function AccountDetail({
     setRel(null)
     setRelErr("")
     setRevealed({})
+    setRevealErr("")
     api
       .relationships(tail.username, tail.domain)
       .then((r) => alive && setRel(r))

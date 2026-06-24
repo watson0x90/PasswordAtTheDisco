@@ -1,10 +1,13 @@
 import { useEffect } from "react"
 import type { Account } from "../api"
 import { accountFactRows, BreakdownCards, WeakCell } from "./accountFacts"
+import { useAccountDetail } from "../accountDetail"
 
 export { WeakCell }
 
 export function AccountDrawer({ account: a, onClose }: { account: Account; onClose: () => void }) {
+  const { open: openDetail } = useAccountDetail()
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose()
     window.addEventListener("keydown", onKey)
@@ -17,9 +20,18 @@ export function AccountDrawer({ account: a, onClose }: { account: Account; onClo
       <aside className="drawer" role="dialog" aria-modal="true" aria-label={`Account ${a.username}`}>
         <div className="drawer-head">
           <span className="drawer-title">{a.username}</span>
-          <button className="link-btn" onClick={onClose}>
-            close
-          </button>
+          <div className="detail-head-actions">
+            <button
+              className="link-btn"
+              onClick={() => {
+                openDetail(a)
+                onClose()
+              }}
+            >
+              Expand details ⤢
+            </button>
+            <button className="link-btn" onClick={onClose}>close</button>
+          </div>
         </div>
         <dl className="drawer-fields">
           {accountFactRows(a).map(([k, v]) => (
