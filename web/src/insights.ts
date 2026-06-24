@@ -40,8 +40,12 @@ const reachPct = (b: string) =>
 
 // Mirrors Go model.CredentialObtainable + reachable: HIBP-breached (uncracked but in the breach
 // corpus -> effectively obtainable) counts; an uncracked hash NOT in HIBP does not.
-const reachable = (a: Account) =>
+// Exported as isReachable so the blast-radius table and the scoring verdict can never disagree.
+export const isReachable = (a: Account): boolean =>
   !!a.enabled && (!!a.cracked || !!a.hibp_breached || !!a.escalated_by_shared_da || !!a.escalated_by_mass_reuse)
+
+// Alias for internal use so posture() continues to read naturally.
+const reachable = isReachable
 
 function daPathsPhrase(da: number): string {
   if (da === 1) return "1 reachable DA pathway"
@@ -307,6 +311,23 @@ export function topControlled(accts: Account[], n: number): Account[] {
     .filter((a) => a.controlled_object_count > 0)
     .sort((a, b) => b.controlled_object_count - a.controlled_object_count)
     .slice(0, n)
+}
+
+// topControllers returns the top N controllers (controlled_object_count > 0) sorted
+// descending by count (tie-broken alphabetically by username for stability), plus the count
+// of remaining accounts (beyond the top N) that still control >100 objects — so the footer
+// can tell the operator nothing is silently hidden.
+export function topControllers(accts: Account[], n: number): { rows: Account[]; moreOver100: number } {
+  const controllers = accts
+    .filter((a) => (a.controlled_object_count || 0) > 0)
+    .sort(
+      (x, y) =>
+        (y.controlled_object_count || 0) - (x.controlled_object_count || 0) ||
+        (x.username || "").localeCompare(y.username || ""),
+    )
+  const rows = controllers.slice(0, n)
+  const moreOver100 = controllers.slice(n).filter((a) => (a.controlled_object_count || 0) > 100).length
+  return { rows, moreOver100 }
 }
 
 // Similarity distribution among cracked accounts (buckets by similarity score).
