@@ -41,21 +41,25 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
-## What's new in 2.27
+## What's new in 2.28
 
-**Reuse-floor mid tier — closes the Exposure cliff at 100.**
+**Executive scoring rework — the headline can no longer contradict itself.**
 
-- **A 50–99 reuse cluster now floors Exposure at 3.0** (stacking with the reuse bump → ~4.0,
-  Medium-Exposure tier). Previously the Exposure reuse-floor only applied at ≥100, so a mid-size
-  *uncracked* reuse cluster (e.g. 66 accounts sharing one hash) read as bottom-of-*Low* and hid on the
-  Exposure worklists. Monotonic with the existing 100→4.0 / 1000→5.0 tiers. This is an **Exposure-axis**
-  calibration: composite Level still respects the Impact matrix (low-blast-radius accounts stay Low —
-  only *cracked* clusters escalate Level, via 2.26's mass-reuse pass).
+- **Two orthogonal axes replace the single "Posture" number.** *Credential Hygiene* (an honest average
+  over **enabled** accounts — the dead privilege term removed, disabled no longer padding it) × *Breach
+  Reachability* (a smooth, scale-aware, worst-path likelihood). A **one-way Tier-0/reachability gate**
+  means the headline **Verdict** can't read "Strong" while a reachable path to domain-control exists — a
+  reachable Tier-0/DCSync path caps it at **Critical** regardless of hygiene (SSL-Labs / CVSS / BloodHound
+  Enterprise convention). Vetted by a 3-expert panel (offensive-security, measurement theory, risk
+  frameworks).
+- **HIBP-breached uncracked hashes now count as reachable** — a password in the public breach corpus is
+  effectively obtainable; an uncracked hash *not* in HIBP is not held against you.
+- **Breach impact is reachability-driven** (not Critical-count), **dormant privileged** (disabled but
+  pre-compromised) accounts are surfaced, and the model is mirrored Go⇄TS with a 10-case parity golden.
 
-Found, as the prior two were, using the **sanitized review export** (2.25) — audit the scoring without
-exposing customer data. Earlier: large cracked-reuse clusters escalate + bulk Tier-0 control flagging
-(2.26); BloodHound user-properties upload fidelity (2.24); sharper Exposure weights (2.23); Recalculate
-scoring + coverage view (2.22); an **MCP server** for AI agents (2.21).
+Surfaced by auditing a **sanitized review export** (2.25). Earlier: reuse-floor mid tier (2.27);
+mass-reuse escalation + bulk Tier-0 flagging (2.26); BloodHound upload fidelity (2.24); sharper Exposure
+weights (2.23); an **MCP server** for AI agents (2.21).
 
 See **[CHANGELOG.md](CHANGELOG.md)** for the full release history.
 

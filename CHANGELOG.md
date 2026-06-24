@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 _Nothing yet._
 
+## [2.28.0] — 2026-06-23 — Executive scoring rework (Hygiene × Reachability + Tier-0 gate)
+
+> Resolves the "Strong posture next to Very-High breach" contradiction surfaced by auditing a sanitized
+> export. Reworks the **audit-level executive rollup only**; the per-account two-axis engine is unchanged.
+> Existing audits adopt it on their next **Recalculate**. Panel-vetted (offensive-security + measurement
+> theory + risk-frameworks), built subagent-driven with two-stage review + an opus whole-branch review.
+
+### Changed
+- **Two orthogonal axes + a one-way gate.** *Credential Hygiene* (0–100, average over **enabled**
+  accounts; the mathematically-dead privilege term removed; disabled excluded; weights 45/35/20) and
+  *Breach Reachability* `L = 1 − ∏(1−pᵢ)^countᵢ` over reachable DA-path / Tier-0 / Critical enablers
+  (smooth, integer-band, scale-aware). The headline **Verdict** (`Sound · Guarded · Elevated · High Risk
+  · Critical · Critical — Tier-0 Reachable`) is gated so it can never read "Strong" while a reachable
+  Tier-0/DA path exists; `Overall = Hygiene × (1−L)` is a labelled trend key, not the headline.
+- **Reachability counts only *obtainable* credentials** — cracked **or HIBP-breached** or shared-DA /
+  mass-reuse; and only *reachable* (enabled, credential-obtainable) DA/Tier-0 paths, never structural ones.
+- **Breach impact ($ / recovery / probability) is reachability-driven**, single-sourced with the verdict.
+- **Dormant privileged** (disabled but pre-compromised) accounts surfaced (Summary, sanitized export,
+  HTML report, dashboard). `critN` requires Impact-known so unenriched weak accounts can't inflate
+  reachability. Go⇄TS parity pinned by a 10-case golden fixture (+ a fixture-in-sync guard).
+
 ## [2.27.0] — 2026-06-23 — Reuse-floor mid tier (close the 100-cliff)
 
 > A third scoring gap from the same **sanitized-export** review (2.25). Existing audits adopt the
