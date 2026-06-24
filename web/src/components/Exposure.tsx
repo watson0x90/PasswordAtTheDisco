@@ -3,8 +3,10 @@ import { api, ApiError, type Account, type Report, type ReportAccount } from "..
 import { useAccountsData } from "../accountsData"
 import { useAudits } from "../auditsData"
 import { useAuth } from "../auth"
-import { RISK_CLASS } from "../util"
+import { RISK_CLASS, hasDA } from "../util"
 import { crossDomainBridges, hibpTriage, blastRadius, type BridgeCluster } from "../exposure"
+import { topControllers, isReachable } from "../insights"
+import { useAccountDrawer } from "../accountDrawer"
 import { AccountLink } from "./AccountLink"
 import { InfoTip } from "./InfoTip"
 import { GLOSSARY } from "../glossary"
@@ -26,6 +28,7 @@ export function Exposure() {
   const timers = useRef<number[]>([])
 
   const isLead = me?.role === "lead"
+  const { openAccount } = useAccountDrawer()
 
   useEffect(() => {
     let alive = true
@@ -81,6 +84,7 @@ export function Exposure() {
   const bridges = report ? crossDomainBridges(report) : { clusters: [] as BridgeCluster[], domains: [] as string[] }
   const triage = report ? hibpTriage(report) : { tier1: [] as ReportAccount[], tier2: [] as ReportAccount[] }
   const work = blastRadius(accounts ?? ([] as Account[]))
+  const { rows: controllerRows, moreOver100 } = topControllers(accounts ?? [], 25)
 
   const visibleBridges = showAllBridges ? bridges.clusters : bridges.clusters.slice(0, 10)
   const totalBridges = bridges.clusters.length
@@ -277,6 +281,81 @@ export function Exposure() {
       {isLead && (
         <div className="meta-line">
           ⚠ revealing a credential is recorded in the audit log — operator, account, and timestamp.
+        </div>
+      )}
+
+      {/* ── Blast-radius: accounts controlling the most objects ── */}
+      <div className="section-label">
+        Blast radius — accounts controlling the most objects
+        <InfoTip text="Accounts ranked by how many AD objects they control. These are the accounts whose compromise has the widest blast radius — each controls the most resources an attacker could immediately leverage." />
+      </div>
+      <div className="table-wrap">
+        {controllerRows.length === 0 ? (
+          <div className="blast-radius-empty muted">
+            No controlled-object data — run BloodHound enrichment to populate.
+          </div>
+        ) : (
+          <table className="accounts">
+            <thead>
+              <tr>
+                <th className="num">#</th>
+                <th>Account</th>
+                <th>Domain</th>
+                <th className="num">Controlled objects</th>
+                <th>Risk</th>
+                <th>Flags</th>
+              </tr>
+            </thead>
+            <tbody>
+              {controllerRows.map((a, i) => (
+                <tr
+                  key={`${a.domain}/${a.username}/${i}`}
+                  className="blast-radius-row"
+                  onClick={() => openAccount(a)}
+                >
+                  <td className="num blast-radius-rank">{i + 1}</td>
+                  <td>
+                    <button className="link-btn" onClick={(e) => { e.stopPropagation(); openAccount(a) }}>
+                      {a.username}
+                    </button>
+                    {!a.enabled && (
+                      <span className="badge-disabled" title="disabled in AD">disabled</span>
+                    )}
+                  </td>
+                  <td className="muted">{a.domain}</td>
+                  <td className="num blast-radius-count">
+                    {(a.controlled_object_count || 0).toLocaleString()}
+                  </td>
+                  <td>
+                    <span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>
+                      {a.risk_level}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="blast-radius-flags">
+                      {a.controls_tier0 && (
+                        <span className="badge blast-flag-danger" title="Controls Tier-0 objects">T0</span>
+                      )}
+                      {hasDA(a.da_domains) && (
+                        <span className="badge crit" title={`DA pathway: ${a.da_domains}`}>DA</span>
+                      )}
+                      {a.cracked && (
+                        <span className="badge high" title="Password cracked">Crk</span>
+                      )}
+                      {isReachable(a) && (
+                        <span className="badge blast-flag-danger" title="Credential is reachable (enabled + obtainable)">RCH</span>
+                      )}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      {moreOver100 > 0 && (
+        <div className="meta-line">
+          +{moreOver100} more account{moreOver100 === 1 ? "" : "s"} control &gt;100 objects.
         </div>
       )}
     </>
