@@ -90,7 +90,7 @@ export function AccountDetail({
       ) : (
         <div className="detail-body">
           <div className="detail-title-row">
-            <span className="detail-title">{account.username}@{account.domain}</span>
+            <span className="detail-title">{account.username}</span>
             <span className={`badge ${RISK_CLASS[account.risk_level] || ""}`}>{account.risk_level}</span>
             {isLead && account.cracked && (
               peerKey(account.username, account.domain) in revealed ? (
@@ -147,7 +147,7 @@ function PeerRow({
   return (
     <li className="peer-row">
       <button className="link-btn" onClick={() => onPivot({ username: m.username, domain: m.domain })}>
-        {m.username}@{m.domain}
+        {m.username}
       </button>
       <span className={`badge ${RISK_CLASS[m.risk_level] || ""}`}>{m.risk_level}</span>
       {m.has_da_path && <span className="badge badge-da">DA</span>}
@@ -221,7 +221,7 @@ function RelationshipSections({
             {peers.map((p) => (
               <li key={`sim-${peerKey(p.username, p.domain)}`} className="peer-row">
                 <button className="link-btn" onClick={() => onPivot({ username: p.username, domain: p.domain })}>
-                  {p.username}@{p.domain}
+                  {p.username}
                 </button>
                 <span className="muted">{Math.round(p.score * 100)}% match</span>
               </li>
