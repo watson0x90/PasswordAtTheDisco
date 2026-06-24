@@ -192,6 +192,28 @@ export interface SimilarPeer {
   score: number
 }
 
+export interface PeerRef {
+  username: string
+  domain: string
+  risk_level: string
+  cracked: boolean
+  enabled: boolean
+  has_da_path: boolean
+}
+
+export interface Relationships {
+  username: string
+  domain: string
+  reuse_group: {
+    shares_hash: boolean
+    total: number
+    cracked_count: number
+    da_count: number
+    truncated: boolean
+    members: PeerRef[]
+  }
+}
+
 export interface ProbeResult {
   count: number
   matches: Account[]
@@ -396,6 +418,11 @@ export const api = {
   revealSecret: (username: string, domain?: string) =>
     request<{ username: string; password: string }>(
       `/accounts/${encodeURIComponent(username)}/secret${domain ? `?domain=${encodeURIComponent(domain)}` : ""}`,
+    ),
+
+  relationships: (username: string, domain?: string) =>
+    request<Relationships>(
+      `/accounts/${encodeURIComponent(username)}/relationships${domain ? `?domain=${encodeURIComponent(domain)}` : ""}`,
     ),
 
   probe: (password: string, csrf: string) =>
