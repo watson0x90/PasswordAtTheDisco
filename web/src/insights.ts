@@ -38,8 +38,10 @@ const reachBand = (L: number) => {
 const reachPct = (b: string) =>
   b === "Very High" ? ">75%" : b === "High" ? "50-75%" : b === "Medium" ? "25-50%" : "<25%"
 
+// Mirrors Go model.CredentialObtainable + reachable: HIBP-breached (uncracked but in the breach
+// corpus -> effectively obtainable) counts; an uncracked hash NOT in HIBP does not.
 const reachable = (a: Account) =>
-  !!a.enabled && (!!a.cracked || !!a.escalated_by_shared_da || !!a.escalated_by_mass_reuse)
+  !!a.enabled && (!!a.cracked || !!a.hibp_breached || !!a.escalated_by_shared_da || !!a.escalated_by_mass_reuse)
 
 // gateVerdict mirrors Go's gateVerdict exactly (one-register, one-way).
 function gateVerdict(hygieneRating: string, band: string, t0: number, active: number): [Verdict, string] {

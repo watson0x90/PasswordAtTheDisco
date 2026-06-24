@@ -180,5 +180,21 @@
       "verdict_reason": "",
       "likelihood": "Low"
     }
+  },
+  {
+    "name": "uncracked-hibp-da reachable via HIBP",
+    "accounts": [
+      {"enabled": true, "cracked": false, "hibp_breached": true, "risk_level": "Low", "meets_policy": true, "da_domains": "CORP.LOCAL", "controls_tier0": false, "escalated_by_shared_da": false, "escalated_by_mass_reuse": false, "impact_known": false}
+    ],
+    "expect": {
+      "score": 100,
+      "rating": "Strong",
+      "reachability": "High",
+      "reachability_pct": "50-75%",
+      "overall": 45,
+      "verdict": "High Risk",
+      "verdict_reason": "a reachable path to domain-control exists",
+      "likelihood": "High"
+    }
   }
 ]

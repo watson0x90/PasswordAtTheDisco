@@ -391,6 +391,26 @@ func TestGateVerdict(t *testing.T) {
 	}
 }
 
+func TestCredentialObtainableHIBP(t *testing.T) {
+	// Firm rule: uncracked + in HIBP -> obtainable (count it); uncracked + not in HIBP -> not obtainable.
+	if !CredentialObtainable(Account{HIBPBreached: true}) {
+		t.Error("uncracked but HIBP-breached must be obtainable")
+	}
+	if CredentialObtainable(Account{Cracked: false, HIBPBreached: false}) {
+		t.Error("uncracked + not in HIBP must NOT be obtainable")
+	}
+	// An uncracked, HIBP-breached, enabled account on a DA path is a REACHABLE DA path.
+	da := []Account{{Enabled: true, Cracked: false, HIBPBreached: true, DADomains: "CORP.LOCAL"}}
+	if L, n, _, _, _ := breachReachability(da); n != 1 || reachBand(L) != "High" {
+		t.Fatalf("uncracked-HIBP DA: da=%d band=%s, want da=1 High", n, reachBand(L))
+	}
+	// Same account but NOT in HIBP -> not reachable -> contributes nothing.
+	noh := []Account{{Enabled: true, Cracked: false, HIBPBreached: false, DADomains: "CORP.LOCAL"}}
+	if L, n, _, _, _ := breachReachability(noh); n != 0 || reachBand(L) != "Low" {
+		t.Fatalf("uncracked-noHIBP DA: da=%d band=%s, want da=0 Low", n, reachBand(L))
+	}
+}
+
 func TestReachabilityBandsAndReachable(t *testing.T) {
 	mk := func(da, t0 bool, cracked, enabled bool) Account {
 		a := Account{Enabled: enabled, Cracked: cracked, ControlsTier0: t0}
@@ -533,6 +553,7 @@ func TestPostureGolden(t *testing.T) {
 		EscalatedBySharedDA  bool   `json:"escalated_by_shared_da"`
 		EscalatedByMassReuse bool   `json:"escalated_by_mass_reuse"`
 		ImpactKnown          bool   `json:"impact_known"`
+		HIBPBreached         bool   `json:"hibp_breached"`
 	}
 	type goldenExpect struct {
 		Score           float64 `json:"score"`
@@ -574,6 +595,7 @@ func TestPostureGolden(t *testing.T) {
 					EscalatedBySharedDA:  ga.EscalatedBySharedDA,
 					EscalatedByMassReuse: ga.EscalatedByMassReuse,
 					ImpactKnown:          ga.ImpactKnown,
+					HIBPBreached:         ga.HIBPBreached,
 				}
 			}
 			p := PostureScore(accts)

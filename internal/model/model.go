@@ -54,9 +54,20 @@ type PostureBreakdown struct {
 
 func round1(f float64) float64 { return math.Round(f*10) / 10 }
 
+// CredentialObtainable reports whether an attacker can realistically obtain this account's
+// credential: it is cracked, or its NT hash is in the HIBP breach corpus (a known-breached
+// password — trivially crackable, so effectively obtainable), or it shares a hash with a DA /
+// large cracked-reuse cluster. An uncracked password that is NOT in HIBP is unknown to attackers
+// and is deliberately not held against the estate. Single source of truth for "reachable" and the
+// dormant-privileged predicate (Go store/report mirror this; keep web/src/insights.ts reachable in
+// lockstep).
+func CredentialObtainable(a Account) bool {
+	return a.Cracked || a.HIBPBreached || a.EscalatedBySharedDA || a.EscalatedByMassReuse
+}
+
 // reachable: a privileged object the auditor can actually obtain/authenticate as.
 func reachable(a Account) bool {
-	return a.Enabled && (a.Cracked || a.EscalatedBySharedDA || a.EscalatedByMassReuse)
+	return a.Enabled && CredentialObtainable(a)
 }
 
 // powi: integer power by repeated multiply — IDENTICAL in Go and JS (avoids math.Pow/Math.pow
@@ -80,8 +91,7 @@ func breachReachability(accts []Account) (L float64, da, t0, critN, dormant int)
 			if a.ControlsTier0 {
 				t0++
 			}
-		} else if !a.Enabled && (a.ControlsTier0 || a.HasDAPathway()) &&
-			(a.Cracked || a.EscalatedBySharedDA || a.EscalatedByMassReuse) {
+		} else if !a.Enabled && (a.ControlsTier0 || a.HasDAPathway()) && CredentialObtainable(a) {
 			dormant++ // disabled landmine
 		}
 		if a.RiskLevel == "Critical" && a.ImpactKnown && !a.HasDAPathway() && !a.ControlsTier0 {

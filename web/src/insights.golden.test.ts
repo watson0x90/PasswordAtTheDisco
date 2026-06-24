@@ -17,6 +17,7 @@ interface GoldenAccount {
   escalated_by_shared_da: boolean
   escalated_by_mass_reuse: boolean
   impact_known: boolean
+  hibp_breached?: boolean
 }
 
 interface GoldenExpect {
@@ -47,7 +48,7 @@ function toAccount(ga: GoldenAccount): Account {
     risk_level: ga.risk_level,
     risk_score: 0,
     risk_vector: "",
-    hibp_breached: false,
+    hibp_breached: !!ga.hibp_breached,
     hibp_breach_count: 0,
     da_domains: ga.da_domains,
     controlled_object_count: 0,

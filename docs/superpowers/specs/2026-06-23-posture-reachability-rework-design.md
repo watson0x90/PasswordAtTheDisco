@@ -43,8 +43,14 @@ and Hygiene is 0-homogeneous (scale-invariant) since every term is a ratio. Weig
 40/30/15 + a removed 15 privilege); panel-confirmed as a defensible +5/+5/+5 redistribution.
 
 ### 2.2 Breach Reachability  L  — reachable catastrophe-enablers only ⟐
-Define **reachable(a)** = `a.Enabled && (a.Cracked || a.EscalatedBySharedDA || a.EscalatedByMassReuse)`
-— a privileged object the auditor can actually obtain/authenticate as. Then:
+Define **CredentialObtainable(a)** = `a.Cracked || a.HIBPBreached || a.EscalatedBySharedDA ||
+a.EscalatedByMassReuse` and **reachable(a)** = `a.Enabled && CredentialObtainable(a)` — a privileged
+object the auditor can actually obtain/authenticate as. ⟐ **HIBP rule (firm):** an uncracked hash that
+is in the HIBP NTLM breach corpus is a known-breached password (trivially crackable → effectively
+obtainable) and MUST count as reachable; an uncracked hash that is NOT in HIBP is unknown to attackers
+and is deliberately NOT held against the estate. `CredentialObtainable` is the single source of truth
+for `reachable()` AND the dormant-privileged predicate (Go store/report + the TS `insights.ts` mirror
+all use it). Then:
 ```
 da          = #{ a : a.HasDAPathway() && reachable(a) }                       // p_da   = 0.55  ⟐
 t0Reachable = #{ a : a.ControlsTier0  && reachable(a) }                       // p_t0   = 0.70
