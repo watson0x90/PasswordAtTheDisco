@@ -12,8 +12,12 @@ controlled-object data exists per-account but there's no ranked view of "who can
 
 ## 2. Design
 A new section on the **Exposure** tab: **"Blast radius — accounts controlling the most objects."**
-- **Data:** the already-loaded redacted account set (no new endpoint). Filter `controlled_object_count > 0`,
-  sort **descending** by `controlled_object_count`.
+- **Data:** the already-loaded redacted account set (no new endpoint). Filter to **exploitable controllers**:
+  `controlled_object_count > 0` AND `(cracked || hibp_breached)` — the credential is obtainable (cracked, or
+  the NT hash is in the HIBP breach corpus even if uncracked). Uncracked-non-HIBP "latent" controllers are
+  EXCLUDED (they're not yet reachable). Sort **descending** by `controlled_object_count`. (Revised from the
+  original "all controllers" scope: the table is the evidence for the verdict, so it shows only the
+  exploitable accounts behind it.)
 - **Rows:** top **25**; a footer line "+N more accounts control >100 objects" (count of the remaining
   `controlled_object_count > 100` accounts not shown), so nothing is silently truncated.
 - **Columns:**

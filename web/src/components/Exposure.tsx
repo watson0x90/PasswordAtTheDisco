@@ -84,7 +84,10 @@ export function Exposure() {
   const bridges = report ? crossDomainBridges(report) : { clusters: [] as BridgeCluster[], domains: [] as string[] }
   const triage = report ? hibpTriage(report) : { tier1: [] as ReportAccount[], tier2: [] as ReportAccount[] }
   const work = blastRadius(accounts ?? ([] as Account[]))
-  const { rows: controllerRows, moreOver100 } = topControllers(accounts ?? [], 25)
+  // Only the EXPLOITABLE controllers: credential is obtainable (cracked, or the hash is in the
+  // HIBP breach corpus even if uncracked). Uncracked-non-HIBP "latent" controllers are excluded.
+  const obtainableControllers = (accounts ?? []).filter((a) => a.cracked || a.hibp_breached)
+  const { rows: controllerRows, moreOver100 } = topControllers(obtainableControllers, 25)
 
   const visibleBridges = showAllBridges ? bridges.clusters : bridges.clusters.slice(0, 10)
   const totalBridges = bridges.clusters.length
@@ -286,13 +289,13 @@ export function Exposure() {
 
       {/* ── Blast-radius: accounts controlling the most objects ── */}
       <div className="section-label">
-        Blast radius — accounts controlling the most objects
-        <InfoTip text="Accounts ranked by how many AD objects they control. These are the accounts whose compromise has the widest blast radius — each controls the most resources an attacker could immediately leverage." />
+        Blast radius — cracked / HIBP-exposed accounts controlling the most objects
+        <InfoTip text="Accounts whose credential is OBTAINABLE (password cracked, or the NT hash appears in the HIBP breach corpus even if uncracked), ranked by how many AD objects they control. These are the exploitable accounts whose compromise has the widest blast radius. Uncracked accounts not in HIBP are excluded — they're latent, not yet reachable." />
       </div>
       <div className="table-wrap">
         {controllerRows.length === 0 ? (
           <div className="blast-radius-empty muted">
-            No controlled-object data — run BloodHound enrichment to populate.
+            No cracked or HIBP-exposed accounts control AD objects — run BloodHound enrichment to populate, or none qualify.
           </div>
         ) : (
           <table className="accounts">
