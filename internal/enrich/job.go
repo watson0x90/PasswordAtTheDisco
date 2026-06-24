@@ -151,14 +151,14 @@ func (m *Manager) run(ctx context.Context, id string) {
 
 	// Try bulk Cypher approach first (3 queries total, fast).
 	// Falls back to per-user REST if the client doesn't support Cypher or fails.
-	m.setMessage("Querying BloodHound (bulk Cypher)…")
+	m.setMessage("Step 1 of 2 · BloodHound bulk baseline (all accounts)…")
 	bulkEnr := m.eng.BuildBulkEnricher()
 	if bulkEnr != nil {
 		m.setTotal(len(accts))
 		// Enrich the credential-obtainable candidate set: cracked, HIBP-exposed, or
 		// roastable (HasSPN/DontReqPreauth).  Roastability is derived inside
 		// EnrichCandidates from the pre-fetched Props; Shared is no longer a gate.
-		m.setMessage("Enriching credential-obtainable accounts (true transitive control + reachable Tier-0/DA)…")
+		m.setMessage("Step 2 of 2 · Detailed enrichment — transitive control + reachable Tier-0/DA…")
 		relevant := make([]struct {
 			Key              string
 			Cracked, HIBPHit bool
@@ -177,7 +177,7 @@ func (m *Manager) run(ctx context.Context, id string) {
 		if bbe, ok := bulkEnr.(engine.BulkBloodhoundEnricher); ok {
 			bbe.Bulk.EnrichCandidates(relevant)
 		}
-		m.setMessage("Rescoring accounts…")
+		m.setMessage("Step 2 of 2 · Rescoring accounts…")
 		if err := m.store.Mutate(id, func(current []model.Account) []model.Account {
 			rescored := m.eng.RescoreWith(current, bulkEnr)
 			m.mu.Lock()
