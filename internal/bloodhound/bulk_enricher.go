@@ -18,7 +18,7 @@ type BulkEnrichment struct {
 // serves enrichment lookups from memory. This replaces the per-user REST approach
 // (which made ~10 HTTP calls per user) with 4 total queries regardless of user count.
 type BulkEnricher struct {
-	client *Client
+	client candidateClient
 	once   sync.Once
 	data   BulkEnrichment
 	err    error
@@ -26,6 +26,12 @@ type BulkEnricher struct {
 
 // NewBulkEnricher creates an enricher backed by bulk Cypher queries.
 func NewBulkEnricher(c *Client) *BulkEnricher {
+	return &BulkEnricher{client: c}
+}
+
+// newBulkEnricherWithClient creates an enricher with an arbitrary candidateClient.
+// Intended for tests that inject a fake client; not for production use.
+func newBulkEnricherWithClient(c candidateClient) *BulkEnricher {
 	return &BulkEnricher{client: c}
 }
 
