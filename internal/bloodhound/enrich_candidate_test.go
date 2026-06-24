@@ -130,10 +130,6 @@ func (f *fakeCandidateClient) FetchTier0Controllers() (map[string]bool, error) {
 	return map[string]bool{}, nil
 }
 
-func (f *fakeCandidateClient) CheckDAPathsREST(objectIDs map[string]string, existing map[string][]string) map[string][]string {
-	return map[string][]string{}
-}
-
 // --- Tests ---
 
 // TestEnrichCandidateTransitive covers three cases:

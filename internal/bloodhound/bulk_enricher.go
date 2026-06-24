@@ -77,56 +77,6 @@ func (b *BulkEnricher) Prefetch() error {
 	return b.err
 }
 
-// CheckDAForAccounts runs REST shortest-path DA checks for the credential-relevant
-// subset of accounts that also have elevated privilege indicators (controllables).
-// The logic: only accounts that are (cracked OR shared OR HIBP-exposed) AND have
-// controllable objects are realistic DA escalation candidates worth checking.
-// Additionally, Kerberoastable (hasSPN) and AS-REP roastable (dontReqPreauth)
-// accounts are always checked — they're offline-crackable attack targets.
-func (b *BulkEnricher) CheckDAForAccounts(accounts []struct {
-	Key     string
-	Cracked bool
-	Shared  bool
-	HIBPHit bool
-}) {
-	// Build the set: credential-relevant AND privileged, OR Kerberoastable/AS-REP roastable.
-	candidates := map[string]string{} // key -> objectID
-	for _, a := range accounts {
-		if _, already := b.data.DAUsers[a.Key]; already {
-			continue
-		}
-		p, hasProps := b.data.Props[a.Key]
-		if !hasProps || p.ObjectID == "" {
-			continue
-		}
-
-		// Always check Kerberoastable and AS-REP roastable accounts (offline crack targets)
-		if p.HasSPN || p.DontReqPreauth {
-			candidates[a.Key] = p.ObjectID
-			continue
-		}
-
-		// Check credential-relevant accounts that have controllables
-		if !a.Cracked && !a.Shared && !a.HIBPHit {
-			continue
-		}
-		if _, hasCtrl := b.data.Controllables[a.Key]; !hasCtrl {
-			continue
-		}
-		candidates[a.Key] = p.ObjectID
-	}
-	if len(candidates) == 0 {
-		log.Printf("bloodhound: no credential-relevant privileged accounts need DA path checks")
-		return
-	}
-	log.Printf("bloodhound: checking DA paths for %d accounts (privileged credential-relevant + Kerberoastable/AS-REP)...", len(candidates))
-	additional := b.client.CheckDAPathsREST(candidates, b.data.DAUsers)
-	for k, domains := range additional {
-		b.data.DAUsers[k] = append(b.data.DAUsers[k], domains...)
-	}
-	log.Printf("bloodhound: total DA pathways: %d users", len(b.data.DAUsers))
-}
-
 // NewBulkEnricherFromData builds an enricher whose cache is pre-populated, without a
 // Cypher prefetch. Used for seeding/tests; Prefetch is not required (Lookup/Tier0 read data directly).
 func NewBulkEnricherFromData(data BulkEnrichment) *BulkEnricher {

@@ -4,14 +4,13 @@ package bloodhound
 // the bulk prefetch, so tests can inject a fake without a live BloodHound server.
 // *Client satisfies this interface (compile-time assertion below).
 type candidateClient interface {
-	// Bulk prefetch methods (used by BulkEnricher.Prefetch and CheckDAForAccounts).
+	// Bulk prefetch methods (used by BulkEnricher.Prefetch).
 	FetchAllUserProps() (map[string]BulkUserProps, error)
 	FetchDAUsers() (map[string][]string, error)
 	FetchControllableCounts() (map[string]int, error)
 	FetchTier0Controllers() (map[string]bool, error)
-	CheckDAPathsREST(objectIDs map[string]string, existing map[string][]string) map[string][]string
 
-	// Per-candidate enrichment methods (used by EnrichCandidate in Task 4+).
+	// Per-candidate enrichment methods (used by EnrichCandidates).
 	GetUserControllables(objectID string) (map[string]map[string]int, map[string][]ControllableItem, int, error)
 	GetShortestPath(src, dst string) (hasPath, known bool, err error)
 	GetGroup(name string) (searchHit, bool, error)
