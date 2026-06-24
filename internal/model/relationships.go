@@ -13,22 +13,6 @@ type PeerRef struct {
 	HasDAPath bool   `json:"has_da_path"` // flags the DA account(s) behind a Shared-DA escalation
 }
 
-// riskRank orders risk levels for sorting (lower = more severe).
-func riskRank(level string) int {
-	switch level {
-	case "Critical":
-		return 0
-	case "High":
-		return 1
-	case "Medium":
-		return 2
-	case "Low":
-		return 3
-	default:
-		return 4
-	}
-}
-
 // ReuseGroupPeers returns the OTHER accounts sharing focus's NT hash (exact password
 // reuse). Accounts with an empty/blank-password NT hash (reuseKey == "") never group.
 // Peers are sorted DA-first then by descending risk, and capped at limit (limit <= 0
@@ -70,7 +54,7 @@ func ReuseGroupPeers(accts []Account, focus Account, limit int) (peers []PeerRef
 		if all[i].HasDAPath != all[j].HasDAPath {
 			return all[i].HasDAPath // DA first
 		}
-		return riskRank(all[i].RiskLevel) < riskRank(all[j].RiskLevel)
+		return levelRank(all[i].RiskLevel) > levelRank(all[j].RiskLevel)
 	})
 	if limit > 0 && len(all) > limit {
 		all = all[:limit]
