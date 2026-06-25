@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 import { api, ApiError, type Account, type PeerRef, type Relationships } from "../api"
 import { useAccountsData } from "../accountsData"
 import { useAuth } from "../auth"
@@ -9,6 +9,34 @@ import { RISK_CLASS } from "../util"
 
 type RevealMap = Record<string, string>
 const peerKey = (u: string, d: string) => `${u}@${d}`
+
+// Fact groups for the detail page. Labels match accountFactRows() so values render
+// identically to the drawer; we just partition them into themed cards. Risk-summary
+// fields (level/score/exposure/impact/percentile) live in the hero tiles, not a card.
+const IDENTITY_FACTS = ["Domain", "Status", "Enabled", "Coverage"]
+const PASSWORD_FACTS = [
+  "Complexity", "Password length", "Meets policy", "Weaknesses",
+  "Contains Unicode", "Similarity", "HIBP breaches", "Shared with",
+]
+const AD_FACTS = [
+  "DA pathway", "Controlled objects", "Controls Tier-0", "Password last set",
+  "Password never expires", "Days out of compliance", "Kerberoastable (SPN)",
+  "AS-REP roastable", "Escalated (Shared-DA)", "Escalated (Mass-reuse)", "Latent risk",
+]
+
+// pickFacts selects the rows for a card in the given order, dropping empty "—" values
+// so curated cards stay uncluttered (the drawer keeps the full flat list).
+function pickFacts(rows: [string, ReactNode][], labels: string[]): [string, ReactNode][] {
+  const out: [string, ReactNode][] = []
+  for (const label of labels) {
+    const row = rows.find(([k]) => k === label)
+    if (row && !(typeof row[1] === "string" && row[1].trim() === "—")) out.push(row)
+  }
+  return out
+}
+
+const tierWord = (v: number) => (v >= 8 ? "Critical" : v >= 6 ? "High" : v >= 4 ? "Medium" : "Low")
+const lvlClass = (level: string) => `lvl-${RISK_CLASS[level] || "low"}`
 
 export function AccountDetail({
   trail, onBack, onJump, onPivot, onClose,
@@ -61,6 +89,9 @@ export function AccountDetail({
     }
   }
 
+  const rows = account ? accountFactRows(account) : []
+  const impactText = account == null || account.impact_score == null ? "Unknown" : account.impact_score.toFixed(1)
+
   return (
     <div className="detail-overlay" role="dialog" aria-modal="true" aria-label={`Account ${tail.username}`}>
       <div className="detail-head">
@@ -89,34 +120,61 @@ export function AccountDetail({
         </div>
       ) : (
         <div className="detail-body">
-          <div className="detail-title-row">
-            <span className="detail-title">{account.username}</span>
-            <span className={`badge ${RISK_CLASS[account.risk_level] || ""}`}>{account.risk_level}</span>
-            {isLead && account.cracked && (
-              peerKey(account.username, account.domain) in revealed ? (
-                <code className="mono-pw">{revealed[peerKey(account.username, account.domain)]}</code>
-              ) : (
-                <button className="reveal-btn btn-reveal" onClick={() => reveal(account.username, account.domain)}>Reveal</button>
-              )
+          <header className="ad-hero">
+            <div className="ad-hero-id">
+              <div className="ad-hero-name">
+                <span className="ad-hero-user">{account.username}</span>
+                <span className={`badge ${RISK_CLASS[account.risk_level] || ""}`}>{account.risk_level}</span>
+              </div>
+              <div className="ad-hero-meta">
+                <span>{account.domain}</span>
+                <span className="dot">·</span>
+                <span>{account.cracked ? "Cracked" : "Uncracked"}</span>
+                <span className="dot">·</span>
+                <span>{account.enabled ? "Enabled" : "Disabled"}</span>
+                <span className="dot">·</span>
+                <span>{account.coverage === "full" ? "BloodHound-enriched" : "Not enriched"}</span>
+              </div>
+            </div>
+            <RevealControl
+              username={account.username}
+              domain={account.domain}
+              cracked={account.cracked}
+              isLead={isLead}
+              revealed={revealed}
+              onReveal={reveal}
+            />
+          </header>
+
+          <div className="ad-tiles">
+            <Tile label="Risk score" value={account.risk_score.toFixed(1)} sub={account.risk_level} level={account.risk_level} />
+            <Tile label="Exposure" value={account.exposure_score.toFixed(1)} sub={tierWord(account.exposure_score)} />
+            <Tile label="Impact" value={impactText} sub={account.coverage === "full" ? "blast radius" : "not enriched"} />
+            {account.percentile != null && (
+              <Tile label="Triage" value={`${Math.round(account.percentile * 100)}`} sub="percentile" />
             )}
           </div>
 
-          <section className="detail-why">
-            <div className="detail-section-title">Why this level</div>
+          <section className={`ad-why ${RISK_CLASS[account.risk_level] || ""}`}>
+            <div className="ad-why-label">Why this level</div>
             {explainLevel(account).map((line, i) => (
-              <p key={i} className={i === 0 ? "why-headline" : "why-detail"}>{line}</p>
+              <p key={i} className={i === 0 ? "ad-why-headline" : "ad-why-detail"}>{line}</p>
             ))}
           </section>
 
-          <section className="detail-facts">
-            <dl className="drawer-fields">
-              {accountFactRows(account).map(([k, v]) => (
-                <div className="drawer-row" key={k}><dt>{k}</dt><dd>{v}</dd></div>
-              ))}
-            </dl>
-          </section>
-
-          <BreakdownCards a={account} />
+          <div className="ad-cards">
+            <FactCard title="Identity" rows={pickFacts(rows, IDENTITY_FACTS)} />
+            <FactCard title="Password" rows={pickFacts(rows, PASSWORD_FACTS)} />
+            <FactCard title="Active Directory" rows={pickFacts(rows, AD_FACTS)} />
+            <section className="panel ad-card ad-span">
+              <div className="ad-card-title">Scoring</div>
+              <div className="ad-vector">
+                <span className="ad-vector-label">Risk vector</span>
+                <code className="vector">{account.risk_vector || "—"}</code>
+              </div>
+              <BreakdownCards a={account} />
+            </section>
+          </div>
 
           <RelationshipSections
             account={account}
@@ -134,6 +192,53 @@ export function AccountDetail({
   )
 }
 
+function Tile({ label, value, sub, level }: { label: string; value: string; sub?: string; level?: string }) {
+  return (
+    <div className={`stat stat-mini ad-tile${level ? ` ${lvlClass(level)}` : ""}`}>
+      <div className="stat-label">{label}</div>
+      <div className="stat-value">{value}</div>
+      {sub && <div className="stat-sub">{sub}</div>}
+    </div>
+  )
+}
+
+function FactCard({ title, rows }: { title: string; rows: [string, ReactNode][] }) {
+  if (!rows.length) return null
+  return (
+    <section className="panel ad-card">
+      <div className="ad-card-title">{title}</div>
+      <dl className="ad-facts">
+        {rows.map(([k, v]) => (
+          <div className="ad-fact" key={k}>
+            <dt>{k}</dt>
+            <dd>{v}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  )
+}
+
+// RevealControl renders the lead-only cleartext reveal for the focused account.
+function RevealControl({
+  username, domain, cracked, isLead, revealed, onReveal,
+}: {
+  username: string
+  domain: string
+  cracked: boolean
+  isLead: boolean
+  revealed: RevealMap
+  onReveal: (u: string, d: string) => void
+}) {
+  if (!isLead || !cracked) return null
+  const key = peerKey(username, domain)
+  return key in revealed ? (
+    <code className="mono-pw ad-hero-pw">{revealed[key]}</code>
+  ) : (
+    <button className="reveal-btn btn-reveal ad-hero-reveal" onClick={() => onReveal(username, domain)}>Reveal password</button>
+  )
+}
+
 function PeerRow({
   m, isLead, revealed, onReveal, onPivot,
 }: {
@@ -146,12 +251,13 @@ function PeerRow({
   const key = peerKey(m.username, m.domain)
   return (
     <li className="peer-row">
-      <button className="link-btn" onClick={() => onPivot({ username: m.username, domain: m.domain })}>
+      <button className="link-btn peer-name" onClick={() => onPivot({ username: m.username, domain: m.domain })}>
         {m.username}
       </button>
       <span className={`badge ${RISK_CLASS[m.risk_level] || ""}`}>{m.risk_level}</span>
       {m.has_da_path && <span className="badge badge-da">DA</span>}
       {!m.enabled && <span className="muted">disabled</span>}
+      <span className="peer-spacer" />
       {isLead && m.cracked && (
         key in revealed ? (
           <code className="mono-pw">{revealed[key]}</code>
@@ -174,17 +280,21 @@ function RelationshipSections({
   onReveal: (u: string, d: string) => void
   onPivot: (c: Crumb) => void
 }) {
-  if (relErr) return <div className="error">relationships: {relErr}</div>
-  if (!rel) return <div className="muted">Loading relationships…</div>
+  if (relErr) return <section className="panel ad-card"><div className="error">relationships: {relErr}</div></section>
+  if (!rel) return <section className="panel ad-card"><div className="muted">Loading relationships…</div></section>
   const group = rel.reuse_group
   const daMembers = group.members.filter((m) => m.has_da_path)
   const peers = account.similar_peers ?? []
+  const nothing = !group.shares_hash && peers.length === 0
   return (
-    <>
+    <div className="ad-cards">
       {group.shares_hash && (
-        <section className="detail-rel">
-          <div className="detail-section-title">Password-reuse group ({group.total})</div>
-          <p className="muted">
+        <section className="panel ad-card">
+          <div className="ad-card-title">
+            Password-reuse group
+            <span className="ad-card-count">{group.total}</span>
+          </div>
+          <p className="ad-card-sub">
             {group.cracked_count} cracked · same NT hash
             {group.truncated ? ` · showing first ${group.members.length}` : ""}
           </p>
@@ -196,9 +306,9 @@ function RelationshipSections({
         </section>
       )}
       {daMembers.length > 0 && (
-        <section className="detail-rel rel-da">
-          <div className="detail-section-title">⚠ Shares a password with Domain Admin</div>
-          <p className="muted">Cracking this credential is equivalent to compromising:</p>
+        <section className="panel ad-card ad-card-danger">
+          <div className="ad-card-title">⚠ Shares a password with Domain Admin</div>
+          <p className="ad-card-sub">Cracking this credential is equivalent to compromising:</p>
           <ul className="peer-list">
             {daMembers.map((m) => (
               <PeerRow key={`da-${peerKey(m.username, m.domain)}`} m={m} isLead={isLead} revealed={revealed} onReveal={onReveal} onPivot={onPivot} />
@@ -207,28 +317,38 @@ function RelationshipSections({
         </section>
       )}
       {account.escalated_by_mass_reuse && group.shares_hash && (
-        <section className="detail-rel">
-          <div className="detail-section-title">Mass-reuse cluster</div>
-          <p className="muted">
+        <section className="panel ad-card">
+          <div className="ad-card-title">Mass-reuse cluster</div>
+          <p className="ad-card-sub">
             {group.total + 1} accounts share this password ({group.cracked_count} cracked). Cracking one compromises all.
           </p>
         </section>
       )}
       {peers.length > 0 && (
-        <section className="detail-rel">
-          <div className="detail-section-title">Near-duplicate passwords</div>
+        <section className="panel ad-card">
+          <div className="ad-card-title">
+            Near-duplicate passwords
+            <span className="ad-card-count">{peers.length}</span>
+          </div>
           <ul className="peer-list">
             {peers.map((p) => (
               <li key={`sim-${peerKey(p.username, p.domain)}`} className="peer-row">
-                <button className="link-btn" onClick={() => onPivot({ username: p.username, domain: p.domain })}>
+                <button className="link-btn peer-name" onClick={() => onPivot({ username: p.username, domain: p.domain })}>
                   {p.username}
                 </button>
+                <span className="peer-spacer" />
                 <span className="muted">{Math.round(p.score * 100)}% match</span>
               </li>
             ))}
           </ul>
         </section>
       )}
-    </>
+      {nothing && (
+        <section className="panel ad-card">
+          <div className="ad-card-title">Relationships</div>
+          <p className="ad-card-sub">No password-reuse peers or near-duplicates found for this account.</p>
+        </section>
+      )}
+    </div>
   )
 }
