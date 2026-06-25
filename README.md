@@ -89,29 +89,72 @@ See **[CHANGELOG.md](CHANGELOG.md)** for the full release history.
 > your own domains locally — real domain names, usernames, and cracked data are
 > never committed.
 
-## Quick start
+## Build
 
-> Setting up a real instance? Use the **guided installer** instead — see
-> [Deploy (first-time setup)](#deploy-first-time-setup). The manual steps below are for
-> local development.
+**Prerequisites:** Go 1.26+, and Node 20+ for the web UI.
 
 ```bash
-# 1. Build
-go build -o patd ./cmd/patd
+# one-time: install the SPA's dependencies
+cd web && npm install && cd ..
 
-# 2. Create an operator (argon2id). Copy the template and add the printed hash.
-cp users.example.json users.json
-go run ./cmd/patd hashpw            # prompts for a password, prints its hash
+# build a stamped, self-contained binary (Go API + embedded React SPA)
+scripts/build.sh            # Linux / macOS / Windows (Git Bash)
+# or, on Windows PowerShell:
+scripts\build.ps1
+```
 
-# 3. Build the web console (deps are vetted + pinned; never run a bare npm install)
-cd web && npm ci --ignore-scripts && npm run build && cd ..
+This builds the SPA, embeds it, stamps the version from `git describe`, and produces
+`patd` (`patd.exe` on Windows). Flags: `--skip-web` (reuse the existing `web/dist`),
+`--output <path>` (`-SkipWeb` / `-Output` in PowerShell).
 
-# 4. Run the server
-PATD_INGEST_TOKEN=$(openssl rand -hex 32) PATD_USERS_FILE=users.json \
-  PATD_AUDIT_LOG=audit.log PATD_STATIC_DIR=web/dist ./patd
-#   (set PATD_TLS_CERT / PATD_TLS_KEY for HTTPS)
+Confirm the stamp:
 
-# 5. Run an audit and push results to the running server
+```bash
+./patd --version          # patd v2.30.0 (abc1234, built 2026-06-25T...Z)
+```
+
+**Dev build (no version stamp, SPA served from disk):** `go run ./cmd/patd` serves
+`web/dist` from disk and reports `version=dev`. Use the build scripts for a real,
+embedded, versioned binary.
+
+## Run
+
+```bash
+patd                       # 127.0.0.1:8443 (default)
+patd --port 9000           # 127.0.0.1:9000
+patd --addr 0.0.0.0:8443   # bind all interfaces (requires TLS, see below)
+PATD_ADDR=127.0.0.1:9000 patd
+```
+
+Precedence is `--addr`/`--port` flag → `PATD_ADDR` → default `127.0.0.1:8443`. Binding a
+non-loopback address requires TLS — set `PATD_TLS_CERT` and `PATD_TLS_KEY`, or the server
+refuses to serve plaintext off loopback. `patd --help` lists all flags and key env vars.
+
+## First run — operators
+
+Bootstrap the first lead operator, then start the server and log in:
+
+```bash
+patd user add admin --role lead     # prompts for a password (stdin)
+patd user list                      # USERNAME  ROLE  STATUS
+patd user passwd admin              # reset a password
+```
+
+While the server is running it owns `users.json` — add or edit operators in the **UI**
+(Admin → Operators), not the CLI. The CLI refuses to edit the file when it detects a
+running server; pass `--force` to override (last resort; can clobber the server's copy).
+
+> Setting up a real instance? Use the **guided installer** instead — see
+> [Deploy (first-time setup)](#deploy-first-time-setup), which builds the binary, creates
+> your first operator, and sets up TLS in one guided flow.
+
+## Run an audit
+
+Run the engine over your dumps and push the results to the running server. `-token` is the
+ingest bearer token the server was started with (`PATD_INGEST_TOKEN`):
+
+```bash
+# Run an audit and push results to the running server
 ./patd audit -token "$PATD_INGEST_TOKEN" \
   -hibp PwnedPasswordsDownloader/pwnedpasswords_ntlm.txt \
   CORP cracked.txt uncracked.txt
@@ -141,14 +184,6 @@ Input is impacket `secretsdump` NTDS format
 (`user:rid:lm:nt:::password`) or a simple `user:hash[:password]`; HIBP and
 BloodHound are optional. See [`docs/architecture.md`](docs/architecture.md) for
 the full data flow, API, scoring model, and config.
-
-## Single-binary release
-
-```bash
-cd web && npm ci --ignore-scripts && npm run build && cd ..
-rm -rf internal/webui/dist && cp -r web/dist internal/webui/dist
-go build -tags embed -o patd ./cmd/patd     # ~10 MB; SPA baked in, zero disk deps
-```
 
 ## Deploy (first-time setup)
 
@@ -278,8 +313,9 @@ in the Admin UI — revocation is immediate.
   page that builds the bundled PwnedPasswordsDownloader and downloads + indexes the
   NTLM set in the background, and a **BloodHound** page to configure + test the BHE
   connection from the console — both hot-swap the live integration without a restart.
-- **CLI:** `patd audit` (run the engine over dumps → ingest), `patd hashpw`,
-  `patd token` (manage MCP API tokens), `patd reindex`.
+- **CLI:** `patd audit` (run the engine over dumps → ingest), `patd user`
+  (bootstrap / manage operators), `patd hashpw`, `patd token` (manage MCP API tokens),
+  `patd reindex`; `patd --help` / `patd --version`.
 - **MCP server:** a Streamable-HTTP JSON-RPC endpoint (`POST /api/mcp`) that lets AI
   agents query an audit through role-scoped tokens — redacted read tools plus a lead-only,
   audited cleartext reveal. See **[MCP server (for AI agents)](#mcp-server-for-ai-agents)**.
@@ -318,7 +354,7 @@ dropping the key *and* clearing decrypted data from memory.
 ## Layout
 
 ```
-cmd/patd/        server + CLI (audit, hashpw, reindex)
+cmd/patd/        server + CLI (audit, user, hashpw, token, reindex)
 internal/        engine + API: secretsdump · hibp · pwanalysis · bloodhound ·
                  risk · engine · report · policy · store · vault · model ·
                  auth · audit · httpapi · webui
