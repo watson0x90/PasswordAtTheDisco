@@ -103,19 +103,23 @@ describe("domainReport", () => {
       da_pathways: [ra("a", "A.LOCAL"), ra("b", "B.LOCAL")],
       cracked: [ra("a", "A.LOCAL"), ra("c", "A.LOCAL"), ra("d", "B.LOCAL")],
       hibp_exposed: [ra("d", "B.LOCAL")],
+      asrep_roastable: [ra("e", "A.LOCAL"), ra("f", "B.LOCAL")],
     })
     const d = domainReport(org, "A.LOCAL")!
     expect(d.da_pathways.map((x) => x.username)).toEqual(["a"])
     expect(d.cracked.map((x) => x.username)).toEqual(["a", "c"])
     expect(d.hibp_exposed).toEqual([])
+    expect(d.asrep_roastable.map((x) => x.username)).toEqual(["e"])
   })
 
   it("keeps reuse groups with at least one member in the domain", () => {
     const org = emptyReport({
       cracked_reuse: [group(1, ["A.LOCAL", "B.LOCAL"]), group(2, ["B.LOCAL", "C.LOCAL"])],
+      uncracked_reuse: [group(3, ["A.LOCAL"]), group(4, ["C.LOCAL"])],
     })
     const d = domainReport(org, "A.LOCAL")!
     expect(d.cracked_reuse.map((g) => g.group_id)).toEqual([1])
+    expect(d.uncracked_reuse.map((g) => g.group_id)).toEqual([3])
   })
 
   it("derives total/cracked/uncracked counts from the filtered domain accounts", () => {
