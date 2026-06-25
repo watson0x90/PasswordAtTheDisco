@@ -267,8 +267,9 @@ func main() {
 }
 
 // readPassword prompts on stderr and reads a single line from in, trimming the
-// trailing newline. Shared by hashpw and the `user` subcommands. Reading from a
-// reader (not os.Stdin directly) keeps it unit-testable and pipeable for automation.
+// trailing newline. Used by hashpw, and reusable by the operator-management
+// subcommands added later. Reading from a reader (not os.Stdin directly) keeps it
+// unit-testable and pipeable for automation.
 func readPassword(in io.Reader, prompt string) (string, error) {
 	if prompt != "" {
 		fmt.Fprint(os.Stderr, prompt)
