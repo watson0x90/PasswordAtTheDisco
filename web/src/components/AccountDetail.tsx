@@ -4,7 +4,8 @@ import { useAccountsData } from "../accountsData"
 import { useAuth } from "../auth"
 import { type Crumb } from "../trail"
 import { accountFactRows, BreakdownCards, RiskTiles, WhyCallout, pickFacts } from "./accountFacts"
-import { RISK_CLASS } from "../util"
+import { RISK_CLASS, hasDA, weaknessTags } from "../util"
+import { disabledLatentRisk } from "../disabledRisk"
 
 type RevealMap = Record<string, string>
 const peerKey = (u: string, d: string) => `${u}@${d}`
@@ -14,15 +15,10 @@ const peerKey = (u: string, d: string) => `${u}@${d}`
 // fields (level/score/exposure/impact/percentile) live in the hero tiles, and
 // identity (domain/status/enabled/coverage) lives in the hero meta line — neither is
 // repeated as a card.
-const PASSWORD_FACTS = [
-  "Complexity", "Password length", "Meets policy", "Weaknesses",
-  "Contains Unicode", "Similarity", "HIBP breaches", "Shared with",
-]
-const AD_FACTS = [
-  "DA pathway", "Controlled objects", "Controls Tier-0", "Password last set",
-  "Password never expires", "Days out of compliance", "Kerberoastable (SPN)",
-  "AS-REP roastable", "Escalated (Shared-DA)", "Escalated (Mass-reuse)", "Latent risk",
-]
+// Neutral "details" facts shown under the risk-flag chips in each card. Labels match
+// accountFactRows(); the dangerous states are surfaced as chips instead (see *Flags).
+const PASSWORD_DETAILS = ["Complexity", "Password length", "Similarity", "Contains Unicode"]
+const AD_DETAILS = ["Controlled objects", "Password last set"]
 
 export function AccountDetail({
   trail, onBack, onJump, onPivot, onClose,
@@ -75,6 +71,14 @@ export function AccountDetail({
     }
   }
 
+  function hide(key: string) {
+    setRevealed((p) => {
+      const next = { ...p }
+      delete next[key]
+      return next
+    })
+  }
+
   const rows = account ? accountFactRows(account) : []
 
   return (
@@ -121,14 +125,6 @@ export function AccountDetail({
                 <span>{account.coverage === "full" ? "BloodHound-enriched" : "Not enriched"}</span>
               </div>
             </div>
-            <RevealControl
-              username={account.username}
-              domain={account.domain}
-              cracked={account.cracked}
-              isLead={isLead}
-              revealed={revealed}
-              onReveal={reveal}
-            />
           </header>
 
           <WhyCallout a={account} />
@@ -136,8 +132,8 @@ export function AccountDetail({
           <RiskTiles a={account} />
 
           <div className="ad-cards">
-            <FactCard title="Password" rows={pickFacts(rows, PASSWORD_FACTS)} />
-            <ADCard account={account} rows={pickFacts(rows, AD_FACTS)} />
+            <PasswordCard account={account} rows={rows} isLead={isLead} revealed={revealed} onReveal={reveal} onHide={hide} />
+            <ADCard account={account} rows={rows} />
             <section className="panel ad-card ad-span">
               <div className="ad-card-title">Scoring</div>
               <div className="ad-vector">
@@ -164,77 +160,131 @@ export function AccountDetail({
   )
 }
 
-function FactCard({ title, rows }: { title: string; rows: [string, ReactNode][] }) {
+type Flag = { label: string; level: "bad" | "warn" }
+
+// FlagChips renders the "Risk flags" band — the dangerous states of a card surfaced as
+// coloured chips. Renders nothing when there are no flags.
+function FlagChips({ flags }: { flags: Flag[] }) {
+  if (!flags.length) return null
+  return (
+    <>
+      <p className="ad-flags-label">Risk flags</p>
+      <div className="ad-flags">
+        {flags.map((f, i) => (
+          <span key={i} className={`ad-chip ${f.level === "bad" ? "ad-chip-bad" : "ad-chip-warn"}`}>{f.label}</span>
+        ))}
+      </div>
+    </>
+  )
+}
+
+// DetailGrid renders the neutral measurable facts under the flags.
+function DetailGrid({ rows }: { rows: [string, ReactNode][] }) {
   if (!rows.length) return null
   return (
-    <section className="panel ad-card">
-      <div className="ad-card-title">{title}</div>
+    <>
+      <p className="ad-flags-label">Details</p>
       <dl className="ad-facts">
         {rows.map(([k, v]) => (
-          <div className="ad-fact" key={k}>
-            <dt>{k}</dt>
-            <dd>{v}</dd>
-          </div>
+          <div className="ad-fact" key={k}><dt>{k}</dt><dd>{v}</dd></div>
         ))}
       </dl>
+    </>
+  )
+}
+
+function passwordFlags(a: Account): Flag[] {
+  const f: Flag[] = []
+  if (a.cracked && !a.meets_policy) f.push({ label: "Fails policy", level: "bad" })
+  for (const w of weaknessTags(a)) f.push({ label: w, level: "warn" })
+  if (a.hibp_breached) f.push({ label: `In HIBP ×${a.hibp_breach_count.toLocaleString()}`, level: "bad" })
+  if ((a.shared_with ?? 0) > 0) f.push({ label: `Reused ×${a.shared_with}`, level: "warn" })
+  return f
+}
+
+function adFlags(a: Account): Flag[] {
+  const f: Flag[] = []
+  if (hasDA(a.da_domains)) f.push({ label: "DA pathway", level: "bad" })
+  if (a.controls_tier0) f.push({ label: "Controls Tier-0", level: "bad" })
+  if ((a.controlled_object_count ?? 0) > 100) f.push({ label: `Controls ${a.controlled_object_count.toLocaleString()} objects`, level: "bad" })
+  if (a.has_spn) f.push({ label: "Kerberoastable", level: "bad" })
+  if (a.dont_req_preauth) f.push({ label: "AS-REP roastable", level: "bad" })
+  if (a.pwd_never_expires) f.push({ label: "Never expires", level: "warn" })
+  if ((a.days_out_of_compliance ?? 0) > 0) f.push({ label: `${a.days_out_of_compliance}d overdue`, level: "warn" })
+  if (disabledLatentRisk(a)) f.push({ label: "Disabled · PtH", level: "warn" })
+  return f
+}
+
+// RevealRow is the full-width lead-only cleartext control inside the Password card:
+// a "Reveal password" button → on reveal, the cleartext plus Copy and Hide actions.
+function RevealRow({
+  account, isLead, revealed, onReveal, onHide,
+}: {
+  account: Account
+  isLead: boolean
+  revealed: RevealMap
+  onReveal: (u: string, d: string) => void
+  onHide: (key: string) => void
+}) {
+  const [copied, setCopied] = useState(false)
+  if (!isLead || !account.cracked) return null
+  const key = peerKey(account.username, account.domain)
+  const pw = revealed[key]
+  if (pw == null) {
+    return (
+      <button className="ad-reveal-btn" onClick={() => onReveal(account.username, account.domain)}>Reveal password</button>
+    )
+  }
+  function copy() {
+    navigator.clipboard?.writeText(pw)
+      .then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500) })
+      .catch(() => {})
+  }
+  return (
+    <div className="ad-reveal-shown">
+      <code className="mono-pw">{pw}</code>
+      <div className="ad-reveal-actions">
+        <button className="reveal-btn btn-reveal" onClick={copy}>{copied ? "Copied ✓" : "Copy"}</button>
+        <button className="link-btn" onClick={() => onHide(key)}>Hide</button>
+      </div>
+    </div>
+  )
+}
+
+// PasswordCard: the cleartext reveal row, then password risk flags, then neutral details.
+function PasswordCard({
+  account, rows, isLead, revealed, onReveal, onHide,
+}: {
+  account: Account
+  rows: [string, ReactNode][]
+  isLead: boolean
+  revealed: RevealMap
+  onReveal: (u: string, d: string) => void
+  onHide: (key: string) => void
+}) {
+  return (
+    <section className="panel ad-card">
+      <div className="ad-card-title">Password</div>
+      <RevealRow account={account} isLead={isLead} revealed={revealed} onReveal={onReveal} onHide={onHide} />
+      <FlagChips flags={passwordFlags(account)} />
+      <DetailGrid rows={pickFacts(rows, PASSWORD_DETAILS)} />
     </section>
   )
 }
 
-// isLowSignal flags the default/empty values BloodHound enrichment would populate
-// (no privilege count, no PwdLastSet, not roastable). Plain "Yes …" flags and real
-// numbers are notable and never filtered.
-function isLowSignal(v: ReactNode): boolean {
-  if (typeof v === "number") return v === 0
-  if (typeof v !== "string") return false
-  const s = v.trim()
-  return s === "Unknown" || s === "No" || s === "0" || s === "—"
-}
-
-// ADCard is the Active Directory card. When the account has no BloodHound coverage its
-// AD attributes are all Unknown/No/0, so we show a "run enrichment" hint and hide that
-// noise — but still surface any genuinely-set flag (a confirmed roastable, escalation,
-// or DA path). Once enriched, every value is shown honestly.
+// ADCard: BloodHound-derived AD risk flags + details. Un-enriched accounts show a
+// "run enrichment" hint (their AD attributes are Unknown) plus any non-enrichment flag.
 function ADCard({ account, rows }: { account: Account; rows: [string, ReactNode][] }) {
   const enriched = account.coverage === "full"
-  const shown = enriched ? rows : rows.filter(([, v]) => !isLowSignal(v))
   return (
     <section className="panel ad-card">
       <div className="ad-card-title">Active Directory</div>
       {!enriched && (
         <p className="ad-card-sub">Not BloodHound-enriched — run enrichment for privileges, password age &amp; expiry.</p>
       )}
-      {shown.length > 0 && (
-        <dl className="ad-facts">
-          {shown.map(([k, v]) => (
-            <div className="ad-fact" key={k}>
-              <dt>{k}</dt>
-              <dd>{v}</dd>
-            </div>
-          ))}
-        </dl>
-      )}
+      <FlagChips flags={adFlags(account)} />
+      {enriched && <DetailGrid rows={pickFacts(rows, AD_DETAILS)} />}
     </section>
-  )
-}
-
-// RevealControl renders the lead-only cleartext reveal for the focused account.
-function RevealControl({
-  username, domain, cracked, isLead, revealed, onReveal,
-}: {
-  username: string
-  domain: string
-  cracked: boolean
-  isLead: boolean
-  revealed: RevealMap
-  onReveal: (u: string, d: string) => void
-}) {
-  if (!isLead || !cracked) return null
-  const key = peerKey(username, domain)
-  return key in revealed ? (
-    <code className="mono-pw ad-hero-pw">{revealed[key]}</code>
-  ) : (
-    <button className="reveal-btn btn-reveal ad-hero-reveal" onClick={() => onReveal(username, domain)}>Reveal password</button>
   )
 }
 

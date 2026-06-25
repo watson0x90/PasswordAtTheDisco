@@ -2058,6 +2058,26 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
 .rt-disabled { color: var(--faint); }
 .badge-t0 { background: rgba(251, 191, 36, 0.18); color: #fcd34d; border: 1px solid rgba(251, 191, 36, 0.4); margin-left: 4px; }
 
+/* Password / AD cards: risk-flag chips, neutral details, full-width reveal row */
+.ad-flags-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--faint); margin: var(--space-md) 0 var(--space-sm); }
+.ad-flags { display: flex; flex-wrap: wrap; gap: 6px; }
+.ad-chip { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 6px; }
+.ad-chip-bad { background: var(--crit-bg); color: var(--crit); border: 1px solid rgba(251, 113, 133, 0.35); }
+.ad-chip-warn { background: var(--high-bg); color: var(--high); border: 1px solid rgba(251, 191, 36, 0.35); }
+.ad-reveal-btn {
+  display: block; width: 100%; padding: 9px; text-align: center;
+  font-family: var(--sans); font-size: 13px; font-weight: 700; color: #06121f;
+  background: var(--accent-grad); border: none; border-radius: var(--radius-md); cursor: pointer;
+  transition: filter 0.15s;
+}
+.ad-reveal-btn:hover { filter: brightness(1.08); }
+.ad-reveal-shown {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm);
+  width: 100%; padding: 7px 10px; flex-wrap: wrap;
+  background: var(--glass); border: 1px solid var(--glass-border); border-radius: var(--radius-md);
+}
+.ad-reveal-actions { display: flex; gap: var(--space-sm); align-items: center; }
+
 /* CSS grid reusing the MatrixHeatmap row/header classes; 1 label col + 5 cols. */
 .score-grid { display: flex; flex-direction: column; gap: var(--space-sm); }
 /* The corner is the first cell of the header row (over the row-label column),
