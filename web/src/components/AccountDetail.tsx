@@ -137,7 +137,7 @@ export function AccountDetail({
 
           <div className="ad-cards">
             <FactCard title="Password" rows={pickFacts(rows, PASSWORD_FACTS)} />
-            <FactCard title="Active Directory" rows={pickFacts(rows, AD_FACTS)} />
+            <ADCard account={account} rows={pickFacts(rows, AD_FACTS)} />
             <section className="panel ad-card ad-span">
               <div className="ad-card-title">Scoring</div>
               <div className="ad-vector">
@@ -177,6 +177,43 @@ function FactCard({ title, rows }: { title: string; rows: [string, ReactNode][] 
           </div>
         ))}
       </dl>
+    </section>
+  )
+}
+
+// isLowSignal flags the default/empty values BloodHound enrichment would populate
+// (no privilege count, no PwdLastSet, not roastable). Plain "Yes …" flags and real
+// numbers are notable and never filtered.
+function isLowSignal(v: ReactNode): boolean {
+  if (typeof v === "number") return v === 0
+  if (typeof v !== "string") return false
+  const s = v.trim()
+  return s === "Unknown" || s === "No" || s === "0" || s === "—"
+}
+
+// ADCard is the Active Directory card. When the account has no BloodHound coverage its
+// AD attributes are all Unknown/No/0, so we show a "run enrichment" hint and hide that
+// noise — but still surface any genuinely-set flag (a confirmed roastable, escalation,
+// or DA path). Once enriched, every value is shown honestly.
+function ADCard({ account, rows }: { account: Account; rows: [string, ReactNode][] }) {
+  const enriched = account.coverage === "full"
+  const shown = enriched ? rows : rows.filter(([, v]) => !isLowSignal(v))
+  return (
+    <section className="panel ad-card">
+      <div className="ad-card-title">Active Directory</div>
+      {!enriched && (
+        <p className="ad-card-sub">Not BloodHound-enriched — run enrichment for privileges, password age &amp; expiry.</p>
+      )}
+      {shown.length > 0 && (
+        <dl className="ad-facts">
+          {shown.map(([k, v]) => (
+            <div className="ad-fact" key={k}>
+              <dt>{k}</dt>
+              <dd>{v}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
     </section>
   )
 }
