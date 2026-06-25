@@ -42,8 +42,8 @@ export function AccountDrawer({ account: a, onClose }: { account: Account; onClo
           </span>
         </div>
 
-        <RiskTiles a={a} />
         <WhyCallout a={a} />
+        <RiskTiles a={a} />
 
         {facts.length > 0 && (
           <dl className="ad-facts drawer-peek-facts">

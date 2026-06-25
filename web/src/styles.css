@@ -2031,6 +2031,33 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
 }
 .ad-cta:hover { filter: brightness(1.08); box-shadow: 0 8px 22px -10px var(--accent-glow); }
 
+/* relationship tables (consolidated reuse table + near-duplicate table), full width */
+.ad-rels { display: flex; flex-direction: column; gap: var(--space-lg); }
+.ad-rel-card { padding: var(--space-lg) var(--space-xl); }
+.ad-rel-head { margin-bottom: var(--space-md); }
+.ad-rel-sub { color: var(--faint); font-size: 12px; margin: var(--space-xs) 0 0; }
+.ad-rel-flag { color: var(--crit); font-size: 12px; font-weight: 600; margin: var(--space-xs) 0 0; }
+.rt-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rt-table th {
+  text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--faint); font-weight: 600; padding: 7px 12px; border-bottom: 1px solid var(--glass-border);
+}
+.rt-table td { padding: 7px 12px; border-bottom: 1px solid var(--hairline); vertical-align: middle; }
+.rt-table tbody tr:last-child td { border-bottom: none; }
+.rt-acct { font-family: var(--mono); }
+.rt-acct .link-btn { font-family: var(--mono); font-size: 13px; }
+.rt-darow td { background: rgba(182, 35, 36, 0.10); }
+.rt-grouphdr td {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700;
+  color: var(--crit); background: rgba(182, 35, 36, 0.12); padding: 6px 12px;
+}
+.rt-grouphdr2 td {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700;
+  color: var(--faint); padding: 6px 12px;
+}
+.rt-disabled { color: var(--faint); }
+.badge-t0 { background: rgba(251, 191, 36, 0.18); color: #fcd34d; border: 1px solid rgba(251, 191, 36, 0.4); margin-left: 4px; }
+
 /* CSS grid reusing the MatrixHeatmap row/header classes; 1 label col + 5 cols. */
 .score-grid { display: flex; flex-direction: column; gap: var(--space-sm); }
 /* The corner is the first cell of the header row (over the row-label column),

@@ -5,12 +5,13 @@ import "sort"
 // PeerRef is an identity-only reference to an account in a relationship list.
 // It deliberately carries NO secret material (no NT hash, no password).
 type PeerRef struct {
-	Username  string `json:"username"`
-	Domain    string `json:"domain"`
-	RiskLevel string `json:"risk_level"`
-	Cracked   bool   `json:"cracked"`
-	Enabled   bool   `json:"enabled"`
-	HasDAPath bool   `json:"has_da_path"` // flags the DA account(s) behind a Shared-DA escalation
+	Username      string `json:"username"`
+	Domain        string `json:"domain"`
+	RiskLevel     string `json:"risk_level"`
+	Cracked       bool   `json:"cracked"`
+	Enabled       bool   `json:"enabled"`
+	HasDAPath     bool   `json:"has_da_path"`    // flags the DA account(s) behind a Shared-DA escalation
+	ControlsTier0 bool   `json:"controls_tier0"` // controls a Tier-0 / DA-equivalent asset (BloodHound)
 }
 
 // ReuseGroupPeers returns the OTHER accounts sharing focus's NT hash (exact password
@@ -42,12 +43,13 @@ func ReuseGroupPeers(accts []Account, focus Account, limit int) (peers []PeerRef
 			daCount++
 		}
 		all = append(all, PeerRef{
-			Username:  a.Username,
-			Domain:    a.Domain,
-			RiskLevel: a.RiskLevel,
-			Cracked:   a.Cracked,
-			Enabled:   a.Enabled,
-			HasDAPath: da,
+			Username:      a.Username,
+			Domain:        a.Domain,
+			RiskLevel:     a.RiskLevel,
+			Cracked:       a.Cracked,
+			Enabled:       a.Enabled,
+			HasDAPath:     da,
+			ControlsTier0: a.ControlsTier0,
 		})
 	}
 	sort.SliceStable(all, func(i, j int) bool {

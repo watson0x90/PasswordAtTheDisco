@@ -131,9 +131,9 @@ export function AccountDetail({
             />
           </header>
 
-          <RiskTiles a={account} />
-
           <WhyCallout a={account} />
+
+          <RiskTiles a={account} />
 
           <div className="ad-cards">
             <FactCard title="Password" rows={pickFacts(rows, PASSWORD_FACTS)} />
@@ -238,7 +238,9 @@ function RevealControl({
   )
 }
 
-function PeerRow({
+// PeerCells renders one table row for a reuse-group peer: account (pivot link), risk,
+// DA/Tier-0 flags, status, and the lead-only per-row reveal.
+function PeerCells({
   m, isLead, revealed, onReveal, onPivot,
 }: {
   m: PeerRef
@@ -248,26 +250,37 @@ function PeerRow({
   onPivot: (c: Crumb) => void
 }) {
   const key = peerKey(m.username, m.domain)
+  const privileged = m.has_da_path || m.controls_tier0
   return (
-    <li className="peer-row">
-      <button className="link-btn peer-name" onClick={() => onPivot({ username: m.username, domain: m.domain })}>
-        {m.username}
-      </button>
-      <span className={`badge ${RISK_CLASS[m.risk_level] || ""}`}>{m.risk_level}</span>
-      {m.has_da_path && <span className="badge badge-da">DA</span>}
-      {!m.enabled && <span className="muted">disabled</span>}
-      <span className="peer-spacer" />
-      {isLead && m.cracked && (
-        key in revealed ? (
-          <code className="mono-pw">{revealed[key]}</code>
+    <tr className={privileged ? "rt-darow" : undefined}>
+      <td className="rt-acct">
+        <button className="link-btn" onClick={() => onPivot({ username: m.username, domain: m.domain })}>{m.username}</button>
+      </td>
+      <td><span className={`badge ${RISK_CLASS[m.risk_level] || ""}`}>{m.risk_level}</span></td>
+      <td>
+        {m.has_da_path && <span className="badge badge-da">DA</span>}
+        {m.controls_tier0 && <span className="badge badge-t0">Tier-0</span>}
+        {!privileged && <span className="muted">—</span>}
+      </td>
+      <td>{m.enabled ? <span className="muted">enabled</span> : <span className="rt-disabled">disabled</span>}</td>
+      <td className="rt-pw">
+        {isLead && m.cracked ? (
+          key in revealed ? (
+            <code className="mono-pw">{revealed[key]}</code>
+          ) : (
+            <button className="reveal-btn btn-reveal" onClick={() => onReveal(m.username, m.domain)}>Reveal</button>
+          )
         ) : (
-          <button className="reveal-btn btn-reveal" onClick={() => onReveal(m.username, m.domain)}>Reveal</button>
-        )
-      )}
-    </li>
+          <span className="muted">—</span>
+        )}
+      </td>
+    </tr>
   )
 }
 
+// RelationshipSections renders the consolidated password-reuse table (Domain-Admin /
+// Tier-0 members pinned at the top under a sub-header, then the rest) plus a separate
+// near-duplicate table. Full-width band below the fact cards.
 function RelationshipSections({
   account, rel, relErr, isLead, revealed, onReveal, onPivot,
 }: {
@@ -282,64 +295,62 @@ function RelationshipSections({
   if (relErr) return <section className="panel ad-card"><div className="error">relationships: {relErr}</div></section>
   if (!rel) return <section className="panel ad-card"><div className="muted">Loading relationships…</div></section>
   const group = rel.reuse_group
-  const daMembers = group.members.filter((m) => m.has_da_path)
+  // High-blast-radius members (confirmed DA path or Tier-0 control) pin to the top.
+  const privileged = group.members.filter((m) => m.has_da_path || m.controls_tier0)
+  const others = group.members.filter((m) => !m.has_da_path && !m.controls_tier0)
   const peers = account.similar_peers ?? []
   const nothing = !group.shares_hash && peers.length === 0
+  const cellProps = { isLead, revealed, onReveal, onPivot }
+
   return (
-    <div className="ad-cards">
+    <div className="ad-rels">
       {group.shares_hash && (
-        <section className="panel ad-card">
-          <div className="ad-card-title">
-            Password-reuse group
-            <span className="ad-card-count">{group.total}</span>
+        <section className="panel ad-card ad-rel-card">
+          <div className="ad-rel-head">
+            <div className="ad-card-title">Password reuse <span className="ad-card-count">{group.total}</span></div>
+            <p className="ad-rel-sub">
+              {group.total} account{group.total === 1 ? "" : "s"} share this exact password
+              {" "}({group.cracked_count} cracked · same NT hash{group.truncated ? ` · showing first ${group.members.length}` : ""}).
+            </p>
+            {account.escalated_by_mass_reuse && (
+              <p className="ad-rel-flag">⚠ Mass-reuse — cracking any one member compromises all {group.total + 1}.</p>
+            )}
           </div>
-          <p className="ad-card-sub">
-            {group.cracked_count} cracked · same NT hash
-            {group.truncated ? ` · showing first ${group.members.length}` : ""}
-          </p>
-          <ul className="peer-list">
-            {group.members.map((m) => (
-              <PeerRow key={peerKey(m.username, m.domain)} m={m} isLead={isLead} revealed={revealed} onReveal={onReveal} onPivot={onPivot} />
-            ))}
-          </ul>
-        </section>
-      )}
-      {daMembers.length > 0 && (
-        <section className="panel ad-card ad-card-danger">
-          <div className="ad-card-title">⚠ Shares a password with Domain Admin</div>
-          <p className="ad-card-sub">Cracking this credential is equivalent to compromising:</p>
-          <ul className="peer-list">
-            {daMembers.map((m) => (
-              <PeerRow key={`da-${peerKey(m.username, m.domain)}`} m={m} isLead={isLead} revealed={revealed} onReveal={onReveal} onPivot={onPivot} />
-            ))}
-          </ul>
-        </section>
-      )}
-      {account.escalated_by_mass_reuse && group.shares_hash && (
-        <section className="panel ad-card">
-          <div className="ad-card-title">Mass-reuse cluster</div>
-          <p className="ad-card-sub">
-            {group.total + 1} accounts share this password ({group.cracked_count} cracked). Cracking one compromises all.
-          </p>
+          <table className="rt-table">
+            <thead>
+              <tr><th>Account</th><th>Risk</th><th>DA / Tier-0</th><th>Status</th><th>Password</th></tr>
+            </thead>
+            <tbody>
+              {privileged.length > 0 && (
+                <>
+                  <tr className="rt-grouphdr"><td colSpan={5}>⚠ Domain-Admin / Tier-0 in this group · {privileged.length}</td></tr>
+                  {privileged.map((m) => <PeerCells key={`p-${peerKey(m.username, m.domain)}`} m={m} {...cellProps} />)}
+                  {others.length > 0 && <tr className="rt-grouphdr2"><td colSpan={5}>Other reuse members · {others.length}</td></tr>}
+                </>
+              )}
+              {others.map((m) => <PeerCells key={`o-${peerKey(m.username, m.domain)}`} m={m} {...cellProps} />)}
+            </tbody>
+          </table>
         </section>
       )}
       {peers.length > 0 && (
-        <section className="panel ad-card">
-          <div className="ad-card-title">
-            Near-duplicate passwords
-            <span className="ad-card-count">{peers.length}</span>
-          </div>
-          <ul className="peer-list">
-            {peers.map((p) => (
-              <li key={`sim-${peerKey(p.username, p.domain)}`} className="peer-row">
-                <button className="link-btn peer-name" onClick={() => onPivot({ username: p.username, domain: p.domain })}>
-                  {p.username}
-                </button>
-                <span className="peer-spacer" />
-                <span className="muted">{Math.round(p.score * 100)}% match</span>
-              </li>
-            ))}
-          </ul>
+        <section className="panel ad-card ad-rel-card">
+          <div className="ad-card-title">Near-duplicate passwords <span className="ad-card-count">{peers.length}</span></div>
+          <table className="rt-table">
+            <thead>
+              <tr><th>Account</th><th>Similarity</th></tr>
+            </thead>
+            <tbody>
+              {peers.map((p) => (
+                <tr key={`sim-${peerKey(p.username, p.domain)}`}>
+                  <td className="rt-acct">
+                    <button className="link-btn" onClick={() => onPivot({ username: p.username, domain: p.domain })}>{p.username}</button>
+                  </td>
+                  <td className="muted">{Math.round(p.score * 100)}% match</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </section>
       )}
       {nothing && (

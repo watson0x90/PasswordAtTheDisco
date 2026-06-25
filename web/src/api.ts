@@ -199,6 +199,7 @@ export interface PeerRef {
   cracked: boolean
   enabled: boolean
   has_da_path: boolean
+  controls_tier0: boolean
 }
 
 export interface Relationships {
