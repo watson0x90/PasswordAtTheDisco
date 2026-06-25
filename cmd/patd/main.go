@@ -16,6 +16,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -265,12 +266,28 @@ func main() {
 	}
 }
 
-func hashpw() {
-	fmt.Fprint(os.Stderr, "Password: ")
-	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+// readPassword prompts on stderr and reads a single line from in, trimming the
+// trailing newline. Shared by hashpw and the `user` subcommands. Reading from a
+// reader (not os.Stdin directly) keeps it unit-testable and pipeable for automation.
+func readPassword(in io.Reader, prompt string) (string, error) {
+	if prompt != "" {
+		fmt.Fprint(os.Stderr, prompt)
+	}
+	line, err := bufio.NewReader(in).ReadString('\n')
+	if err != nil && err != io.EOF {
+		return "", err
+	}
 	pw := strings.TrimRight(line, "\r\n")
 	if pw == "" {
-		fmt.Fprintln(os.Stderr, "empty password")
+		return "", errors.New("empty password")
+	}
+	return pw, nil
+}
+
+func hashpw() {
+	pw, err := readPassword(os.Stdin, "Password: ")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 	h, err := auth.HashPassword(pw)
