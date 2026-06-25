@@ -11,8 +11,9 @@ const peerKey = (u: string, d: string) => `${u}@${d}`
 
 // Fact groups for the detail page. Labels match accountFactRows() so values render
 // identically to the drawer; we just partition them into themed cards. Risk-summary
-// fields (level/score/exposure/impact/percentile) live in the hero tiles, not a card.
-const IDENTITY_FACTS = ["Domain", "Status", "Enabled", "Coverage"]
+// fields (level/score/exposure/impact/percentile) live in the hero tiles, and
+// identity (domain/status/enabled/coverage) lives in the hero meta line — neither is
+// repeated as a card.
 const PASSWORD_FACTS = [
   "Complexity", "Password length", "Meets policy", "Weaknesses",
   "Contains Unicode", "Similarity", "HIBP breaches", "Shared with",
@@ -135,7 +136,6 @@ export function AccountDetail({
           <WhyCallout a={account} />
 
           <div className="ad-cards">
-            <FactCard title="Identity" rows={pickFacts(rows, IDENTITY_FACTS)} />
             <FactCard title="Password" rows={pickFacts(rows, PASSWORD_FACTS)} />
             <FactCard title="Active Directory" rows={pickFacts(rows, AD_FACTS)} />
             <section className="panel ad-card ad-span">
