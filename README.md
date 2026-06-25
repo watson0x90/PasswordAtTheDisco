@@ -91,31 +91,35 @@ See **[CHANGELOG.md](CHANGELOG.md)** for the full release history.
 
 ## Build
 
-**Prerequisites:** Go 1.26+, and Node 20+ for the web UI.
+**One command builds everything** — the React web UI *and* the Go server, bundled into a
+single self-contained executable. You don't build the frontend separately; the build
+script compiles the SPA, embeds it, and builds the binary in one step.
+
+**Prerequisites:** Go 1.26+ and Node 20+. (Node is needed only at build time — the
+finished binary embeds the web UI and has no Node/runtime dependency.)
 
 ```bash
-# one-time: install the SPA's dependencies
+# one-time: install the web UI's dependencies
 cd web && npm ci --ignore-scripts && cd ..
 
-# build a stamped, self-contained binary (Go API + embedded React SPA)
-scripts/build.sh            # Linux / macOS / Windows (Git Bash)
-# or, on Windows PowerShell:
-scripts\build.ps1
+# build the whole thing — run ONE of these (same build, one per shell — not both):
+scripts/build.sh      # Linux, macOS, or Windows (Git Bash)
+scripts\build.ps1     # Windows (PowerShell)
 ```
 
-This builds the SPA, embeds it, stamps the version from `git describe`, and produces
-`patd` (`patd.exe` on Windows). Flags: `--skip-web` (reuse the existing `web/dist`),
-`--output <path>` (`-SkipWeb` / `-Output` in PowerShell).
+Each script builds the SPA, embeds it, stamps the version from `git describe`, and
+produces `patd` (`patd.exe` on Windows). Flags: `--skip-web` (skip the SPA rebuild and
+reuse the existing `web/dist`), `--output <path>` (`-SkipWeb` / `-Output` in PowerShell).
 
 Confirm the stamp:
 
 ```bash
-./patd --version          # patd v2.30.0 (abc1234, built 2026-06-25T...Z)
+./patd --version          # patd v2.31.0 (abc1234, built 2026-06-25T...Z)
 ```
 
-**Dev build (no version stamp, SPA served from disk):** `go run ./cmd/patd` serves
-`web/dist` from disk and reports `version=dev`. Use the build scripts for a real,
-embedded, versioned binary.
+**Quick dev loop (no full build):** `go run ./cmd/patd` runs the server and serves
+`web/dist` from disk (re-run `cd web && npm run build` when you change the UI); it reports
+`version=dev`. Use the build scripts when you want the real single-file, versioned binary.
 
 ## Run
 
