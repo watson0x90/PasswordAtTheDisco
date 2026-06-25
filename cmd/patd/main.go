@@ -15,6 +15,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -73,7 +74,19 @@ func main() {
 		}
 	}
 
-	addr := env("PATD_ADDR", "127.0.0.1:8443")
+	fs := flag.NewFlagSet("patd", flag.ExitOnError)
+	addrFlag := fs.String("addr", "", "listen address host:port (overrides PATD_ADDR)")
+	portFlag := fs.String("port", "", "listen port, bound to 127.0.0.1 (overrides PATD_ADDR)")
+	_ = fs.Parse(os.Args[1:])
+	if fs.NArg() > 0 {
+		fmt.Fprintf(os.Stderr, "unknown command %q (try 'patd --help')\n", fs.Arg(0))
+		os.Exit(2)
+	}
+	addr, err := resolveAddr(*addrFlag, *portFlag, os.Getenv("PATD_ADDR"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 	cert, key := os.Getenv("PATD_TLS_CERT"), os.Getenv("PATD_TLS_KEY")
 
 	usersFile := env("PATD_USERS_FILE", "users.json")
@@ -340,6 +353,29 @@ func env(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// resolveAddr picks the server listen address. Precedence: an explicit --addr or
+// --port flag, then the PATD_ADDR env value, then the loopback default. --addr and
+// --port are mutually exclusive; --port is shorthand for 127.0.0.1:<port>. Empty
+// strings mean "unset".
+func resolveAddr(addrFlag, portFlag, envAddr string) (string, error) {
+	if addrFlag != "" && portFlag != "" {
+		return "", errors.New("use --addr or --port, not both")
+	}
+	if addrFlag != "" {
+		return addrFlag, nil
+	}
+	if portFlag != "" {
+		if _, err := strconv.Atoi(portFlag); err != nil {
+			return "", fmt.Errorf("invalid --port %q", portFlag)
+		}
+		return "127.0.0.1:" + portFlag, nil
+	}
+	if envAddr != "" {
+		return envAddr, nil
+	}
+	return "127.0.0.1:8443", nil
 }
 
 func envInt(key string, def int) int {
