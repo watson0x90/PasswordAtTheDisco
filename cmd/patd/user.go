@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -77,6 +78,16 @@ func guardServerOrExit(force bool) {
 	}
 }
 
+// splitUserArgs separates a leading <username> positional from the trailing flags,
+// so `user add <name> --role lead` works (Go's flag package otherwise stops parsing
+// at the first non-flag token). The username must come first; flags follow.
+func splitUserArgs(args []string) (username string, flags []string, ok bool) {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		return "", nil, false
+	}
+	return args[0], args[1:], true
+}
+
 // runUser implements `patd user <add|passwd|list> ...`.
 func runUser(args []string) {
 	if len(args) == 0 {
@@ -86,13 +97,17 @@ func runUser(args []string) {
 	usersFile := env("PATD_USERS_FILE", "users.json")
 	switch args[0] {
 	case "add":
+		username, flagArgs, ok := splitUserArgs(args[1:])
+		if !ok {
+			fmt.Fprintln(os.Stderr, "usage: patd user add <username> [--role analyst|lead] [--force]")
+			os.Exit(2)
+		}
 		fs := flag.NewFlagSet("user add", flag.ExitOnError)
 		role := fs.String("role", "analyst", "operator role: analyst|lead")
 		force := fs.Bool("force", false, "edit the users file even if a server is running")
 		file := fs.String("file", usersFile, "users file")
-		_ = fs.Parse(args[1:])
-		rest := fs.Args()
-		if len(rest) != 1 {
+		_ = fs.Parse(flagArgs)
+		if fs.NArg() != 0 {
 			fmt.Fprintln(os.Stderr, "usage: patd user add <username> [--role analyst|lead] [--force]")
 			os.Exit(2)
 		}
@@ -102,18 +117,22 @@ func runUser(args []string) {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		if err := addUser(*file, rest[0], pw, *role); err != nil {
+		if err := addUser(*file, username, pw, *role); err != nil {
 			fmt.Fprintln(os.Stderr, "add failed:", err)
 			os.Exit(1)
 		}
-		fmt.Printf("created operator %s (%s)\n", rest[0], *role)
+		fmt.Printf("created operator %s (%s)\n", username, *role)
 	case "passwd":
+		username, flagArgs, ok := splitUserArgs(args[1:])
+		if !ok {
+			fmt.Fprintln(os.Stderr, "usage: patd user passwd <username> [--force]")
+			os.Exit(2)
+		}
 		fs := flag.NewFlagSet("user passwd", flag.ExitOnError)
 		force := fs.Bool("force", false, "edit the users file even if a server is running")
 		file := fs.String("file", usersFile, "users file")
-		_ = fs.Parse(args[1:])
-		rest := fs.Args()
-		if len(rest) != 1 {
+		_ = fs.Parse(flagArgs)
+		if fs.NArg() != 0 {
 			fmt.Fprintln(os.Stderr, "usage: patd user passwd <username> [--force]")
 			os.Exit(2)
 		}
@@ -123,11 +142,11 @@ func runUser(args []string) {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		if err := setUserPassword(*file, rest[0], pw); err != nil {
+		if err := setUserPassword(*file, username, pw); err != nil {
 			fmt.Fprintln(os.Stderr, "passwd failed:", err)
 			os.Exit(1)
 		}
-		fmt.Printf("password updated for %s\n", rest[0])
+		fmt.Printf("password updated for %s\n", username)
 	case "list":
 		fs := flag.NewFlagSet("user list", flag.ExitOnError)
 		file := fs.String("file", usersFile, "users file")

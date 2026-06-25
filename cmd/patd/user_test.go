@@ -102,3 +102,23 @@ func TestServerIsRunning(t *testing.T) {
 		t.Errorf("live listener %s should be detected", ln.Addr())
 	}
 }
+
+func TestSplitUserArgs(t *testing.T) {
+	// username first, then flags (the documented form)
+	u, f, ok := splitUserArgs([]string{"alice", "--role", "lead"})
+	if !ok || u != "alice" || len(f) != 2 || f[0] != "--role" || f[1] != "lead" {
+		t.Fatalf("got (%q, %v, %v), want (alice, [--role lead], true)", u, f, ok)
+	}
+	// username with no flags
+	u, f, ok = splitUserArgs([]string{"bob"})
+	if !ok || u != "bob" || len(f) != 0 {
+		t.Fatalf("got (%q, %v, %v), want (bob, [], true)", u, f, ok)
+	}
+	// no args, or a flag where the username should be -> not ok
+	if _, _, ok := splitUserArgs(nil); ok {
+		t.Error("empty args should not be ok")
+	}
+	if _, _, ok := splitUserArgs([]string{"--role", "lead"}); ok {
+		t.Error("flag-first (no username) should not be ok")
+	}
+}
