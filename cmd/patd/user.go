@@ -31,9 +31,11 @@ func addUser(file, username, password, role string) error {
 	return st.Create(username, password, auth.Role(role))
 }
 
-// setUserPassword resets an existing operator's login password.
+// setUserPassword resets an existing operator's login password. Unlike add, it does
+// not bootstrap a missing file — opening a non-existent users file surfaces a clear
+// "no such file" error rather than a misleading "no such operator".
 func setUserPassword(file, username, password string) error {
-	st, err := openOrNewUserStore(file)
+	st, err := auth.OpenUserStore(file)
 	if err != nil {
 		return err
 	}
@@ -69,7 +71,8 @@ func guardServerOrExit(force bool) {
 	}
 	addr := env("PATD_ADDR", "127.0.0.1:8443")
 	if serverIsRunning(addr) {
-		fmt.Fprintf(os.Stderr, "a server appears to be running at %s; manage operators in the UI so its in-memory copy of %s is not clobbered. Re-run with --force to edit the file anyway.\n", addr, env("PATD_USERS_FILE", "users.json"))
+		fmt.Fprintf(os.Stderr, "a server appears to be running at %s; manage operators in the UI so its in-memory copy of %s is not clobbered.\n", addr, env("PATD_USERS_FILE", "users.json"))
+		fmt.Fprintln(os.Stderr, "Re-run with --force to edit the file anyway.")
 		os.Exit(1)
 	}
 }

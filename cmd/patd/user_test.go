@@ -55,7 +55,10 @@ func TestSetUserPassword(t *testing.T) {
 	if err := setUserPassword(f, "alice", "newpassword"); err != nil {
 		t.Fatalf("setUserPassword: %v", err)
 	}
-	st, _ := auth.OpenUserStore(f)
+	st, err := auth.OpenUserStore(f)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
 	if _, ok := st.Authenticate("alice", "newpassword"); !ok {
 		t.Fatal("new password does not authenticate")
 	}
@@ -77,6 +80,12 @@ func TestListUsers(t *testing.T) {
 	}
 	if len(got) != 2 {
 		t.Fatalf("listUsers len = %d, want 2", len(got))
+	}
+	if got[0].Username != "alice" || got[0].Role != auth.RoleLead {
+		t.Errorf("got[0] = %+v, want alice/lead", got[0])
+	}
+	if got[1].Username != "bob" || got[1].Role != auth.RoleAnalyst {
+		t.Errorf("got[1] = %+v, want bob/analyst", got[1])
 	}
 }
 
