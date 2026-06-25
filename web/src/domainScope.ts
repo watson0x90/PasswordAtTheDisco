@@ -1,12 +1,17 @@
 import type { Account, Summary } from "./api"
-import { escalatedBySharedDA, neverExpiresCount, posture } from "./insights"
+import { neverExpiresCount, posture } from "./insights"
 import { hasDA } from "./util"
 
-// A domain-scoped account is "privileged" if it controls Tier-0, has a DA pathway,
-// or is a high-privilege controller (>100 controlled objects). Used for the
-// dormant-privileged (disabled + privileged) count surfaced in the posture card.
-function isPrivileged(a: Account): boolean {
-  return !!a.controls_tier0 || hasDA(a.da_domains) || (a.controlled_object_count ?? 0) > 100
+// credentialObtainable mirrors Go model.CredentialObtainable (NO enabled gate — the
+// caller checks !enabled separately). insights.isReachable is the same condition but
+// additionally requires enabled, so it can't be reused for the dormant (disabled) case.
+const credentialObtainable = (a: Account): boolean =>
+  !!a.cracked || !!a.hibp_breached || !!a.escalated_by_shared_da || !!a.escalated_by_mass_reuse
+
+// dormant_privileged mirrors Go store.go DormantPrivileged exactly: disabled, privileged
+// (controls Tier-0 or has a DA pathway), AND credential-obtainable.
+function isDormantPrivileged(a: Account): boolean {
+  return !a.enabled && (!!a.controls_tier0 || hasDA(a.da_domains)) && credentialObtainable(a)
 }
 
 // domainSummary builds a Summary for an already-domain-filtered account set so the
@@ -31,11 +36,11 @@ export function domainSummary(domainAccounts: Account[], orgSummary: Summary): S
     disabled_accounts: domainAccounts.filter((a) => !a.enabled).length,
     never_expires: neverExpiresCount(domainAccounts),
     stale_passwords: domainAccounts.filter((a) => (a.days_out_of_compliance ?? 0) > 0).length,
-    escalated_by_shared_da: escalatedBySharedDA(domainAccounts).length,
+    escalated_by_shared_da: domainAccounts.filter((a) => a.escalated_by_shared_da).length,
     escalated_by_mass_reuse: domainAccounts.filter((a) => a.escalated_by_mass_reuse).length,
     policy_violations: domainAccounts.filter((a) => a.cracked && !a.meets_policy).length,
     high_controlled: domainAccounts.filter((a) => (a.controlled_object_count ?? 0) > 100).length,
-    dormant_privileged: domainAccounts.filter((a) => !a.enabled && isPrivileged(a)).length,
+    dormant_privileged: domainAccounts.filter(isDormantPrivileged).length,
     // breach_impact intentionally omitted — see header comment.
   }
 }

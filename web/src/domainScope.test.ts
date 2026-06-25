@@ -52,15 +52,17 @@ describe("domainSummary", () => {
     expect(typeof s.posture.score).toBe("number")
   })
 
-  it("counts dormant_privileged as disabled privileged accounts", () => {
+  it("counts dormant_privileged as disabled, privileged, credential-obtainable accounts", () => {
     const s = domainSummary(
       [
-        acc({ enabled: false, controls_tier0: true }),       // dormant privileged
-        acc({ enabled: false }),                              // disabled, not privileged
-        acc({ enabled: true, controls_tier0: true }),         // privileged but enabled
+        acc({ enabled: false, controls_tier0: true, cracked: true }),   // dormant privileged ✓
+        acc({ enabled: false, controls_tier0: true }),                  // privileged but NOT credential-obtainable ✗
+        acc({ enabled: false, cracked: true }),                         // credential-obtainable but NOT privileged ✗
+        acc({ enabled: true, controls_tier0: true, cracked: true }),    // privileged+obtainable but ENABLED ✗
+        acc({ enabled: false, da_domains: "A.LOCAL", hibp_breached: true }), // disabled+DA-path+breached ✓
       ],
       orgSummary,
     )
-    expect(s.dormant_privileged).toBe(1)
+    expect(s.dormant_privileged).toBe(2)
   })
 })
