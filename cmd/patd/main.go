@@ -97,6 +97,9 @@ func main() {
 		case "reindex":
 			runReindex()
 			return
+		case "user":
+			runUser(os.Args[2:])
+			return
 		case "token":
 			runToken(os.Args[2:])
 			return
