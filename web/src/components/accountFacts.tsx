@@ -5,6 +5,7 @@ import { disabledLatentRisk } from "../disabledRisk"
 import { impactIsKnown, isProvisional, coverageState } from "../matrix"
 import { GLOSSARY } from "../glossary"
 import { weaknessSubFactors, policyViolationText } from "../drawerFactors"
+import { explainLevel } from "../whyLevel"
 
 // WeakCell shows wordlist-weakness badges (common / dictionary / forbidden /
 // keyboard). The matched word itself is never shown — only the category.
@@ -171,4 +172,56 @@ export function BreakdownCards({ a }: { a: Account }) {
       )}
     </div>
   )
+}
+
+// ── Shared risk-summary pieces (used by BOTH the drawer peek and the full page) ──
+
+const tierWord = (v: number) => (v >= 8 ? "Critical" : v >= 6 ? "High" : v >= 4 ? "Medium" : "Low")
+const lvlClass = (level: string) => `lvl-${RISK_CLASS[level] || "low"}`
+
+function Tile({ label, value, sub, level }: { label: string; value: string; sub?: string; level?: string }) {
+  return (
+    <div className={`stat stat-mini ad-tile${level ? ` ${lvlClass(level)}` : ""}`}>
+      <div className="stat-label">{label}</div>
+      <div className="stat-value">{value}</div>
+      {sub && <div className="stat-sub">{sub}</div>}
+    </div>
+  )
+}
+
+// RiskTiles renders the at-a-glance risk summary (score / exposure / impact / triage)
+// so the drawer peek and the full detail page read identically.
+export function RiskTiles({ a }: { a: Account }) {
+  const impactText = a.impact_score == null ? "Unknown" : a.impact_score.toFixed(1)
+  return (
+    <div className="ad-tiles">
+      <Tile label="Risk score" value={a.risk_score.toFixed(1)} sub={a.risk_level} level={a.risk_level} />
+      <Tile label="Exposure" value={a.exposure_score.toFixed(1)} sub={tierWord(a.exposure_score)} />
+      <Tile label="Impact" value={impactText} sub={a.coverage === "full" ? "blast radius" : "not enriched"} />
+      {a.percentile != null && <Tile label="Triage" value={`${Math.round(a.percentile * 100)}`} sub="percentile" />}
+    </div>
+  )
+}
+
+// WhyCallout renders the plain-English level rationale, accented by risk level.
+export function WhyCallout({ a }: { a: Account }) {
+  return (
+    <section className={`ad-why ${RISK_CLASS[a.risk_level] || ""}`}>
+      <div className="ad-why-label">Why this level</div>
+      {explainLevel(a).map((line, i) => (
+        <p key={i} className={i === 0 ? "ad-why-headline" : "ad-why-detail"}>{line}</p>
+      ))}
+    </section>
+  )
+}
+
+// pickFacts selects the rows for a card/section in the given order, dropping empty
+// "—" values so curated views stay uncluttered (the full page can show everything).
+export function pickFacts(rows: [string, ReactNode][], labels: string[]): [string, ReactNode][] {
+  const out: [string, ReactNode][] = []
+  for (const label of labels) {
+    const row = rows.find(([k]) => k === label)
+    if (row && !(typeof row[1] === "string" && row[1].trim() === "—")) out.push(row)
+  }
+  return out
 }

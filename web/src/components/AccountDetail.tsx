@@ -3,8 +3,7 @@ import { api, ApiError, type Account, type PeerRef, type Relationships } from ".
 import { useAccountsData } from "../accountsData"
 import { useAuth } from "../auth"
 import { type Crumb } from "../trail"
-import { explainLevel } from "../whyLevel"
-import { accountFactRows, BreakdownCards } from "./accountFacts"
+import { accountFactRows, BreakdownCards, RiskTiles, WhyCallout, pickFacts } from "./accountFacts"
 import { RISK_CLASS } from "../util"
 
 type RevealMap = Record<string, string>
@@ -23,20 +22,6 @@ const AD_FACTS = [
   "Password never expires", "Days out of compliance", "Kerberoastable (SPN)",
   "AS-REP roastable", "Escalated (Shared-DA)", "Escalated (Mass-reuse)", "Latent risk",
 ]
-
-// pickFacts selects the rows for a card in the given order, dropping empty "—" values
-// so curated cards stay uncluttered (the drawer keeps the full flat list).
-function pickFacts(rows: [string, ReactNode][], labels: string[]): [string, ReactNode][] {
-  const out: [string, ReactNode][] = []
-  for (const label of labels) {
-    const row = rows.find(([k]) => k === label)
-    if (row && !(typeof row[1] === "string" && row[1].trim() === "—")) out.push(row)
-  }
-  return out
-}
-
-const tierWord = (v: number) => (v >= 8 ? "Critical" : v >= 6 ? "High" : v >= 4 ? "Medium" : "Low")
-const lvlClass = (level: string) => `lvl-${RISK_CLASS[level] || "low"}`
 
 export function AccountDetail({
   trail, onBack, onJump, onPivot, onClose,
@@ -90,7 +75,6 @@ export function AccountDetail({
   }
 
   const rows = account ? accountFactRows(account) : []
-  const impactText = account == null || account.impact_score == null ? "Unknown" : account.impact_score.toFixed(1)
 
   return (
     <div className="detail-overlay" role="dialog" aria-modal="true" aria-label={`Account ${tail.username}`}>
@@ -146,21 +130,9 @@ export function AccountDetail({
             />
           </header>
 
-          <div className="ad-tiles">
-            <Tile label="Risk score" value={account.risk_score.toFixed(1)} sub={account.risk_level} level={account.risk_level} />
-            <Tile label="Exposure" value={account.exposure_score.toFixed(1)} sub={tierWord(account.exposure_score)} />
-            <Tile label="Impact" value={impactText} sub={account.coverage === "full" ? "blast radius" : "not enriched"} />
-            {account.percentile != null && (
-              <Tile label="Triage" value={`${Math.round(account.percentile * 100)}`} sub="percentile" />
-            )}
-          </div>
+          <RiskTiles a={account} />
 
-          <section className={`ad-why ${RISK_CLASS[account.risk_level] || ""}`}>
-            <div className="ad-why-label">Why this level</div>
-            {explainLevel(account).map((line, i) => (
-              <p key={i} className={i === 0 ? "ad-why-headline" : "ad-why-detail"}>{line}</p>
-            ))}
-          </section>
+          <WhyCallout a={account} />
 
           <div className="ad-cards">
             <FactCard title="Identity" rows={pickFacts(rows, IDENTITY_FACTS)} />
@@ -188,16 +160,6 @@ export function AccountDetail({
           {revealErr && <div className="error">{revealErr}</div>}
         </div>
       )}
-    </div>
-  )
-}
-
-function Tile({ label, value, sub, level }: { label: string; value: string; sub?: string; level?: string }) {
-  return (
-    <div className={`stat stat-mini ad-tile${level ? ` ${lvlClass(level)}` : ""}`}>
-      <div className="stat-label">{label}</div>
-      <div className="stat-value">{value}</div>
-      {sub && <div className="stat-sub">{sub}</div>}
     </div>
   )
 }

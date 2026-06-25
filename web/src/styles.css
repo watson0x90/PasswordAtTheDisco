@@ -2010,6 +2010,27 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
 .badge-da { background: #b62324; color: #fff; }
 .btn-reveal { font-size: 0.8rem; padding: 0.1rem 0.5rem; }
 
+/* drawer quick-peek (condensed page: tiles + why + key facts + CTA) */
+.drawer-badge-row { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap; margin-bottom: var(--space-lg); font-size: 12px; }
+.drawer-peek-facts { margin-top: var(--space-lg); }
+.ad-cta {
+  display: block;
+  width: 100%;
+  margin-top: var(--space-xl);
+  padding: 11px 16px;
+  text-align: center;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 700;
+  color: #06121f;
+  background: var(--accent-grad);
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: filter 0.15s, box-shadow 0.15s;
+}
+.ad-cta:hover { filter: brightness(1.08); box-shadow: 0 8px 22px -10px var(--accent-glow); }
+
 /* CSS grid reusing the MatrixHeatmap row/header classes; 1 label col + 5 cols. */
 .score-grid { display: flex; flex-direction: column; gap: var(--space-sm); }
 /* The corner is the first cell of the header row (over the row-label column),
