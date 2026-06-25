@@ -128,15 +128,15 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /api/pwned/probe", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handlePwnedProbe))))
 	mux.Handle("POST /api/pwned/download", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handlePwnedDownload))))
 	mux.Handle("POST /api/pwned/index", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handlePwnedIndex))))
-	mux.Handle("GET /api/pwned/job", s.requireAuth(http.HandlerFunc(s.handlePwnedJob)))
+	mux.Handle("GET /api/pwned/job", s.pollSoftAuth(http.HandlerFunc(s.handlePwnedJob)))
 	mux.Handle("POST /api/pwned/cancel", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handlePwnedCancel))))
 	// BloodHound enrichment job (lead): start / poll / cancel
 	mux.Handle("POST /api/enrich", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleEnrichStart)))))
-	mux.Handle("GET /api/enrich/job", s.requireAuth(http.HandlerFunc(s.handleEnrichJob)))
+	mux.Handle("GET /api/enrich/job", s.pollSoftAuth(http.HandlerFunc(s.handleEnrichJob)))
 	mux.Handle("POST /api/enrich/cancel", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleEnrichCancel))))
 	// Re-scoring job (lead): start / poll / cancel
 	mux.Handle("POST /api/rescore", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleRescoreStart)))))
-	mux.Handle("GET /api/rescore/job", s.requireAuth(http.HandlerFunc(s.handleRescoreJob)))
+	mux.Handle("GET /api/rescore/job", s.pollSoftAuth(http.HandlerFunc(s.handleRescoreJob)))
 	mux.Handle("POST /api/rescore/cancel", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleRescoreCancel))))
 	// Operator management (lead): live add/update/remove, no restart
 	mux.Handle("GET /api/users", s.requireAuth(http.HandlerFunc(s.handleListUsers)))
@@ -2388,6 +2388,26 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), sessionKey, sess)))
+	})
+}
+
+// pollSoftAuth is requireAuth for the background-job poll endpoints (enrich /
+// pwned / rescore job status). The SPA polls these every few seconds for leads;
+// when the session is gone — server restart wiped the in-memory store, or
+// idle/absolute expiry — a hard 401 makes the browser log a recurring console
+// error and bounces the operator mid-navigation. Instead we answer 200 with
+// {"unauthenticated":true}: no console noise, and the client treats that body as
+// its cue to return to the login screen. A valid session is plumbed into the
+// context exactly as requireAuth does, so the wrapped handler is unchanged.
+func (s *Server) pollSoftAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if c, err := r.Cookie(sessionCookie); err == nil {
+			if sess, ok := s.Sessions.Get(c.Value); ok {
+				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), sessionKey, sess)))
+				return
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"unauthenticated": true})
 	})
 }
 

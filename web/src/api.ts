@@ -291,6 +291,27 @@ export class ApiError extends Error {
   }
 }
 
+// sessionAlive dedupes the "session is dead" signal. The three job pollers
+// (JobsProvider) fire concurrently every tick; an expired session would otherwise
+// broadcast patd:unauthorized up to three times per tick. We broadcast once on the
+// live→dead edge and re-arm on the next authenticated success, so a single
+// expiry/restart produces exactly one bounce to the login screen.
+let sessionAlive = true
+
+function broadcastUnauthorized() {
+  if (!sessionAlive) return // already broadcast this death; don't repeat
+  sessionAlive = false
+  window.dispatchEvent(new CustomEvent("patd:unauthorized"))
+}
+
+// isUnauthenticatedBody detects the soft-auth marker the poll endpoints
+// (enrich/pwned/rescore job) return as 200 + {"unauthenticated":true} when the
+// session is gone — a 200 so the browser logs no console 401, but still a clear
+// cue that we must bounce to login. See pollSoftAuth in internal/httpapi/server.go.
+function isUnauthenticatedBody(body: unknown): boolean {
+  return !!body && typeof body === "object" && (body as { unauthenticated?: unknown }).unauthenticated === true
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response
   try {
@@ -300,28 +321,37 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   const text = await res.text()
   const body = text ? safeParse(text) : null
-  if (!res.ok) {
-    // 423 = the store auto-locked for inactivity. Broadcast so the app can return
-    // to the unlock screen instead of stranding the operator on a raw error.
-    if (res.status === 423) {
-      window.dispatchEvent(new CustomEvent("patd:locked"))
+  if (res.ok) {
+    // Soft-auth poll endpoints answer 200 + {"unauthenticated":true} instead of a
+    // 401 when the session is gone. Treat it exactly like a 401: bounce to login
+    // and reject, so the poller keeps its last-known job state rather than
+    // overwriting it with this sentinel.
+    if (isUnauthenticatedBody(body)) {
+      broadcastUnauthorized()
+      throw new ApiError(401, "session expired")
     }
-    // 401 = the session is gone (server restart wiped the in-memory session store,
-    // or the session hit idle/absolute expiry). Broadcast so AuthProvider returns to
-    // the login screen instead of leaving the SPA in a stale "authenticated" state
-    // where mounted pollers (JobsProvider) keep hitting lead-only endpoints and the
-    // browser logs a recurring console 401 every few seconds.
-    if (res.status === 401) {
-      window.dispatchEvent(new CustomEvent("patd:unauthorized"))
-    }
-    let msg = `request failed (${res.status})`
-    if (body && typeof body === "object" && "error" in body) {
-      const e = (body as { error?: unknown }).error
-      if (typeof e === "string" && e) msg = e
-    }
-    throw new ApiError(res.status, msg, body)
+    sessionAlive = true // any authenticated success re-arms the dead-session gate
+    return body as T
   }
-  return body as T
+  // 423 = the store auto-locked for inactivity. Broadcast so the app can return
+  // to the unlock screen instead of stranding the operator on a raw error.
+  if (res.status === 423) {
+    window.dispatchEvent(new CustomEvent("patd:locked"))
+  }
+  // 401 = the session is gone (server restart wiped the in-memory session store,
+  // or the session hit idle/absolute expiry). Broadcast so AuthProvider returns to
+  // the login screen instead of leaving the SPA in a stale "authenticated" state.
+  // The poll endpoints no longer 401 (see pollSoftAuth), so this path now fires for
+  // foreground requests an operator triggers during the stale window.
+  if (res.status === 401) {
+    broadcastUnauthorized()
+  }
+  let msg = `request failed (${res.status})`
+  if (body && typeof body === "object" && "error" in body) {
+    const e = (body as { error?: unknown }).error
+    if (typeof e === "string" && e) msg = e
+  }
+  throw new ApiError(res.status, msg, body)
 }
 
 function safeParse(text: string): unknown {
@@ -355,7 +385,7 @@ export function uploadForm<T>(
         return
       }
       if (xhr.status === 423) window.dispatchEvent(new CustomEvent("patd:locked"))
-      if (xhr.status === 401) window.dispatchEvent(new CustomEvent("patd:unauthorized"))
+      if (xhr.status === 401) broadcastUnauthorized()
       let msg = `request failed (${xhr.status})`
       if (body && typeof body === "object" && "error" in body) {
         const e = (body as { error?: unknown }).error
