@@ -96,8 +96,9 @@ export interface Summary {
   policy_violations: number
   high_controlled: number
   dormant_privileged: number
-  // Executive breach impact
-  breach_impact: BreachImpact
+  // Executive breach impact. Optional: domain-scoped summaries omit it (no client
+  // estimator), which cleanly hides the PostureCard breach sub-panel for domains.
+  breach_impact?: BreachImpact
 }
 
 export interface BreachImpact {
