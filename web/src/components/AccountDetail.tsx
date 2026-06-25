@@ -18,7 +18,6 @@ const peerKey = (u: string, d: string) => `${u}@${d}`
 // Neutral "details" facts shown under the risk-flag chips in each card. Labels match
 // accountFactRows(); the dangerous states are surfaced as chips instead (see *Flags).
 const PASSWORD_DETAILS = ["Complexity", "Password length", "Similarity", "Contains Unicode"]
-const AD_DETAILS = ["Controlled objects", "Password last set"]
 
 export function AccountDetail({
   trail, onBack, onJump, onPivot, onClose,
@@ -276,14 +275,19 @@ function PasswordCard({
 // "run enrichment" hint (their AD attributes are Unknown) plus any non-enrichment flag.
 function ADCard({ account, rows }: { account: Account; rows: [string, ReactNode][] }) {
   const enriched = account.coverage === "full"
+  // Controlled-object count appears as a flag when high (>100); otherwise as a neutral
+  // detail — never both (avoids showing e.g. "898" twice).
+  const detailLabels = (account.controlled_object_count ?? 0) > 100
+    ? ["Password last set"]
+    : ["Controlled objects", "Password last set"]
   return (
     <section className="panel ad-card">
       <div className="ad-card-title">Active Directory</div>
       {!enriched && (
-        <p className="ad-card-sub">Not BloodHound-enriched — run enrichment for privileges, password age &amp; expiry.</p>
+        <p className="ad-card-sub">Not BloodHound-enriched — run enrichment for privileges &amp; password age.</p>
       )}
       <FlagChips flags={adFlags(account)} />
-      {enriched && <DetailGrid rows={pickFacts(rows, AD_DETAILS)} />}
+      {enriched && <DetailGrid rows={pickFacts(rows, detailLabels)} />}
     </section>
   )
 }
