@@ -135,10 +135,6 @@ export function AccountDetail({
             <ADCard account={account} rows={rows} />
             <section className="panel ad-card ad-span">
               <div className="ad-card-title">Scoring</div>
-              <div className="ad-vector">
-                <span className="ad-vector-label">Risk vector</span>
-                <code className="vector">{account.risk_vector || "—"}</code>
-              </div>
               <BreakdownCards a={account} />
             </section>
           </div>

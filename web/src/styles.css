@@ -2078,6 +2078,27 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
 }
 .ad-reveal-actions { display: flex; gap: var(--space-sm); align-items: center; }
 
+/* Scoring breakdown ↔ risk-vector tie-in */
+.bd-factor-right { display: flex; align-items: center; gap: 6px; }
+.bd-code {
+  font-family: var(--mono); font-size: 10px; color: #7dd3fc;
+  background: rgba(56, 189, 248, 0.10); border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 4px; padding: 0 5px; white-space: nowrap;
+}
+.bd-card-tier { font-size: 11px; font-weight: 400; color: var(--faint); }
+.bd-tier { font-weight: 700; }
+.tc-crit { color: var(--crit); }
+.tc-high { color: var(--high); }
+.tc-med { color: var(--med); }
+.tc-low { color: var(--low); }
+.bd-vfoot { margin-top: var(--space-lg); border-top: 1px solid var(--hairline); padding-top: var(--space-md); }
+.bd-vfoot-label { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--faint); margin-bottom: var(--space-xs); }
+.bd-vector { font-family: var(--mono); font-size: 11px; color: var(--faint); word-break: break-all; line-height: 1.7; }
+.bd-vseg-in { color: #7dd3fc; }
+.bd-vseg-tier { font-weight: 700; }
+.bd-vseg-dim { color: var(--dim); }
+.bd-vfoot-note { font-size: 11px; color: var(--faint); margin: var(--space-sm) 0 0; }
+
 /* CSS grid reusing the MatrixHeatmap row/header classes; 1 label col + 5 cols. */
 .score-grid { display: flex; flex-direction: column; gap: var(--space-sm); }
 /* The corner is the first cell of the header row (over the row-label column),

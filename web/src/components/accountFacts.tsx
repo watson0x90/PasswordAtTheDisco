@@ -81,20 +81,91 @@ export function accountFactRows(a: Account): [string, ReactNode][] {
 // BreakdownCard — v2 axis sub-score card (one per axis: Exposure / Impact). Shows the
 // axis score and its per-factor contributions. This is the v2 rewrite of the card #C1
 // removed; it does NOT resurrect the v1 base/temporal/environmental cards.
-function BreakdownCard({ title, score, factors }: { title: string; score: string; factors: [string, number][] }) {
+// --- risk-vector decode: ties each breakdown factor to the vector segment it sets ---
+
+// parseVector turns "C:C5/L:M/…" into { C: "C5", L: "M", … }.
+function parseVector(vec: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const part of (vec || "").split("/")) {
+    const i = part.indexOf(":")
+    if (i > 0) out[part.slice(0, i)] = part.slice(i + 1)
+  }
+  return out
+}
+
+// factorCodes maps a breakdown factor label (sub-factor "· " prefix stripped) to the
+// vector segment key(s) it produces. Weakness / Cracked floor / Age have no segment.
+const factorCodes: Record<string, string[]> = {
+  Length: ["L"], Complexity: ["C"], Dictionary: ["D"], Similarity: ["SM"],
+  Reuse: ["S"], Roastable: ["RO"], "HIBP floor": ["HIBP"],
+  Privilege: ["CO", "T0"], "DA path": ["DA"], Domain: ["DR"],
+}
+
+const tierName: Record<string, string> = { C: "Critical", H: "High", M: "Medium", L: "Low" }
+const tierColor: Record<string, string> = { C: "tc-crit", H: "tc-high", M: "tc-med", L: "tc-low" }
+// vectorInputKeys are the per-factor segments (highlighted); EXP/IMP are result tiers.
+const vectorInputKeys = new Set(["C", "L", "D", "SM", "S", "RO", "HIBP", "DA", "CO", "T0", "DR"])
+
+// VectorLine renders the full risk vector with the per-factor segments highlighted and
+// the EXP/IMP result tiers coloured by severity.
+function VectorLine({ vec }: { vec: string }) {
+  const parts = (vec || "").split("/").filter(Boolean)
+  if (!parts.length) return null
+  return (
+    <code className="bd-vector">
+      {parts.map((part, i) => {
+        const ci = part.indexOf(":")
+        const k = ci > 0 ? part.slice(0, ci) : part
+        const val = ci > 0 ? part.slice(ci + 1) : ""
+        const cls = k === "EXP" || k === "IMP"
+          ? `bd-vseg-tier ${tierColor[val] || ""}`
+          : vectorInputKeys.has(k) ? "bd-vseg-in" : "bd-vseg-dim"
+        return (
+          <span key={i}>{i > 0 ? "/" : ""}{k}:<span className={cls}>{val}</span></span>
+        )
+      })}
+    </code>
+  )
+}
+
+function BreakdownCard({
+  title, score, tierKey, factors, seg,
+}: {
+  title: string
+  score: string
+  tierKey: "EXP" | "IMP"
+  factors: [string, number][]
+  seg: Record<string, string>
+}) {
+  const tier = seg[tierKey]
   return (
     <div className="bd-card">
       <div className="bd-card-head">
         <span className="bd-card-title">{title}</span>
-        <span className="bd-card-score">{score}</span>
+        <span className="bd-card-score">
+          {score}
+          {tier && (
+            <span className="bd-card-tier">
+              {" → "}
+              <span className={`bd-tier ${tierColor[tier] || ""}`}>{tierName[tier] || tier}</span>{" "}
+              <span className="bd-code">{tierKey}:{tier}</span>
+            </span>
+          )}
+        </span>
       </div>
       <div className="bd-card-factors">
-        {factors.map(([name, value]) => (
-          <div className="bd-factor" key={name}>
-            <span>{name}</span>
-            <span className="mono">{value.toFixed(2)}</span>
-          </div>
-        ))}
+        {factors.map(([name, value]) => {
+          const codes = (factorCodes[name.replace(/^· /, "")] || []).filter((k) => seg[k] != null)
+          return (
+            <div className="bd-factor" key={name}>
+              <span>{name}</span>
+              <span className="bd-factor-right">
+                {codes.map((k) => <span className="bd-code" key={k}>{k}:{seg[k]}</span>)}
+                <span className="mono">{value.toFixed(2)}</span>
+              </span>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -111,9 +182,10 @@ export function BreakdownCards({ a }: { a: Account }) {
     const x = bd?.[k]
     return typeof x === "number" ? x : 0
   }
+  const seg = parseVector(a.risk_vector)
   return (
     <div className="drawer-breakdown">
-      <div className="drawer-section-title">Score breakdown (v2)</div>
+      <div className="drawer-section-title">Score breakdown · each factor sets a vector segment</div>
       <div className="breakdown-grid">
         {/* Uncracked accounts DO carry a score_breakdown (engine scoreUncracked emits
             one); its weakness sub-scores are 0 (password unknown). The Exposure card
@@ -122,6 +194,8 @@ export function BreakdownCards({ a }: { a: Account }) {
           <BreakdownCard
             title="Exposure"
             score={a.exposure_score.toFixed(1)}
+            tierKey="EXP"
+            seg={seg}
             factors={[
               ["Weakness", v("weakness_score")],
               ...weaknessSubFactors(bd).map(([label, val]) => [`· ${label}`, val] as [string, number]),
@@ -141,6 +215,8 @@ export function BreakdownCards({ a }: { a: Account }) {
             <BreakdownCard
               title="Impact"
               score={(a.impact_score as number).toFixed(1)}
+              tierKey="IMP"
+              seg={seg}
               factors={[
                 ["Privilege", v("privilege_sub_score")],
                 ["DA path", v("da_component")],
@@ -169,6 +245,17 @@ export function BreakdownCards({ a }: { a: Account }) {
       )}
       {a.controls_tier0 && (
         <p className="bd-note">Privilege pinned to 10 — controls a Tier-0 / DA-equivalent asset.</p>
+      )}
+      {a.risk_vector && (
+        <div className="bd-vfoot">
+          <span className="bd-vfoot-label">Assembled risk vector</span>
+          <VectorLine vec={a.risk_vector} />
+          <p className="bd-vfoot-note">
+            Highlighted segments are the factors above; <span className="bd-tier">EXP / IMP</span> are
+            the resulting tiers (= the Exposure / Impact scores). CM (compliance) and EX (expires)
+            come from the Active Directory card.
+          </p>
+        </div>
       )}
     </div>
   )
