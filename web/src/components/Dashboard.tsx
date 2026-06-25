@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react"
-import { api, ApiError, type BreachImpact, type Posture, type Report, type Summary } from "../api"
+import { useEffect, useState, type ReactNode } from "react"
+import { api, ApiError, type Account, type BreachImpact, type Posture, type Report, type Summary } from "../api"
 import { useAuth } from "../auth"
 import { useAudits } from "../auditsData"
 import { useAccountsData } from "../accountsData"
@@ -78,28 +78,62 @@ export function Dashboard() {
   if (!accounts) return <div className="center-state"><div className="spinner">loading</div></div>
   if (accounts.length === 0) return <GetStarted />
 
+  return (
+    <>
+      <OverviewView
+        accounts={accounts}
+        summary={summary}
+        report={report}
+        actions={
+          <>
+            <RecalcControl hasScored={!!summary?.generated_at} />
+            <button className="btn" onClick={() => nav("reports")}>Reports &amp; export →</button>
+          </>
+        }
+      />
+      <BackgroundJobsCard />
+    </>
+  )
+}
+
+// OverviewView is the presentational Overview dashboard. It is shared by the org
+// Dashboard (its default render) and the per-domain page (fed domain-scoped
+// accounts/summary/report). Everything here is derived from the props — no context,
+// no fetching — so the same panels render identically for org and domain. Org-global
+// chrome (Recalc/Reports buttons, the background-jobs card) lives in the Dashboard
+// wrapper, passed in via `actions`.
+export function OverviewView({
+  accounts,
+  summary,
+  report,
+  title = "Overview",
+  subtitle = "Where do we stand? Org-wide posture at a glance.",
+  actions,
+}: {
+  accounts: Account[]
+  summary: Summary | null
+  report: Report | null
+  title?: string
+  subtitle?: string
+  actions?: ReactNode
+}) {
   const { total, cracked, breached, da } = kpiCounts(summary, accounts)
   const crackPct = total ? Math.round((cracked / total) * 100) : 0
 
   const cov = coverageStats(accounts)
   const eiMatrix = exposureImpactMatrix(accounts)
-  // Impact-Unknown count: accounts whose Impact axis is Unknown (no BloodHound
-  // coverage). Surfaced as a first-class KPI so the coverage gap is a number, not
-  // just the C4 banner. Uses matrix.ts isProvisional (impact_known=false) — the
-  // same predicate the per-account provisional badges use, so they can't drift.
   const impactUnknown = accounts.filter(isProvisional).length
 
   return (
     <>
       <div className="view-head">
-        <div className="section-label">Overview</div>
+        <div className="section-label">{title}</div>
         <div className="export-actions">
           {summary?.generated_at && <span className="muted data-ts">Data scored {new Date(summary.generated_at).toLocaleString()}</span>}
-          <RecalcControl hasScored={!!summary?.generated_at} />
-          <button className="btn" onClick={() => nav("reports")}>Reports &amp; export →</button>
+          {actions}
         </div>
       </div>
-      <div className="view-sub">Where do we stand? Org-wide posture at a glance.</div>
+      <div className="view-sub">{subtitle}</div>
       {cov.partial && (
         <div className="coverage-banner" role="status">
           <span className="coverage-banner-dot" aria-hidden="true" />
@@ -160,8 +194,7 @@ export function Dashboard() {
         </ChartCard>
       </div>
 
-      <Insights report={report} />
-      <BackgroundJobsCard />
+      <Insights report={report} accounts={accounts} />
     </>
   )
 }
