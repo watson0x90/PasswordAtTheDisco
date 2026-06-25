@@ -195,8 +195,10 @@ sample_data/
 .dev*
 .no-bloodhound.json
 
-# Scripts directory (internal development only)
-scripts/
+# Scripts directory (internal development only) -- except the canonical build scripts
+scripts/*
+!scripts/build.sh
+!scripts/build.ps1
 
 # Ad-hoc dev test scripts in the repo root (the tracked suite lives in tests/)
 /test_*.py

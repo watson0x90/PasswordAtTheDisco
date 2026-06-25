@@ -1,4 +1,4 @@
-// Command api is the v2 secure-delivery backend for Password!AtTheDisco.
+// Command patd is the v2 secure-delivery backend for Password!AtTheDisco.
 //
 // Design goals (see ../README.md):
 //   - Single self-contained binary; only the vetted golang.org/x/crypto beyond
@@ -7,15 +7,16 @@
 //   - Cracked credentials live only in process memory, are served redacted by
 //     default, and are revealed only to authorized operators with an audit log.
 //
-// Subcommand: `api hashpw` reads a password on stdin and prints an argon2id
-// hash for populating users.json.
+// Subcommands: user, token, audit, reindex, hashpw — run 'patd --help' for usage.
 package main
 
 import (
 	"bufio"
 	"context"
 	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -53,6 +54,35 @@ var (
 	buildDate = "unknown"
 )
 
+const usage = `patd — Password!AtTheDisco: AD password-exposure auditing console.
+
+Usage:
+  patd [--addr host:port | --port N]   Run the server (default; 127.0.0.1:8443).
+  patd user <add|passwd|list> ...      Manage operators (see 'patd user').
+  patd token <create|list|revoke> ...  Manage MCP API tokens.
+  patd audit ...                       Run an audit from the CLI.
+  patd reindex                         Rebuild the encrypted index from audit blobs.
+  patd hashpw                          Hash a password from stdin (prints the PHC string).
+  patd --version | -v                  Print version and exit.
+  patd help | --help | -h              Print this help.
+
+Server flags:
+  --addr host:port   Full bind address (overrides PATD_ADDR).
+  --port N           Bind 127.0.0.1:N (overrides PATD_ADDR).
+
+Key environment variables (see README.md for the full list):
+  PATD_DATA          Encrypted store directory (default: data).
+  PATD_USERS_FILE    Operators file (default: users.json).
+  PATD_ADDR          Listen address (default: 127.0.0.1:8443).
+  PATD_BHE           BloodHound enrichment config (default: config/bloodhound.json).
+  PATD_TLS_CERT/_KEY TLS cert+key; required to bind a non-loopback address.
+  PATD_AUDIT_LOG     Audit log file (default: stdout).`
+
+// versionLine renders the stamped build identity (set via -ldflags -X at build time).
+func versionLine() string {
+	return fmt.Sprintf("patd %s (%s, built %s)", version, commit, buildDate)
+}
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.LUTC)
 	if len(os.Args) > 1 {
@@ -66,13 +96,34 @@ func main() {
 		case "reindex":
 			runReindex()
 			return
+		case "user":
+			runUser(os.Args[2:])
+			return
 		case "token":
 			runToken(os.Args[2:])
+			return
+		case "help", "--help", "-h":
+			fmt.Println(usage)
+			return
+		case "--version", "-v", "version":
+			fmt.Println(versionLine())
 			return
 		}
 	}
 
-	addr := env("PATD_ADDR", "127.0.0.1:8443")
+	fs := flag.NewFlagSet("patd", flag.ExitOnError)
+	addrFlag := fs.String("addr", "", "listen address host:port (overrides PATD_ADDR)")
+	portFlag := fs.String("port", "", "listen port, bound to 127.0.0.1 (overrides PATD_ADDR)")
+	_ = fs.Parse(os.Args[1:])
+	if fs.NArg() > 0 {
+		fmt.Fprintf(os.Stderr, "unknown command %q (try 'patd --help')\n", fs.Arg(0))
+		os.Exit(2)
+	}
+	addr, err := resolveAddr(*addrFlag, *portFlag, os.Getenv("PATD_ADDR"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 	cert, key := os.Getenv("PATD_TLS_CERT"), os.Getenv("PATD_TLS_KEY")
 
 	usersFile := env("PATD_USERS_FILE", "users.json")
@@ -265,12 +316,29 @@ func main() {
 	}
 }
 
-func hashpw() {
-	fmt.Fprint(os.Stderr, "Password: ")
-	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+// readPassword prompts on stderr and reads a single line from in, trimming the
+// trailing newline. Used by hashpw, and reusable by the operator-management
+// subcommands added later. Reading from a reader (not os.Stdin directly) keeps it
+// unit-testable and pipeable for automation.
+func readPassword(in io.Reader, prompt string) (string, error) {
+	if prompt != "" {
+		fmt.Fprint(os.Stderr, prompt)
+	}
+	line, err := bufio.NewReader(in).ReadString('\n')
+	if err != nil && err != io.EOF {
+		return "", err
+	}
 	pw := strings.TrimRight(line, "\r\n")
 	if pw == "" {
-		fmt.Fprintln(os.Stderr, "empty password")
+		return "", errors.New("empty password")
+	}
+	return pw, nil
+}
+
+func hashpw() {
+	pw, err := readPassword(os.Stdin, "Password: ")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 	h, err := auth.HashPassword(pw)
@@ -322,6 +390,29 @@ func env(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// resolveAddr picks the server listen address. Precedence: an explicit --addr or
+// --port flag, then the PATD_ADDR env value, then the loopback default. --addr and
+// --port are mutually exclusive; --port is shorthand for 127.0.0.1:<port>. Empty
+// strings mean "unset".
+func resolveAddr(addrFlag, portFlag, envAddr string) (string, error) {
+	if addrFlag != "" && portFlag != "" {
+		return "", errors.New("use --addr or --port, not both")
+	}
+	if addrFlag != "" {
+		return addrFlag, nil
+	}
+	if portFlag != "" {
+		if _, err := strconv.Atoi(portFlag); err != nil {
+			return "", fmt.Errorf("invalid --port %q", portFlag)
+		}
+		return "127.0.0.1:" + portFlag, nil
+	}
+	if envAddr != "" {
+		return envAddr, nil
+	}
+	return "127.0.0.1:8443", nil
 }
 
 func envInt(key string, def int) int {
