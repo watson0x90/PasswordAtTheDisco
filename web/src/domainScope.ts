@@ -1,4 +1,4 @@
-import type { Account, Summary } from "./api"
+import type { Account, Report, ReportAccount, ReuseGroup, Summary } from "./api"
 import { neverExpiresCount, posture } from "./insights"
 import { hasDA } from "./util"
 
@@ -42,5 +42,44 @@ export function domainSummary(domainAccounts: Account[], orgSummary: Summary): S
     high_controlled: domainAccounts.filter((a) => (a.controlled_object_count ?? 0) > 100).length,
     dormant_privileged: domainAccounts.filter(isDormantPrivileged).length,
     // breach_impact intentionally omitted — see header comment.
+  }
+}
+
+const inDomain = (domain: string) => (x: ReportAccount) => x.domain === domain
+const groupTouchesDomain = (domain: string) => (g: ReuseGroup) =>
+  g.members.some((m) => m.domain === domain)
+
+// domainReport scopes an org Report to a single domain for the per-domain Overview's
+// report-driven panels (the cross-domain reuse graph + Insights). Per-account lists
+// are filtered to the domain; reuse groups are kept when ANY member is in the domain
+// (so cross-domain clusters the domain participates in remain visible). violation_counts
+// is passed through (labels only — low-stakes). total/cracked/uncracked come from the
+// filtered domain accounts when provided, else fall back to the org report's totals.
+export function domainReport(
+  orgReport: Report | null,
+  domain: string,
+  domainAccounts?: Account[],
+): Report | null {
+  if (!orgReport) return null
+  const keep = inDomain(domain)
+  const keepGroup = groupTouchesDomain(domain)
+  const crackedCount = domainAccounts?.filter((a) => a.cracked).length
+  return {
+    total_accounts: domainAccounts ? domainAccounts.length : orgReport.total_accounts,
+    cracked_count: crackedCount ?? orgReport.cracked_count,
+    uncracked_count: domainAccounts ? domainAccounts.length - (crackedCount ?? 0) : orgReport.uncracked_count,
+    da_pathways: orgReport.da_pathways.filter(keep),
+    cracked: orgReport.cracked.filter(keep),
+    cracked_reuse: orgReport.cracked_reuse.filter(keepGroup),
+    uncracked_reuse: orgReport.uncracked_reuse.filter(keepGroup),
+    hibp_exposed: orgReport.hibp_exposed.filter(keep),
+    weak_passwords: orgReport.weak_passwords.filter(keep),
+    violation_counts: orgReport.violation_counts,
+    escalated_by_shared_da: orgReport.escalated_by_shared_da.filter(keep),
+    high_controlled: orgReport.high_controlled.filter(keep),
+    never_expires: orgReport.never_expires.filter(keep),
+    stale_passwords: orgReport.stale_passwords.filter(keep),
+    kerberoastable: orgReport.kerberoastable.filter(keep),
+    asrep_roastable: orgReport.asrep_roastable.filter(keep),
   }
 }
