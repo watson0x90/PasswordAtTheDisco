@@ -52,3 +52,21 @@ func TestResolveAddr(t *testing.T) {
 		})
 	}
 }
+
+func TestUsageMentionsCommandsAndFlags(t *testing.T) {
+	for _, want := range []string{"user", "token", "audit", "reindex", "hashpw", "--addr", "--port", "--version", "PATD_DATA", "PATD_USERS_FILE"} {
+		if !strings.Contains(usage, want) {
+			t.Errorf("usage missing %q", want)
+		}
+	}
+}
+
+func TestVersionLine(t *testing.T) {
+	// version/commit/buildDate default to dev/none/unknown in an unstamped test build.
+	got := versionLine()
+	for _, want := range []string{"patd", version, commit, buildDate} {
+		if !strings.Contains(got, want) {
+			t.Errorf("versionLine %q missing %q", got, want)
+		}
+	}
+}

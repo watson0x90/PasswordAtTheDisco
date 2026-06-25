@@ -55,6 +55,35 @@ var (
 	buildDate = "unknown"
 )
 
+const usage = `patd — Password!AtTheDisco: AD password-exposure auditing console.
+
+Usage:
+  patd [--addr host:port | --port N]   Run the server (default; 127.0.0.1:8443).
+  patd user <add|passwd|list> ...      Manage operators (see 'patd user').
+  patd token <create|list|revoke> ...  Manage MCP API tokens.
+  patd audit ...                       Run an audit from the CLI.
+  patd reindex                         Rebuild the encrypted index from audit blobs.
+  patd hashpw                          Hash a password from stdin (prints the PHC string).
+  patd --version | -v                  Print version and exit.
+  patd help | --help | -h              Print this help.
+
+Server flags:
+  --addr host:port   Full bind address (overrides PATD_ADDR).
+  --port N           Bind 127.0.0.1:N (overrides PATD_ADDR).
+
+Key environment variables (see README.md for the full list):
+  PATD_DATA          Encrypted store directory (default: data).
+  PATD_USERS_FILE    Operators file (default: users.json).
+  PATD_ADDR          Listen address (default: 127.0.0.1:8443).
+  PATD_BHE           BloodHound enrichment config (default: config/bloodhound.json).
+  PATD_TLS_CERT/_KEY TLS cert+key; required to bind a non-loopback address.
+  PATD_AUDIT_LOG     Audit log file (default: stdout).`
+
+// versionLine renders the stamped build identity (set via -ldflags -X at build time).
+func versionLine() string {
+	return fmt.Sprintf("patd %s (%s, built %s)", version, commit, buildDate)
+}
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.LUTC)
 	if len(os.Args) > 1 {
@@ -70,6 +99,12 @@ func main() {
 			return
 		case "token":
 			runToken(os.Args[2:])
+			return
+		case "help", "--help", "-h":
+			fmt.Println(usage)
+			return
+		case "--version", "-v", "version":
+			fmt.Println(versionLine())
 			return
 		}
 	}
