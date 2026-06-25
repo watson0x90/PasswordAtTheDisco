@@ -84,31 +84,34 @@ export function Dashboard() {
         accounts={accounts}
         summary={summary}
         report={report}
+        subtitle="Where do we stand? Org-wide posture at a glance."
         actions={
           <>
             <RecalcControl hasScored={!!summary?.generated_at} />
             <button className="btn" onClick={() => nav("reports")}>Reports &amp; export →</button>
           </>
         }
+        notice={<RecalcSuggestion />}
       />
       <BackgroundJobsCard />
     </>
   )
 }
 
-// OverviewView is the presentational Overview dashboard. It is shared by the org
-// Dashboard (its default render) and the per-domain page (fed domain-scoped
-// accounts/summary/report). Everything here is derived from the props — no context,
-// no fetching — so the same panels render identically for org and domain. Org-global
-// chrome (Recalc/Reports buttons, the background-jobs card) lives in the Dashboard
-// wrapper, passed in via `actions`.
+// OverviewView is the presentational Overview dashboard, shared by the org Dashboard
+// (its default render) and the per-domain page (fed domain-scoped accounts/summary/
+// report). Its own body derives only from props — no context, no fetching. Org-global
+// chrome that DOES need context (the Recalc/Reports buttons, the rescore-suggestion
+// banner, the background-jobs card) is injected by the Dashboard wrapper via the
+// `actions` and `notice` slots / rendered as siblings, so the domain page never shows it.
 export function OverviewView({
   accounts,
   summary,
   report,
   title = "Overview",
-  subtitle = "Where do we stand? Org-wide posture at a glance.",
+  subtitle = "Where do we stand? Posture at a glance.",
   actions,
+  notice,
 }: {
   accounts: Account[]
   summary: Summary | null
@@ -116,6 +119,7 @@ export function OverviewView({
   title?: string
   subtitle?: string
   actions?: ReactNode
+  notice?: ReactNode
 }) {
   const { total, cracked, breached, da } = kpiCounts(summary, accounts)
   const crackPct = total ? Math.round((cracked / total) * 100) : 0
@@ -143,7 +147,7 @@ export function OverviewView({
           <InfoTip text={GLOSSARY.coverage} />
         </div>
       )}
-      <RecalcSuggestion />
+      {notice}
       <div className="stat-grid">
         <Stat label="Accounts" value={total} delay={0} />
         <Stat label="Cracked" value={cracked} sub={`${crackPct}% of accounts`} delay={0.06} />
