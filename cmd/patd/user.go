@@ -96,6 +96,12 @@ func runUser(args []string) {
 	}
 	usersFile := env("PATD_USERS_FILE", "users.json")
 	switch args[0] {
+	case "help", "--help", "-h":
+		fmt.Println("usage: patd user <add|passwd|list> [flags]")
+		fmt.Println("  add <username> --role analyst|lead [--force]   create an operator")
+		fmt.Println("  passwd <username> [--force]                    reset a password")
+		fmt.Println("  list                                           list operators")
+		return
 	case "add":
 		username, flagArgs, ok := splitUserArgs(args[1:])
 		if !ok {

@@ -30,7 +30,7 @@ fi
 
 if [ "$SKIP_WEB" -eq 0 ]; then
   if [ ! -d web/node_modules ]; then
-    echo "ERROR: web/node_modules missing — run 'cd web && npm install' once first." >&2
+    echo "ERROR: web/node_modules missing — run 'cd web && npm ci --ignore-scripts' once first." >&2
     exit 1
   fi
   echo "==> building SPA (npm run build)"

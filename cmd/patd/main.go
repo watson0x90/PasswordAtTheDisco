@@ -1,4 +1,4 @@
-// Command api is the v2 secure-delivery backend for Password!AtTheDisco.
+// Command patd is the v2 secure-delivery backend for Password!AtTheDisco.
 //
 // Design goals (see ../README.md):
 //   - Single self-contained binary; only the vetted golang.org/x/crypto beyond
@@ -7,8 +7,7 @@
 //   - Cracked credentials live only in process memory, are served redacted by
 //     default, and are revealed only to authorized operators with an audit log.
 //
-// Subcommand: `api hashpw` reads a password on stdin and prints an argon2id
-// hash for populating users.json.
+// Subcommands: user, token, audit, reindex, hashpw — run 'patd --help' for usage.
 package main
 
 import (

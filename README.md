@@ -95,7 +95,7 @@ See **[CHANGELOG.md](CHANGELOG.md)** for the full release history.
 
 ```bash
 # one-time: install the SPA's dependencies
-cd web && npm install && cd ..
+cd web && npm ci --ignore-scripts && cd ..
 
 # build a stamped, self-contained binary (Go API + embedded React SPA)
 scripts/build.sh            # Linux / macOS / Windows (Git Bash)

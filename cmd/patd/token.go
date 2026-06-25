@@ -50,6 +50,12 @@ func runToken(args []string) {
 	}
 	defaultPath := env("PATD_MCP_TOKENS_FILE", "mcp_tokens.json")
 	switch args[0] {
+	case "help", "--help", "-h":
+		fmt.Println("usage: patd token <create|list|revoke> [flags]")
+		fmt.Println("  create --label <name> [--role analyst|lead] [--expires <dur|RFC3339>]")
+		fmt.Println("  list")
+		fmt.Println("  revoke <id>")
+		return
 	case "create":
 		fs := flag.NewFlagSet("token create", flag.ExitOnError)
 		role := fs.String("role", "analyst", "token role: analyst|lead")

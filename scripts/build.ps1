@@ -14,7 +14,7 @@ Set-Location $root
 
 if (-not $SkipWeb) {
   if (-not (Test-Path "web\node_modules")) {
-    Write-Error "web\node_modules missing — run 'cd web; npm install' once first."
+    Write-Error "web\node_modules missing — run 'cd web; npm ci --ignore-scripts' once first."
   }
   Write-Host "==> building SPA (npm run build)"
   Push-Location web; npm run build; if ($LASTEXITCODE -ne 0) { Pop-Location; Write-Error "npm run build failed" }; Pop-Location
