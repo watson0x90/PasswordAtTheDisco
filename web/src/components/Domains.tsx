@@ -1,20 +1,15 @@
 import { useEffect, useMemo, useState } from "react"
-import { api, ApiError, type Account, type Report, type ReportAccount, type ReuseGroup } from "../api"
+import { api, ApiError, type Account, type Report, type ReportAccount, type ReuseGroup, type Summary } from "../api"
 import { useAccountsData } from "../accountsData"
 import { useAudits } from "../auditsData"
 import { hasDA, RISK_CLASS, RISK_RANK } from "../util"
-import { hibpSplit, posture, riskDistribution } from "../insights"
-import { ChartCard, Donut, PostureGauge } from "./Charts"
-import { AccountsTable } from "./AccountsTable"
+import { OverviewView } from "./Dashboard"
+import { domainReport, domainSummary } from "../domainScope"
 import { AccountLink } from "./AccountLink"
 import { useSortablePaged, type SortColumn } from "../sortPage"
 import { SortHeader } from "./SortHeader"
 import { Pager } from "./Pager"
-import { domainDAPaths, domainPolicy, domainQuickWins, domainReuseClusters, domainWordlist } from "../domainData"
-
-const RATING_COLOR: Record<string, string> = { Strong: "#34d399", Fair: "#fbbf24", Weak: "#fb7185", "No Data": "#8a96b2" }
-
-const QUICK_WINS_N = 10
+import { domainDAPaths, domainReuseClusters } from "../domainData"
 
 interface DomainStat {
   domain: string
@@ -30,6 +25,7 @@ export function Domains() {
   const [selected, setSelected] = useState<string | null>(null)
   const [report, setReport] = useState<Report | null>(null)
   const [reportErr, setReportErr] = useState("")
+  const [summary, setSummary] = useState<Summary | null>(null)
   const { activeId, dataVersion } = useAudits()
 
   useEffect(() => {
@@ -38,8 +34,9 @@ export function Domains() {
 
   useEffect(() => {
     let alive = true
-    setReport(null); setReportErr("")
+    setReport(null); setReportErr(""); setSummary(null)
     api.report().then((r) => alive && setReport(r)).catch((e) => alive && setReportErr(e instanceof ApiError ? e.message : "report unavailable"))
+    api.summary().then((s) => alive && setSummary(s)).catch(() => {})
     return () => { alive = false }
   }, [activeId, dataVersion])
 
@@ -56,7 +53,7 @@ export function Domains() {
 
   if (selected) {
     const domainAccts = accounts.filter((a) => a.domain === selected)
-    if (domainAccts.length) return <DomainDetail domain={selected} accounts={domainAccts} report={report} reportErr={reportErr} onBack={() => setSelected(null)} />
+    if (domainAccts.length) return <DomainDetail domain={selected} accounts={domainAccts} report={report} reportErr={reportErr} summary={summary} onBack={() => setSelected(null)} />
     // else: fall through to the grid (the effect above will clear `selected`)
   }
 
@@ -104,13 +101,10 @@ export function Domains() {
   )
 }
 
-function DomainDetail({ domain, accounts, report, reportErr, onBack }: { domain: string; accounts: Account[]; report: Report | null; reportErr: string; onBack: () => void }) {
-  const [tab, setTab] = useState<"overview" | "risk" | "compliance" | "accounts">("overview")
+function DomainDetail({ domain, accounts, report, reportErr, summary, onBack }: { domain: string; accounts: Account[]; report: Report | null; reportErr: string; summary: Summary | null; onBack: () => void }) {
+  const dSummary = useMemo(() => (summary ? domainSummary(accounts, summary) : null), [accounts, summary])
+  const dReport = useMemo(() => domainReport(report, domain, accounts), [report, domain, accounts])
 
-  const p = posture(accounts)
-  const pol = domainPolicy(accounts)
-  const wl = domainWordlist(accounts)
-  const quick = useMemo(() => domainQuickWins(accounts, QUICK_WINS_N), [accounts])
   const clusters = useMemo(
     () => (report ? domainReuseClusters(report, domain) : { cracked: [], uncracked: [] }),
     [report, domain],
@@ -147,226 +141,126 @@ function DomainDetail({ domain, accounts, report, reportErr, onBack }: { domain:
   const neverExpiresPage = useSortablePaged(neverExpiresRows, detailCols, { defaultSort: { key: "score", dir: "desc" } })
   const kerberoastPage = useSortablePaged(kerberoastRows, detailCols, { defaultSort: { key: "score", dir: "desc" } })
 
-  const total = accounts.length
-  const cracked = accounts.filter((a) => a.cracked).length
-  const breached = accounts.filter((a) => a.hibp_breached).length
-  const critical = accounts.filter((a) => a.risk_level === "Critical").length
-  const da = accounts.filter((a) => hasDA(a.da_domains)).length
-  const neverExpires = accounts.filter((a) => a.pwd_never_expires === true).length
-  const stale = accounts.filter((a) => (a.days_out_of_compliance ?? 0) > 0).length
-  const kerberoastable = accounts.filter((a) => a.has_spn === true).length
-  const asrep = accounts.filter((a) => a.dont_req_preauth === true).length
-  const escalatedDA = accounts.filter((a) => a.escalated_by_shared_da).length
-
-  const TABS: { key: typeof tab; label: string }[] = [
-    { key: "overview", label: "Overview" },
-    { key: "risk", label: "Credential Risk" },
-    { key: "compliance", label: "Policy & Compliance" },
-    { key: "accounts", label: "Accounts" },
-  ]
-
   return (
     <>
       <button className="link-btn domain-back" onClick={onBack}>← All domains</button>
-      <div className="section-label">{domain}</div>
 
-      <div className="panel posture-panel">
-        <div className="posture-gauge-wrap"><PostureGauge score={p.score} color={RATING_COLOR[p.rating]} rating={p.rating} /></div>
-        <div className="domain-detail-stats">
-          <DStat label="Accounts" value={total} />
-          <DStat label="Cracked" value={cracked} />
-          <DStat label="Breached" value={breached} tone="high" />
-          <DStat label="Critical" value={critical} tone="crit" />
-          <DStat label="DA Paths" value={da} tone="crit" />
-        </div>
+      <OverviewView accounts={accounts} summary={dSummary} report={dReport} title={domain} subtitle="Where does this domain stand?" />
+
+      <div className="section-label">Domain drill-down</div>
+      {reportErr && <div className="hint">{reportErr} — cluster/DA panels need the report.</div>}
+
+      <div className="section-label sub">DA-pathway accounts</div>
+      <div className="panel">
+        {daPaths.length === 0 ? (
+          <div className="muted">No BloodHound DA pathways in this domain.</div>
+        ) : (
+          <>
+            <table className="accounts compact"><thead><tr>
+              <SortHeader label="Username" colKey="username" sort={daPage.sort} onSort={daPage.setSort} />
+              <SortHeader label="Risk" colKey="risk" sort={daPage.sort} onSort={daPage.setSort} />
+              <SortHeader label="Score" colKey="score" numeric sort={daPage.sort} onSort={daPage.setSort} />
+              <SortHeader label="HIBP" colKey="hibp" numeric sort={daPage.sort} onSort={daPage.setSort} />
+              <SortHeader label="DA domains" colKey="da" sort={daPage.sort} onSort={daPage.setSort} />
+              <SortHeader label="Controlled" colKey="controlled" numeric sort={daPage.sort} onSort={daPage.setSort} />
+            </tr></thead>
+              <tbody>{daPage.rows.map((a) => (<tr key={a.username}><td><AccountLink username={a.username} domain={a.domain} /></td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td className="num">{a.hibp_breach_count || "—"}</td><td className="muted">{a.da_domains ?? "—"}</td><td className="num">{a.controlled_object_count || "—"}</td></tr>))}</tbody>
+            </table>
+            <Pager page={daPage} />
+          </>
+        )}
       </div>
 
-      <div className="domain-tabs">
-        {TABS.map((t) => (
-          <button key={t.key} className={`domain-tab ${tab === t.key ? "active" : ""}`} onClick={() => setTab(t.key)}>
-            {t.label}
-          </button>
-        ))}
+      <ReuseClusters title="Reused passwords (cracked)" groups={clusters.cracked} lateral={false} />
+      <ReuseClusters title="Shared uncracked hashes (lateral movement)" groups={clusters.uncracked} lateral={true} />
+
+      <div className="section-label sub">Escalated by Shared-DA</div>
+      <div className="panel">
+        {escalatedRows.length === 0 ? (
+          <div className="muted">No accounts escalated via hash-sharing with a DA.</div>
+        ) : (
+          <>
+            <table className="accounts compact"><thead><tr>
+              <SortHeader label="Username" colKey="username" sort={escalatedPage.sort} onSort={escalatedPage.setSort} />
+              <SortHeader label="Risk" colKey="risk" sort={escalatedPage.sort} onSort={escalatedPage.setSort} />
+              <SortHeader label="Score" colKey="score" numeric sort={escalatedPage.sort} onSort={escalatedPage.setSort} />
+              <SortHeader label="Shared" colKey="shared" numeric sort={escalatedPage.sort} onSort={escalatedPage.setSort} />
+            </tr></thead>
+              <tbody>{escalatedPage.rows.map((a) => (
+                <tr key={a.username}><td><AccountLink username={a.username} domain={a.domain} /></td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td className="num">{a.shared_with}</td></tr>
+              ))}</tbody>
+            </table>
+            <Pager page={escalatedPage} />
+          </>
+        )}
       </div>
 
-      {tab === "overview" && (
-        <>
-          <div className="stat-grid stat-grid-secondary">
-            <StatMini label="Never Expires" value={neverExpires} />
-            <StatMini label="Stale Passwords" value={stale} tone="high" />
-            <StatMini label="Kerberoastable" value={kerberoastable} tone="high" />
-            <StatMini label="AS-REP Roastable" value={asrep} tone="crit" />
-            <StatMini label="Escalated (Shared-DA)" value={escalatedDA} tone="crit" />
-            <StatMini label="Disabled" value={accounts.filter((a) => !a.enabled).length} />
-          </div>
-          <div className="chart-grid">
-            <ChartCard title="Risk distribution"><Donut data={riskDistribution(accounts)} /></ChartCard>
-            <ChartCard title="HIBP exposure"><Donut data={hibpSplit(accounts)} /></ChartCard>
-          </div>
-          <div className="domain-strips">
-            <div className="panel strip">
-              <div className="strip-title">Policy</div>
-              <div className="strip-stats"><DStat label="Meets" value={pol.meets} /><DStat label="Fails" value={pol.fails} tone="high" /><DStat label="Disabled" value={pol.disabled} /></div>
-            </div>
-            <div className="panel strip">
-              <div className="strip-title">Wordlist hits</div>
-              <div className="strip-stats"><DStat label="Common" value={wl.common} tone="high" /><DStat label="Dictionary" value={wl.dictionary} /><DStat label="Forbidden" value={wl.banned} tone="high" /><DStat label="Keyboard" value={wl.keyboard} /></div>
-            </div>
-          </div>
-        </>
-      )}
+      <div className="section-label sub">Stale passwords (past max age)</div>
+      <div className="panel">
+        {staleRows.length === 0 ? (
+          <div className="muted">No stale passwords in this domain.</div>
+        ) : (
+          <>
+            <table className="accounts compact"><thead><tr>
+              <SortHeader label="Username" colKey="username" sort={stalePage.sort} onSort={stalePage.setSort} />
+              <SortHeader label="Risk" colKey="risk" sort={stalePage.sort} onSort={stalePage.setSort} />
+              <SortHeader label="Score" colKey="score" numeric sort={stalePage.sort} onSort={stalePage.setSort} />
+              <SortHeader label="Days overdue" colKey="days" numeric sort={stalePage.sort} onSort={stalePage.setSort} />
+              <SortHeader label="Enabled" colKey="enabled" sort={stalePage.sort} onSort={stalePage.setSort} />
+            </tr></thead>
+              <tbody>{stalePage.rows.map((a) => (
+                <tr key={a.username}><td><AccountLink username={a.username} domain={a.domain} /></td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td className="num">{a.days_out_of_compliance}d</td><td>{a.enabled ? "Yes" : <span className="muted">No</span>}</td></tr>
+              ))}</tbody>
+            </table>
+            <Pager page={stalePage} />
+          </>
+        )}
+      </div>
 
-      {tab === "risk" && (
-        <>
-          {reportErr && <div className="hint">{reportErr} — cluster/DA panels need the report.</div>}
+      <div className="section-label sub">Password never expires</div>
+      <div className="panel">
+        {neverExpiresRows.length === 0 ? (
+          <div className="muted">No accounts with non-expiring passwords.</div>
+        ) : (
+          <>
+            <table className="accounts compact"><thead><tr>
+              <SortHeader label="Username" colKey="username" sort={neverExpiresPage.sort} onSort={neverExpiresPage.setSort} />
+              <SortHeader label="Risk" colKey="risk" sort={neverExpiresPage.sort} onSort={neverExpiresPage.setSort} />
+              <SortHeader label="Score" colKey="score" numeric sort={neverExpiresPage.sort} onSort={neverExpiresPage.setSort} />
+              <SortHeader label="HIBP" colKey="hibp" numeric sort={neverExpiresPage.sort} onSort={neverExpiresPage.setSort} />
+              <SortHeader label="Enabled" colKey="enabled" sort={neverExpiresPage.sort} onSort={neverExpiresPage.setSort} />
+            </tr></thead>
+              <tbody>{neverExpiresPage.rows.map((a) => (
+                <tr key={a.username}><td><AccountLink username={a.username} domain={a.domain} /></td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td className="num">{a.hibp_breached ? a.hibp_breach_count.toLocaleString() : "—"}</td><td>{a.enabled ? "Yes" : <span className="muted">No</span>}</td></tr>
+              ))}</tbody>
+            </table>
+            <Pager page={neverExpiresPage} />
+          </>
+        )}
+      </div>
 
-          <div className="section-label sub">DA-pathway accounts</div>
-          <div className="panel">
-            {daPaths.length === 0 ? (
-              <div className="muted">No BloodHound DA pathways in this domain.</div>
-            ) : (
-              <>
-                <table className="accounts compact"><thead><tr>
-                  <SortHeader label="Username" colKey="username" sort={daPage.sort} onSort={daPage.setSort} />
-                  <SortHeader label="Risk" colKey="risk" sort={daPage.sort} onSort={daPage.setSort} />
-                  <SortHeader label="Score" colKey="score" numeric sort={daPage.sort} onSort={daPage.setSort} />
-                  <SortHeader label="HIBP" colKey="hibp" numeric sort={daPage.sort} onSort={daPage.setSort} />
-                  <SortHeader label="DA domains" colKey="da" sort={daPage.sort} onSort={daPage.setSort} />
-                  <SortHeader label="Controlled" colKey="controlled" numeric sort={daPage.sort} onSort={daPage.setSort} />
-                </tr></thead>
-                  <tbody>{daPage.rows.map((a) => (<tr key={a.username}><td><AccountLink username={a.username} domain={a.domain} /></td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td className="num">{a.hibp_breach_count || "—"}</td><td className="muted">{a.da_domains ?? "—"}</td><td className="num">{a.controlled_object_count || "—"}</td></tr>))}</tbody>
-                </table>
-                <Pager page={daPage} />
-              </>
-            )}
-          </div>
-
-          <ReuseClusters title="Reused passwords (cracked)" groups={clusters.cracked} lateral={false} />
-          <ReuseClusters title="Shared uncracked hashes (lateral movement)" groups={clusters.uncracked} lateral={true} />
-
-          <div className="section-label sub">Escalated by Shared-DA</div>
-          <div className="panel">
-            {escalatedDA === 0 ? (
-              <div className="muted">No accounts escalated via hash-sharing with a DA.</div>
-            ) : (
-              <>
-                <table className="accounts compact"><thead><tr>
-                  <SortHeader label="Username" colKey="username" sort={escalatedPage.sort} onSort={escalatedPage.setSort} />
-                  <SortHeader label="Risk" colKey="risk" sort={escalatedPage.sort} onSort={escalatedPage.setSort} />
-                  <SortHeader label="Score" colKey="score" numeric sort={escalatedPage.sort} onSort={escalatedPage.setSort} />
-                  <SortHeader label="Shared" colKey="shared" numeric sort={escalatedPage.sort} onSort={escalatedPage.setSort} />
-                </tr></thead>
-                  <tbody>{escalatedPage.rows.map((a) => (
-                    <tr key={a.username}><td><AccountLink username={a.username} domain={a.domain} /></td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td className="num">{a.shared_with}</td></tr>
-                  ))}</tbody>
-                </table>
-                <Pager page={escalatedPage} />
-              </>
-            )}
-          </div>
-        </>
-      )}
-
-      {tab === "compliance" && (
-        <>
-          <div className="domain-strips">
-            <div className="panel strip">
-              <div className="strip-title">Policy compliance</div>
-              <div className="strip-stats"><DStat label="Meets" value={pol.meets} /><DStat label="Fails" value={pol.fails} tone="high" /><DStat label="Disabled" value={pol.disabled} /></div>
-            </div>
-            <div className="panel strip">
-              <div className="strip-title">Wordlist hits</div>
-              <div className="strip-stats"><DStat label="Common" value={wl.common} tone="high" /><DStat label="Dictionary" value={wl.dictionary} /><DStat label="Forbidden" value={wl.banned} tone="high" /><DStat label="Keyboard" value={wl.keyboard} /></div>
-            </div>
-          </div>
-
-          <div className="section-label sub">Stale passwords (past max age)</div>
-          <div className="panel">
-            {stale === 0 ? (
-              <div className="muted">No stale passwords in this domain.</div>
-            ) : (
-              <>
-                <table className="accounts compact"><thead><tr>
-                  <SortHeader label="Username" colKey="username" sort={stalePage.sort} onSort={stalePage.setSort} />
-                  <SortHeader label="Risk" colKey="risk" sort={stalePage.sort} onSort={stalePage.setSort} />
-                  <SortHeader label="Score" colKey="score" numeric sort={stalePage.sort} onSort={stalePage.setSort} />
-                  <SortHeader label="Days overdue" colKey="days" numeric sort={stalePage.sort} onSort={stalePage.setSort} />
-                  <SortHeader label="Enabled" colKey="enabled" sort={stalePage.sort} onSort={stalePage.setSort} />
-                </tr></thead>
-                  <tbody>{stalePage.rows.map((a) => (
-                    <tr key={a.username}><td><AccountLink username={a.username} domain={a.domain} /></td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td className="num">{a.days_out_of_compliance}d</td><td>{a.enabled ? "Yes" : <span className="muted">No</span>}</td></tr>
-                  ))}</tbody>
-                </table>
-                <Pager page={stalePage} />
-              </>
-            )}
-          </div>
-
-          <div className="section-label sub">Password never expires</div>
-          <div className="panel">
-            {neverExpires === 0 ? (
-              <div className="muted">No accounts with non-expiring passwords.</div>
-            ) : (
-              <>
-                <table className="accounts compact"><thead><tr>
-                  <SortHeader label="Username" colKey="username" sort={neverExpiresPage.sort} onSort={neverExpiresPage.setSort} />
-                  <SortHeader label="Risk" colKey="risk" sort={neverExpiresPage.sort} onSort={neverExpiresPage.setSort} />
-                  <SortHeader label="Score" colKey="score" numeric sort={neverExpiresPage.sort} onSort={neverExpiresPage.setSort} />
-                  <SortHeader label="HIBP" colKey="hibp" numeric sort={neverExpiresPage.sort} onSort={neverExpiresPage.setSort} />
-                  <SortHeader label="Enabled" colKey="enabled" sort={neverExpiresPage.sort} onSort={neverExpiresPage.setSort} />
-                </tr></thead>
-                  <tbody>{neverExpiresPage.rows.map((a) => (
-                    <tr key={a.username}><td><AccountLink username={a.username} domain={a.domain} /></td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td className="num">{a.hibp_breached ? a.hibp_breach_count.toLocaleString() : "—"}</td><td>{a.enabled ? "Yes" : <span className="muted">No</span>}</td></tr>
-                  ))}</tbody>
-                </table>
-                <Pager page={neverExpiresPage} />
-              </>
-            )}
-          </div>
-
-          <div className="section-label sub">Kerberoastable accounts</div>
-          <div className="panel">
-            {kerberoastable === 0 ? (
-              <div className="muted">No Kerberoastable accounts in this domain.</div>
-            ) : (
-              <>
-                <table className="accounts compact"><thead><tr>
-                  <SortHeader label="Username" colKey="username" sort={kerberoastPage.sort} onSort={kerberoastPage.setSort} />
-                  <SortHeader label="Risk" colKey="risk" sort={kerberoastPage.sort} onSort={kerberoastPage.setSort} />
-                  <SortHeader label="Score" colKey="score" numeric sort={kerberoastPage.sort} onSort={kerberoastPage.setSort} />
-                  <SortHeader label="DA" colKey="da" sort={kerberoastPage.sort} onSort={kerberoastPage.setSort} />
-                  <SortHeader label="Controlled" colKey="controlled" numeric sort={kerberoastPage.sort} onSort={kerberoastPage.setSort} />
-                </tr></thead>
-                  <tbody>{kerberoastPage.rows.map((a) => (
-                    <tr key={a.username}><td><AccountLink username={a.username} domain={a.domain} /></td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td>{hasDA(a.da_domains) ? <span className="badge crit">{a.da_domains}</span> : "—"}</td><td className="num">{a.controlled_object_count || "—"}</td></tr>
-                  ))}</tbody>
-                </table>
-                <Pager page={kerberoastPage} />
-              </>
-            )}
-          </div>
-        </>
-      )}
-
-      {tab === "accounts" && (
-        <>
-          <div className="section-label sub">Quick wins — top {QUICK_WINS_N} weakest cracked</div>
-          <AccountsTable accounts={quick} />
-
-          <div className="section-label sub">All accounts</div>
-          <AccountsTable accounts={accounts} />
-        </>
-      )}
+      <div className="section-label sub">Kerberoastable accounts</div>
+      <div className="panel">
+        {kerberoastRows.length === 0 ? (
+          <div className="muted">No Kerberoastable accounts in this domain.</div>
+        ) : (
+          <>
+            <table className="accounts compact"><thead><tr>
+              <SortHeader label="Username" colKey="username" sort={kerberoastPage.sort} onSort={kerberoastPage.setSort} />
+              <SortHeader label="Risk" colKey="risk" sort={kerberoastPage.sort} onSort={kerberoastPage.setSort} />
+              <SortHeader label="Score" colKey="score" numeric sort={kerberoastPage.sort} onSort={kerberoastPage.setSort} />
+              <SortHeader label="DA" colKey="da" sort={kerberoastPage.sort} onSort={kerberoastPage.setSort} />
+              <SortHeader label="Controlled" colKey="controlled" numeric sort={kerberoastPage.sort} onSort={kerberoastPage.setSort} />
+            </tr></thead>
+              <tbody>{kerberoastPage.rows.map((a) => (
+                <tr key={a.username}><td><AccountLink username={a.username} domain={a.domain} /></td><td><span className={`badge ${RISK_CLASS[a.risk_level] || ""}`}>{a.risk_level}</span></td><td className="num">{a.risk_score.toFixed(1)}</td><td>{hasDA(a.da_domains) ? <span className="badge crit">{a.da_domains}</span> : "—"}</td><td className="num">{a.controlled_object_count || "—"}</td></tr>
+              ))}</tbody>
+            </table>
+            <Pager page={kerberoastPage} />
+          </>
+        )}
+      </div>
     </>
-  )
-}
-
-function StatMini({ label, value, tone }: { label: string; value: number; tone?: string }) {
-  return (
-    <div className="stat stat-mini">
-      <div className="stat-label">{label}</div>
-      <div className={`stat-value ${tone ? `c-${tone}` : ""}`}>{value.toLocaleString()}</div>
-    </div>
   )
 }
 

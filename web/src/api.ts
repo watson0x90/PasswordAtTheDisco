@@ -96,8 +96,9 @@ export interface Summary {
   policy_violations: number
   high_controlled: number
   dormant_privileged: number
-  // Executive breach impact
-  breach_impact: BreachImpact
+  // Executive breach impact. Optional: domain-scoped summaries omit it (no client
+  // estimator), which cleanly hides the PostureCard breach sub-panel for domains.
+  breach_impact?: BreachImpact
 }
 
 export interface BreachImpact {
@@ -190,6 +191,29 @@ export interface SimilarPeer {
   username: string
   domain: string
   score: number
+}
+
+export interface PeerRef {
+  username: string
+  domain: string
+  risk_level: string
+  cracked: boolean
+  enabled: boolean
+  has_da_path: boolean
+  controls_tier0: boolean
+}
+
+export interface Relationships {
+  username: string
+  domain: string
+  reuse_group: {
+    shares_hash: boolean
+    total: number
+    cracked_count: number
+    da_count: number
+    truncated: boolean
+    members: PeerRef[]
+  }
 }
 
 export interface ProbeResult {
@@ -426,6 +450,11 @@ export const api = {
   revealSecret: (username: string, domain?: string) =>
     request<{ username: string; password: string }>(
       `/accounts/${encodeURIComponent(username)}/secret${domain ? `?domain=${encodeURIComponent(domain)}` : ""}`,
+    ),
+
+  relationships: (username: string, domain?: string) =>
+    request<Relationships>(
+      `/accounts/${encodeURIComponent(username)}/relationships${domain ? `?domain=${encodeURIComponent(domain)}` : ""}`,
     ),
 
   probe: (password: string, csrf: string) =>

@@ -6,11 +6,12 @@ import { AxisFactorBars, Bars, ChartCard, Donut, HBars, ScatterPlot } from "./Ch
 import { NetworkGraph } from "./NetworkGraph"
 import { SimilarityClusters } from "./SimilarityClusters"
 import { RISK_CLASS, hasDA } from "../util"
-import type { Report } from "../api"
+import type { Account, Report } from "../api"
 
-export function Insights({ report }: { report: Report | null }) {
+export function Insights({ report, accounts: accountsProp }: { report: Report | null; accounts?: Account[] }) {
   const { activeId } = useAudits()
-  const { accounts, error } = useAccountsData()
+  const { accounts: ctxAccounts, error } = useAccountsData()
+  const accounts = accountsProp ?? ctxAccounts
 
   if (!activeId) return <div className="center-state">Select or create an audit to see insights.</div>
   if (error && !accounts) return <div className="center-state">{error}</div>
