@@ -1,9 +1,10 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import { api, type VersionInfo } from "../api"
 import { useAuth } from "../auth"
 import { useAudits } from "../auditsData"
 import { Logo } from "./Logo"
 import { JobPill } from "./JobPill"
+import { nextNavCollapse, type NavCollapseState } from "../navCollapse"
 
 export type View =
   | "overview" | "actionable" | "accounts" | "domains" | "compare" | "reports"
@@ -35,8 +36,35 @@ export const ADMIN_ITEMS: { id: View; label: string }[] = [
   { id: "audits", label: "Manage Audits" },
 ]
 
+// useNavCollapse measures the topbar and collapses the inline nav into the ☰ menu
+// the moment it would overflow, expanding again when there's room. Content-aware
+// (handles the lead's full nav and the analyst's shorter one) with no fixed
+// breakpoint, so nav items never spill behind the right-hand cluster.
+function useNavCollapse() {
+  const barRef = useRef<HTMLElement>(null)
+  const [collapsed, setCollapsed] = useState(false)
+  const stateRef = useRef<NavCollapseState>({ collapsed: false, neededWidth: 0 })
+  useLayoutEffect(() => {
+    const bar = barRef.current
+    if (!bar) return
+    const measure = () => {
+      const next = nextNavCollapse(stateRef.current, bar.clientWidth, bar.scrollWidth)
+      if (next !== stateRef.current) {
+        stateRef.current = next
+        setCollapsed(next.collapsed)
+      }
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(bar)
+    return () => ro.disconnect()
+  }, [collapsed])
+  return { barRef, collapsed }
+}
+
 export function AppShell({ view, onNav, children }: { view: View; onNav: (v: View) => void; children: ReactNode }) {
   const { me, logout, refresh } = useAuth()
+  const { barRef, collapsed } = useNavCollapse()
   async function lockStore() {
     if (!me) return
     try {
@@ -47,7 +75,7 @@ export function AppShell({ view, onNav, children }: { view: View; onNav: (v: Vie
   }
   return (
     <div className="shell">
-      <header className="topbar">
+      <header className={collapsed ? "topbar nav-collapsed" : "topbar"} ref={barRef}>
         <div className="topbar-left">
           <div className="brand">
             <Logo size={28} />

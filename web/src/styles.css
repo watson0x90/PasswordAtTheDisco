@@ -90,7 +90,10 @@ a { color: var(--accent); text-decoration: none; }
   top: 0;
   z-index: 50;
 }
-.topbar-left { display: flex; align-items: center; min-width: 0; }
+/* flex-shrink:0 so the brand + collapsed ☰ keep their natural width and never get
+   squeezed under .topbar-right (which paints later in the DOM) — that overlap is
+   what made the ☰ menu unclickable at narrow widths. */
+.topbar-left { display: flex; align-items: center; min-width: 0; flex-shrink: 0; }
 
 .brand { display: flex; align-items: center; gap: 11px; }
 .brand .word { font-family: var(--display); font-size: 18px; font-weight: 700; letter-spacing: -0.4px; }
@@ -149,9 +152,10 @@ a { color: var(--accent); text-decoration: none; }
 .nav-dd-item.active { color: #fff; background: rgba(99, 102, 241, 0.18); border-color: rgba(129, 140, 248, 0.32); }
 
 /* Hamburger menu: shares .nav-dd-trigger styling; collapsed nav for narrow widths. */
-.topbar-hamburger-wrap { margin-left: 30px; }
+.topbar-hamburger-wrap { margin-left: 30px; display: none; } /* shown only when .topbar.nav-collapsed */
 .topbar-hamburger {
-  display: none; /* hidden on wide screens; revealed under the breakpoint */
+  display: inline-flex; /* visible whenever its wrapper is (i.e. when collapsed) */
+  align-items: center;
   font-size: 18px;
   line-height: 1;
   padding: 6px 12px;
@@ -177,14 +181,20 @@ a { color: var(--accent); text-decoration: none; }
 .who .u { color: var(--text); font-size: 13px; }
 .who .r { font-size: 11px; color: var(--faint); }
 
-/* Below 900px the inline nav + Setup/Admin dropdowns overflow the header and
-   push the right cluster off-screen, so collapse everything into the ☰ menu. */
-@media (max-width: 900px) {
-  .nav { display: none; }                        /* hide inline tabs */
-  .topbar .nav-dd { display: none; }             /* hide inline Setup/Admin dropdowns */
-  .topbar-hamburger { display: inline-flex; align-items: center; }  /* show the menu button */
-  .topbar .nav-dd.topbar-hamburger-wrap { display: inline-flex; }  /* re-show the wrapper (it's a .nav-dd) */
-  .who .r { display: none; }                      /* drop the verbose "operator" sub-label */
+/* When the inline nav would overflow, AppShell's useNavCollapse adds .nav-collapsed
+   to the topbar: hide the inline tabs/dropdowns and reveal the ☰ menu (which lists
+   every destination). Content-measured, so this replaces the old fixed breakpoint. */
+.topbar.nav-collapsed .nav { display: none; }
+.topbar.nav-collapsed .topbar-hamburger-wrap { display: inline-flex; }
+
+/* Narrow "compact mode": once the bar is well below the nav-collapse point the
+   right-hand cluster (audit switcher + identity + role + Lock/Help/Sign Out) would
+   otherwise overflow off-screen. Drop the identity block and the brand wordmark
+   (logo stays) so every control — including the ☰ menu — stays on-screen down to
+   ~580px. Verified across 580–1920px. */
+@media (max-width: 880px) {
+  .topbar .who { display: none; }
+  .topbar .brand .word { display: none; }
 }
 
 .role-badge {

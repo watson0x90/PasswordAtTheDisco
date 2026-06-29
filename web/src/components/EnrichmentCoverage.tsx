@@ -1,7 +1,20 @@
 import { useMemo } from "react"
 import { useAccountsData } from "../accountsData"
-import { RISK_CLASS } from "../util"
+import { RISK_CLASS, RISK_RANK } from "../util"
 import { unenrichedAccounts, coverageWhy, coverageCsv } from "../coverage"
+import { useSortablePaged, type SortColumn } from "../sortPage"
+import { SortHeader } from "./SortHeader"
+import { Pager } from "./Pager"
+import type { Account } from "../api"
+
+// Sortable columns for the unenriched-accounts table. Exposure level sorts by
+// severity rank (Critical first), not the label string.
+const COVERAGE_COLS: SortColumn<Account>[] = [
+  { key: "username", get: (a) => a.username },
+  { key: "domain", get: (a) => a.domain },
+  { key: "cracked", get: (a) => a.cracked, defaultDir: "desc" },
+  { key: "risk", get: (a) => RISK_RANK[a.risk_level] ?? 0, defaultDir: "desc" },
+]
 
 // EnrichmentCoverage: read-only list of accounts BloodHound did NOT enrich, with a
 // why-diagnosis and a client-side CSV export. Visible to all operators (the Integrations
@@ -15,6 +28,10 @@ export function EnrichmentCoverage() {
   const unenriched = useMemo(() => (accounts ? unenrichedAccounts(accounts) : []), [accounts])
   const enrichRan = useMemo(() => (accounts ?? []).some((a) => a.coverage === "full"), [accounts])
   const why = coverageWhy({ unenrichedCount: unenriched.length, totalCount: accounts?.length ?? 0, enrichRan })
+  // Paginate the table — on a 5k-account audit, rendering every unenriched row at
+  // once builds thousands of <tr> nodes synchronously and freezes the page. The CSV
+  // export below still uses the full `unenriched` set.
+  const page = useSortablePaged(unenriched, COVERAGE_COLS, { defaultSort: { key: "risk", dir: "desc" }, pageSize: 100 })
 
   function downloadCsv() {
     const blob = new Blob([coverageCsv(unenriched)], { type: "text/csv" })
@@ -50,10 +67,15 @@ export function EnrichmentCoverage() {
             </div>
             <table className="accounts-table">
               <thead>
-                <tr><th>Username</th><th>Domain</th><th>Cracked</th><th>Exposure level</th></tr>
+                <tr>
+                  <SortHeader label="Username" colKey="username" sort={page.sort} onSort={page.setSort} />
+                  <SortHeader label="Domain" colKey="domain" sort={page.sort} onSort={page.setSort} />
+                  <SortHeader label="Cracked" colKey="cracked" sort={page.sort} onSort={page.setSort} />
+                  <SortHeader label="Exposure level" colKey="risk" sort={page.sort} onSort={page.setSort} />
+                </tr>
               </thead>
               <tbody>
-                {unenriched.map((a, i) => (
+                {page.rows.map((a, i) => (
                   <tr key={`${a.username}|${a.domain}|${i}`}>
                     <td>{a.username}</td>
                     <td>{a.domain}</td>
@@ -63,6 +85,7 @@ export function EnrichmentCoverage() {
                 ))}
               </tbody>
             </table>
+            <Pager page={page} />
           </>
         )}
       </div>
