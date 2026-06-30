@@ -15,6 +15,7 @@ import (
 type Metrics struct {
 	Summary model.Summary   `json:"summary"`
 	Matrix  Matrix          `json:"matrix"`
+	Charts  ChartSeries     `json:"charts"`
 	Domains []DomainMetrics `json:"domains"`
 }
 
@@ -24,6 +25,7 @@ func Compute(accounts []model.Account, now time.Time) Metrics {
 	return Metrics{
 		Summary: model.Summarize(accounts, now),
 		Matrix:  BuildMatrix(accounts),
+		Charts:  buildChartSeries(accounts, now),
 		Domains: ComputeByDomain(accounts, now),
 	}
 }

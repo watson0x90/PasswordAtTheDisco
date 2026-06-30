@@ -77,6 +77,54 @@
     "total": 5,
     "max": 1
   },
+  "charts": {
+    "risk_distribution": [
+      {
+        "name": "Critical",
+        "value": 1,
+        "color": "#fb7185"
+      },
+      {
+        "name": "High",
+        "value": 2,
+        "color": "#fbbf24"
+      },
+      {
+        "name": "Medium",
+        "value": 1,
+        "color": "#a3e635"
+      },
+      {
+        "name": "Low",
+        "value": 1,
+        "color": "#22d3ee"
+      }
+    ],
+    "hibp_split": [
+      {
+        "name": "Breached",
+        "value": 2,
+        "color": "#fb7185"
+      },
+      {
+        "name": "Not in HIBP",
+        "value": 3,
+        "color": "#22d3ee"
+      }
+    ],
+    "expiration_split": [
+      {
+        "name": "Never expires",
+        "value": 1,
+        "color": "#fb7185"
+      },
+      {
+        "name": "Unknown",
+        "value": 4,
+        "color": "#475569"
+      }
+    ]
+  },
   "domains": [
     {
       "domain": "A.LOCAL",
@@ -156,6 +204,44 @@
         },
         "total": 3,
         "max": 1
+      },
+      "charts": {
+        "risk_distribution": [
+          {
+            "name": "Critical",
+            "value": 1,
+            "color": "#fb7185"
+          },
+          {
+            "name": "High",
+            "value": 1,
+            "color": "#fbbf24"
+          },
+          {
+            "name": "Medium",
+            "value": 1,
+            "color": "#a3e635"
+          }
+        ],
+        "hibp_split": [
+          {
+            "name": "Breached",
+            "value": 1,
+            "color": "#fb7185"
+          },
+          {
+            "name": "Not in HIBP",
+            "value": 2,
+            "color": "#22d3ee"
+          }
+        ],
+        "expiration_split": [
+          {
+            "name": "Unknown",
+            "value": 3,
+            "color": "#475569"
+          }
+        ]
       }
     },
     {
@@ -234,6 +320,44 @@
         },
         "total": 2,
         "max": 1
+      },
+      "charts": {
+        "risk_distribution": [
+          {
+            "name": "High",
+            "value": 1,
+            "color": "#fbbf24"
+          },
+          {
+            "name": "Low",
+            "value": 1,
+            "color": "#22d3ee"
+          }
+        ],
+        "hibp_split": [
+          {
+            "name": "Breached",
+            "value": 1,
+            "color": "#fb7185"
+          },
+          {
+            "name": "Not in HIBP",
+            "value": 1,
+            "color": "#22d3ee"
+          }
+        ],
+        "expiration_split": [
+          {
+            "name": "Never expires",
+            "value": 1,
+            "color": "#fb7185"
+          },
+          {
+            "name": "Unknown",
+            "value": 1,
+            "color": "#475569"
+          }
+        ]
       }
     }
   ]

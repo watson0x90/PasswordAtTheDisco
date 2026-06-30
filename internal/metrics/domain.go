@@ -15,6 +15,7 @@ type DomainMetrics struct {
 	Domain  string        `json:"domain"`
 	Summary model.Summary `json:"summary"`
 	Matrix  Matrix        `json:"matrix"`
+	Charts  ChartSeries   `json:"charts"`
 }
 
 // ComputeByDomain groups accounts by Domain and builds one DomainMetrics per domain,
@@ -37,6 +38,7 @@ func ComputeByDomain(accounts []model.Account, now time.Time) []DomainMetrics {
 			Domain:  d,
 			Summary: model.Summarize(sub, now),
 			Matrix:  BuildMatrix(sub),
+			Charts:  buildChartSeries(sub, now),
 		})
 	}
 	return out
