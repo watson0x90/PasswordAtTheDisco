@@ -27,9 +27,3 @@ func Compute(accounts []model.Account, now time.Time) Metrics {
 		Domains: ComputeByDomain(accounts, now),
 	}
 }
-
-// --- temporary stubs, replaced in Tasks 3 and 4 ---
-
-func ComputeByDomain(_ []model.Account, _ time.Time) []DomainMetrics { return nil }
-
-type DomainMetrics struct{}
