@@ -35,7 +35,7 @@ export interface GraphEdge { source: string; target: string; weight: number; lab
 export interface Graph { nodes: GraphNode[]; edges: GraphEdge[] }
 
 export interface Matrix {
-  counts: Record<string, Record<string, number>>
+  counts: Record<Tier, Record<string, number>>
   total: number
   max: number
 }

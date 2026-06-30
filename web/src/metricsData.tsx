@@ -4,7 +4,7 @@ import { useAudits } from "./auditsData"
 import type { MetricsBundle } from "./metricsBundle"
 
 interface MetricsState { bundle: MetricsBundle | null; loading: boolean; error: string | null }
-const MetricsContext = createContext<MetricsState>({ bundle: null, loading: false, error: null })
+const MetricsContext = createContext<MetricsState | null>(null)
 
 // MetricsProvider fetches the org /api/metrics bundle once per active audit
 // (keyed on activeId + dataVersion, same as AccountsProvider), so every dashboard
@@ -31,5 +31,7 @@ export function MetricsProvider({ children }: { children: ReactNode }) {
 }
 
 export function useMetrics(): MetricsState {
-  return useContext(MetricsContext)
+  const c = useContext(MetricsContext)
+  if (!c) throw new Error("useMetrics must be used within MetricsProvider")
+  return c
 }
