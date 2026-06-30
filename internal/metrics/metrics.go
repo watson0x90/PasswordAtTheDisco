@@ -16,16 +16,19 @@ type Metrics struct {
 	Summary model.Summary   `json:"summary"`
 	Matrix  Matrix          `json:"matrix"`
 	Charts  ChartSeries     `json:"charts"`
+	Reports ReportSeries    `json:"reports"`
 	Domains []DomainMetrics `json:"domains"`
 }
 
 // Compute builds the org bundle over the full account set. now is injected (no
 // time.Now here) for reproducible output.
 func Compute(accounts []model.Account, now time.Time) Metrics {
+	rep := model.BuildReport(accounts)
 	return Metrics{
 		Summary: model.Summarize(accounts, now),
 		Matrix:  BuildMatrix(accounts),
 		Charts:  buildChartSeries(accounts, now),
+		Reports: buildReportSeries(rep, accounts),
 		Domains: ComputeByDomain(accounts, now),
 	}
 }
