@@ -46,25 +46,25 @@ func TestMetricsGolden(t *testing.T) {
 }
 
 func TestBundleHasNoSensitiveFields(t *testing.T) {
-	raw, err := os.ReadFile("testdata/accounts.json")
-	if err != nil {
-		t.Fatalf("read accounts fixture: %v", err)
-	}
-	var accts []model.Account
-	if err := json.Unmarshal(raw, &accts); err != nil {
-		t.Fatalf("unmarshal accounts: %v", err)
-	}
 	now := time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC)
-	jsonBytes, err := json.Marshal(Compute(accts, now))
-	if err != nil {
-		t.Fatalf("marshal metrics: %v", err)
+	// Feed accounts that DO carry secrets — the bundle must strip every one.
+	secret := "SuperSecretCleartextPassword!"
+	ntHash := "ABCDEF0123456789ABCDEF0123456789"
+	accts := []model.Account{
+		{Username: "alice", Domain: "A", Cracked: true, RiskLevel: "Critical", DADomains: "A",
+			Password: secret, NTHash: ntHash, BannedWords: []string{"forbiddenword"},
+			KeyboardPatterns: []string{"qwerty"}},
+		{Username: "bob", Domain: "A", Cracked: true, RiskLevel: "High",
+			Password: secret, NTHash: ntHash},
 	}
-	jsonLower := strings.ToLower(string(jsonBytes))
-
-	forbiddenSubstrings := []string{`"password"`, `"nt_hash"`, `"banned"`, `"keyboard"`}
-	for _, sub := range forbiddenSubstrings {
-		if strings.Contains(jsonLower, sub) {
-			t.Errorf("forbidden substring found in metrics bundle JSON: %s", sub)
+	raw, err := json.Marshal(Compute(accts, now))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	low := strings.ToLower(string(raw))
+	for _, bad := range []string{strings.ToLower(secret), strings.ToLower(ntHash), "forbiddenword", "qwerty", "\"password\"", "\"nt_hash\"", "banned_words", "keyboard_patterns"} {
+		if strings.Contains(low, bad) {
+			t.Errorf("bundle leaked sensitive content %q", bad)
 		}
 	}
 }

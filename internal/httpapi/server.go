@@ -1453,17 +1453,24 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	sess, _ := sessionFrom(r.Context())
 	now := time.Now()
-	id, ok := s.activeAuditRead(sess)
-	if !ok {
-		writeJSON(w, http.StatusOK, metrics.Compute(nil, now))
+	var accts []model.Account
+	if id, ok := s.activeAuditRead(sess); ok {
+		if a, err := s.Store.Accounts(id, true); err == nil {
+			accts = a
+		}
+	}
+	m := metrics.Compute(accts, now)
+	if d := r.URL.Query().Get("domain"); d != "" {
+		for i := range m.Domains {
+			if m.Domains[i].Domain == d {
+				writeJSON(w, http.StatusOK, m.Domains[i])
+				return
+			}
+		}
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "domain not found"})
 		return
 	}
-	accts, err := s.Store.Accounts(id, true) // need NT hashes to group; bundle is redacted
-	if err != nil {
-		writeJSON(w, http.StatusOK, metrics.Compute(nil, now))
-		return
-	}
-	writeJSON(w, http.StatusOK, metrics.Compute(accts, now))
+	writeJSON(w, http.StatusOK, m)
 }
 
 // handleReportTerms returns the recurring forbidden words + keyboard patterns --

@@ -44,6 +44,34 @@ func TestMetricsEndpoint(t *testing.T) {
 	}
 }
 
+func TestMetricsDomainSelector(t *testing.T) {
+	srv := newServer("secret")
+	id := seed(t, srv)
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	openAudit(t, srv, ac, acsrf, id)
+
+	// the seeded account is in domain CORP
+	rec := do(srv, "GET", "/api/metrics?domain=CORP", ac)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var dm map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &dm); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if dm["domain"] != "CORP" {
+		t.Errorf("domain = %v, want CORP", dm["domain"])
+	}
+	if _, ok := dm["summary"]; !ok {
+		t.Error("domain bundle missing summary")
+	}
+
+	// unknown domain -> 404
+	if rec := do(srv, "GET", "/api/metrics?domain=NOPE", ac); rec.Code != http.StatusNotFound {
+		t.Errorf("unknown domain status = %d, want 404", rec.Code)
+	}
+}
+
 func TestMetricsRequiresAuth(t *testing.T) {
 	srv := newServer("secret")
 	if rec := do(srv, "GET", "/api/metrics", nil); rec.Code != http.StatusUnauthorized {
