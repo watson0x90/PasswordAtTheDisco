@@ -113,3 +113,41 @@ func TestSimilarityBucketsSkipsZeroScores(t *testing.T) {
 		t.Fatalf("got = %+v", got)
 	}
 }
+
+func TestDAExposureByDomainSortedDesc(t *testing.T) {
+	da := "CORP.LOCAL"
+	none := "None"
+	accts := []model.Account{
+		{Domain: "A", DADomains: da}, {Domain: "B", DADomains: da}, {Domain: "B", DADomains: da},
+		{Domain: "C", DADomains: none},
+	}
+	got := DAExposureByDomain(accts)
+	if len(got) != 2 || got[0].Name != "B" || got[0].Value != 2 || got[1].Name != "A" {
+		t.Fatalf("got = %+v", got)
+	}
+}
+
+func TestComplexityCountsLabelsAndSort(t *testing.T) {
+	accts := []model.Account{
+		{Cracked: true, Complexity: "mixedalphaspecialnum"},
+		{Cracked: true, Complexity: "loweralpha"},
+		{Cracked: true, Complexity: "loweralpha"},
+		{Cracked: false, Complexity: "numeric"}, // excluded
+	}
+	got := ComplexityCounts(accts)
+	if got[0].Name != "a–z" || got[0].Value != 2 {
+		t.Fatalf("top = %+v", got)
+	}
+	if got[1].Name != "a–z A–Z 0–9 !@#" || got[1].Value != 1 {
+		t.Errorf("second = %+v", got[1])
+	}
+}
+
+func TestComplexityLabelUnknownPassThrough(t *testing.T) {
+	if ComplexityLabel("weirdkey") != "weirdkey" {
+		t.Error("unknown key should pass through")
+	}
+	if ComplexityLabel("numeric") != "0–9" {
+		t.Error("numeric -> 0–9")
+	}
+}

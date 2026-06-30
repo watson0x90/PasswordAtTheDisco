@@ -204,7 +204,14 @@
         "value": 2
       }
     ],
-    "similarity_buckets": []
+    "similarity_buckets": [],
+    "da_exposure_by_domain": [
+      {
+        "name": "A.LOCAL",
+        "value": 1
+      }
+    ],
+    "complexity_counts": []
   },
   "domains": [
     {
@@ -403,7 +410,14 @@
             "value": 1
           }
         ],
-        "similarity_buckets": []
+        "similarity_buckets": [],
+        "da_exposure_by_domain": [
+          {
+            "name": "A.LOCAL",
+            "value": 1
+          }
+        ],
+        "complexity_counts": []
       }
     },
     {
@@ -600,7 +614,9 @@
             "value": 1
           }
         ],
-        "similarity_buckets": []
+        "similarity_buckets": [],
+        "da_exposure_by_domain": [],
+        "complexity_counts": []
       }
     }
   ]

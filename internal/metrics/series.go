@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"sort"
 	"time"
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
@@ -44,10 +45,21 @@ type ChartSeries struct {
 	SharingDistribution      []Bar   `json:"sharing_distribution"`
 	ControlledObjectsBuckets []Bar   `json:"controlled_objects_buckets"`
 	SimilarityBuckets        []Bar   `json:"similarity_buckets"`
+	DAExposureByDomain       []Bar   `json:"da_exposure_by_domain"`
+	ComplexityCounts         []Bar   `json:"complexity_counts"`
 }
 
 var riskHex = map[string]string{"Critical": "#fb7185", "High": "#fbbf24", "Medium": "#a3e635", "Low": "#22d3ee"}
 var riskOrder = []string{"Critical", "High", "Medium", "Low"}
+
+var complexityLabels = map[string]string{
+	"loweralpha": "a–z", "upperalpha": "A–Z", "numeric": "0–9", "special": "!@#",
+	"loweralphanum": "a–z 0–9", "upperalphanum": "A–Z 0–9", "mixedalpha": "a–z A–Z",
+	"loweralphaspecial": "a–z !@#", "upperalphaspecial": "A–Z !@#", "specialnum": "0–9 !@#",
+	"mixedalphanum": "a–z A–Z 0–9", "loweralphaspecialnum": "a–z 0–9 !@#",
+	"mixedalphaspecial": "a–z A–Z !@#", "upperalphaspecialnum": "A–Z 0–9 !@#",
+	"mixedalphaspecialnum": "a–z A–Z 0–9 !@#", "none": "(none)",
+}
 
 // RiskDistribution mirrors insights.ts riskDistribution: counts by risk level in
 // fixed order, dropping absent levels; default color for unknown levels.
@@ -244,6 +256,54 @@ func labeledBars(labels []string, counts []int, filterZero bool) []Bar {
 	return out
 }
 
+// ComplexityLabel maps the engine complexity enum to character-class notation;
+// unknown keys pass through unchanged (mirrors insights.ts complexityLabel).
+func ComplexityLabel(key string) string {
+	if v, ok := complexityLabels[key]; ok {
+		return v
+	}
+	return key
+}
+
+// DAExposureByDomain counts DA-pathway accounts per domain, sorted by count desc
+// then domain name asc (the name tie-break stabilizes Go's random map order; the
+// TS relied on JS object insertion order for ties).
+func DAExposureByDomain(accts []model.Account) []Bar {
+	m := map[string]int{}
+	for i := range accts {
+		if accts[i].HasDAPathway() {
+			m[accts[i].Domain]++
+		}
+	}
+	return sortedBarsFromMap(m)
+}
+
+// ComplexityCounts counts cracked accounts per complexity class (labeled), sorted
+// by count desc then label asc.
+func ComplexityCounts(accts []model.Account) []Bar {
+	m := map[string]int{}
+	for i := range accts {
+		if accts[i].Cracked && accts[i].Complexity != "" {
+			m[ComplexityLabel(accts[i].Complexity)]++
+		}
+	}
+	return sortedBarsFromMap(m)
+}
+
+func sortedBarsFromMap(m map[string]int) []Bar {
+	out := make([]Bar, 0, len(m))
+	for name, v := range m {
+		out = append(out, Bar{Name: name, Value: v})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Value != out[j].Value {
+			return out[i].Value > out[j].Value
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
+}
+
 // buildChartSeries assembles the account-derived chart series. now is threaded for
 // age-based series added in later tasks.
 func buildChartSeries(accounts []model.Account, now time.Time) ChartSeries {
@@ -257,5 +317,7 @@ func buildChartSeries(accounts []model.Account, now time.Time) ChartSeries {
 		SharingDistribution:      SharingDistribution(accounts),
 		ControlledObjectsBuckets: ControlledObjectsBuckets(accounts),
 		SimilarityBuckets:        SimilarityBuckets(accounts),
+		DAExposureByDomain:       DAExposureByDomain(accounts),
+		ComplexityCounts:         ComplexityCounts(accounts),
 	}
 }
