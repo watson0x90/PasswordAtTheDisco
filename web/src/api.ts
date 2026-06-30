@@ -1,6 +1,7 @@
 // Typed client for the Password!AtTheDisco API. Auth is a same-origin session
 // cookie (HttpOnly), so every request sends credentials; state-changing requests
 // carry the per-session CSRF token in the X-CSRF-Token header.
+import type { MetricsBundle } from "./metricsBundle"
 
 export type Role = "analyst" | "lead"
 
@@ -443,6 +444,9 @@ export const api = {
   summary: () => request<Summary>("/summary"),
 
   accounts: () => request<Account[]>("/accounts"),
+
+  metrics: (domain?: string) =>
+    request<MetricsBundle>(domain ? `/metrics?domain=${encodeURIComponent(domain)}` : "/metrics"),
 
   report: () => request<Report>("/report"),
   reportTerms: () => request<Terms>("/report/terms"),
