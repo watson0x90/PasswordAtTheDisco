@@ -35,6 +35,7 @@ export function domainSummary(domainAccounts: Account[], orgSummary: Summary): S
     policy_violations: domainAccounts.filter((a) => a.cracked && !a.meets_policy).length,
     high_controlled: domainAccounts.filter((a) => (a.controlled_object_count ?? 0) > 100).length,
     dormant_privileged: domainAccounts.filter(isDormantPrivileged).length,
+    coverage_enriched: domainAccounts.filter((a) => a.coverage === "full").length,
     // breach_impact intentionally omitted — see header comment.
   }
 }

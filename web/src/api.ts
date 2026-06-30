@@ -85,6 +85,7 @@ export interface Summary {
   cracked: number
   hibp_breached: number
   da_pathways: number
+  coverage_enriched: number
   risk_counts: Record<string, number>
   posture: Posture
   generated_at: string

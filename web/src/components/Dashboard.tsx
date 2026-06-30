@@ -5,7 +5,7 @@ import { useAudits } from "../auditsData"
 import { useAccountsData } from "../accountsData"
 import { useNav } from "../nav"
 import { riskDistribution, hibpSplit, lengthBuckets, kpiCounts } from "../insights"
-import { coverageStats, exposureImpactMatrix, isProvisional } from "../matrix"
+import { coverageStats, exposureImpactMatrix, isProvisional, TIERS, type ExposureImpactMatrix, type ImpactCol, type Tier } from "../matrix"
 import { Bars, ChartCard, Donut, MatrixHeatmap } from "./Charts"
 import { ExposureHeadline } from "./ExposureHeadline"
 import { Insights } from "./Insights"
@@ -14,6 +14,8 @@ import { RecalcSuggestion } from "./RecalcSuggestion"
 import { useJobs } from "../jobs"
 import { InfoTip } from "./InfoTip"
 import { GLOSSARY } from "../glossary"
+import type { Matrix as BundleMatrix } from "../metricsBundle"
+import { useMetrics } from "../metricsData"
 
 // Verdict → CSS class suffix (maps to --crit / --high / --med / --low color tokens)
 const VERDICT_CLS: Record<string, string> = {
@@ -42,25 +44,24 @@ const REACH_CLS: Record<string, string> = {
   "—": "dim",
 }
 
+// bundleMatrixToEI: adapts the MetricsBundle Matrix (Go server output, string-keyed counts)
+// to the ExposureImpactMatrix shape expected by MatrixHeatmap. The Go side always emits all
+// Tier + "Unknown" column keys, so the cast is safe. matrixMaxCount iterates m.counts and
+// produces the same value as bundle.matrix.max (both derive from the same source).
+function bundleMatrixToEI(m: BundleMatrix): ExposureImpactMatrix {
+  // Go emits Record<Tier, Record<ImpactCol, number>> — same keys, broader TS typing on receipt.
+  const counts = m.counts as unknown as Record<Tier, Record<ImpactCol, number>>
+  return { counts, total: m.total, cell: (exp, imp) => counts[exp]?.[imp] ?? 0 }
+}
+
 export function Dashboard() {
   const nav = useNav()
   const { activeId, audits, loading: auditsLoading, dataVersion } = useAudits()
   const { accounts, error } = useAccountsData()
-  // Posture comes from the server (single source of truth shared with the HTML
-  // export + Compare), so the gauge can never drift from the exported report.
-  const [summary, setSummary] = useState<Summary | null>(null)
-  useEffect(() => {
-    if (!activeId) {
-      setSummary(null)
-      return
-    }
-    let live = true
-    setSummary(null)
-    api.summary().then((s) => live && setSummary(s)).catch(() => {})
-    return () => {
-      live = false
-    }
-  }, [activeId, dataVersion])
+  // Posture / summary comes from the MetricsBundle (single server fetch) so it
+  // never drifts from the score the heatmap and coverage banner display. The
+  // separate api.summary() call is dropped in favour of bundle.summary.
+  const { bundle, loading: bundleLoading } = useMetrics()
 
   const [report, setReport] = useState<Report | null>(null)
   useEffect(() => {
@@ -78,12 +79,21 @@ export function Dashboard() {
   if (!accounts) return <div className="center-state"><div className="spinner">loading</div></div>
   if (accounts.length === 0) return <GetStarted />
 
+  // Gate on both loading flag and bundle presence: the provider briefly holds a
+  // stale bundle across audit switches, so we must not render the org Overview
+  // with a cross-audit bundle. When not ready, summary/matrix/coverageEnriched
+  // are all undefined and OverviewView falls back to account-computed values.
+  const bundleReady = !bundleLoading && bundle !== null
+  const summary = bundleReady ? bundle.summary : null
+
   return (
     <>
       <OverviewView
         accounts={accounts}
         summary={summary}
         report={report}
+        matrix={bundleReady ? bundle.matrix : undefined}
+        coverageEnriched={bundleReady ? bundle.summary.coverage_enriched : undefined}
         subtitle="Where do we stand? Org-wide posture at a glance."
         actions={
           <>
@@ -112,6 +122,8 @@ export function OverviewView({
   subtitle = "Where do we stand? Posture at a glance.",
   actions,
   notice,
+  matrix: bundleMatrix,
+  coverageEnriched,
 }: {
   accounts: Account[]
   summary: Summary | null
@@ -120,13 +132,33 @@ export function OverviewView({
   subtitle?: string
   actions?: ReactNode
   notice?: ReactNode
+  // Optional — when provided by the org Dashboard the heatmap, coverage banner,
+  // and Impact Unknown count use the server-computed bundle values instead of
+  // recomputing from the accounts array. When absent (Domains.tsx per-domain path)
+  // the existing account-derived computation is used unchanged.
+  matrix?: BundleMatrix
+  coverageEnriched?: number
 }) {
   const { total, cracked, breached, da } = kpiCounts(summary, accounts)
   const crackPct = total ? Math.round((cracked / total) * 100) : 0
 
-  const cov = coverageStats(accounts)
-  const eiMatrix = exposureImpactMatrix(accounts)
-  const impactUnknown = accounts.filter(isProvisional).length
+  // Coverage banner: prefer bundle value (server-computed) when present.
+  const cov =
+    coverageEnriched !== undefined && bundleMatrix !== undefined
+      ? { enriched: coverageEnriched, total: bundleMatrix.total, partial: coverageEnriched < bundleMatrix.total }
+      : coverageStats(accounts)
+
+  // Exposure × Impact matrix: prefer bundle (Go server) when present; fall back to
+  // client-side compute for the per-domain path (Domains.tsx passes no bundleMatrix).
+  const eiMatrix: ExposureImpactMatrix = bundleMatrix
+    ? bundleMatrixToEI(bundleMatrix)
+    : exposureImpactMatrix(accounts)
+
+  // Impact Unknown: sum the "Unknown" column from the bundle matrix, or count via
+  // isProvisional on the per-domain accounts fallback.
+  const impactUnknown = bundleMatrix
+    ? TIERS.reduce((sum, tier) => sum + ((bundleMatrix.counts[tier] as Record<string, number>)["Unknown"] ?? 0), 0)
+    : accounts.filter(isProvisional).length
 
   return (
     <>
