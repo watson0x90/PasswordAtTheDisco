@@ -211,7 +211,55 @@
         "value": 1
       }
     ],
-    "complexity_counts": []
+    "complexity_counts": [],
+    "hibp_vs_risk": [
+      {
+        "name": "Critical",
+        "color": "#fb7185",
+        "points": [
+          {
+            "x": 3.079543007402906,
+            "y": 8.5
+          }
+        ]
+      },
+      {
+        "name": "High",
+        "color": "#fbbf24",
+        "points": [
+          {
+            "x": 0,
+            "y": 6.1
+          },
+          {
+            "x": 1.7075701760979363,
+            "y": 7
+          }
+        ]
+      },
+      {
+        "name": "Medium",
+        "color": "#a3e635",
+        "points": [
+          {
+            "x": 0,
+            "y": 4.2
+          }
+        ]
+      },
+      {
+        "name": "Low",
+        "color": "#22d3ee",
+        "points": [
+          {
+            "x": 0,
+            "y": 1.5
+          }
+        ]
+      }
+    ],
+    "password_age_buckets": [],
+    "password_age_scatter": []
   },
   "domains": [
     {
@@ -417,7 +465,41 @@
             "value": 1
           }
         ],
-        "complexity_counts": []
+        "complexity_counts": [],
+        "hibp_vs_risk": [
+          {
+            "name": "Critical",
+            "color": "#fb7185",
+            "points": [
+              {
+                "x": 3.079543007402906,
+                "y": 8.5
+              }
+            ]
+          },
+          {
+            "name": "High",
+            "color": "#fbbf24",
+            "points": [
+              {
+                "x": 0,
+                "y": 6.1
+              }
+            ]
+          },
+          {
+            "name": "Medium",
+            "color": "#a3e635",
+            "points": [
+              {
+                "x": 0,
+                "y": 4.2
+              }
+            ]
+          }
+        ],
+        "password_age_buckets": [],
+        "password_age_scatter": []
       }
     },
     {
@@ -616,7 +698,31 @@
         ],
         "similarity_buckets": [],
         "da_exposure_by_domain": [],
-        "complexity_counts": []
+        "complexity_counts": [],
+        "hibp_vs_risk": [
+          {
+            "name": "High",
+            "color": "#fbbf24",
+            "points": [
+              {
+                "x": 1.7075701760979363,
+                "y": 7
+              }
+            ]
+          },
+          {
+            "name": "Low",
+            "color": "#22d3ee",
+            "points": [
+              {
+                "x": 0,
+                "y": 1.5
+              }
+            ]
+          }
+        ],
+        "password_age_buckets": [],
+        "password_age_scatter": []
       }
     }
   ]

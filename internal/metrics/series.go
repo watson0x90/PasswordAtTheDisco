@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"math"
 	"sort"
 	"time"
 
@@ -37,20 +38,27 @@ type Series struct {
 // Ported verbatim from web/src/insights.ts so the SPA and the exporters show
 // the same numbers. (Later tasks add more fields.)
 type ChartSeries struct {
-	RiskDistribution         []Slice `json:"risk_distribution"`
-	HIBPSplit                []Slice `json:"hibp_split"`
-	ExpirationSplit          []Slice `json:"expiration_split"`
-	LengthBuckets            []Bar   `json:"length_buckets"`
-	ScoreBuckets             []Bar   `json:"score_buckets"`
-	SharingDistribution      []Bar   `json:"sharing_distribution"`
-	ControlledObjectsBuckets []Bar   `json:"controlled_objects_buckets"`
-	SimilarityBuckets        []Bar   `json:"similarity_buckets"`
-	DAExposureByDomain       []Bar   `json:"da_exposure_by_domain"`
-	ComplexityCounts         []Bar   `json:"complexity_counts"`
+	RiskDistribution         []Slice  `json:"risk_distribution"`
+	HIBPSplit                []Slice  `json:"hibp_split"`
+	ExpirationSplit          []Slice  `json:"expiration_split"`
+	LengthBuckets            []Bar    `json:"length_buckets"`
+	ScoreBuckets             []Bar    `json:"score_buckets"`
+	SharingDistribution      []Bar    `json:"sharing_distribution"`
+	ControlledObjectsBuckets []Bar    `json:"controlled_objects_buckets"`
+	SimilarityBuckets        []Bar    `json:"similarity_buckets"`
+	DAExposureByDomain       []Bar    `json:"da_exposure_by_domain"`
+	ComplexityCounts         []Bar    `json:"complexity_counts"`
+	HIBPVsRisk               []Series `json:"hibp_vs_risk"`
+	PasswordAgeBuckets       []Bar    `json:"password_age_buckets"`
+	PasswordAgeScatter       []Series `json:"password_age_scatter"`
 }
 
 var riskHex = map[string]string{"Critical": "#fb7185", "High": "#fbbf24", "Medium": "#a3e635", "Low": "#22d3ee"}
 var riskOrder = []string{"Critical", "High", "Medium", "Low"}
+
+var levelColors = []struct{ name, color string }{
+	{"Critical", "#fb7185"}, {"High", "#fbbf24"}, {"Medium", "#a3e635"}, {"Low", "#22d3ee"},
+}
 
 var complexityLabels = map[string]string{
 	"loweralpha": "a–z", "upperalpha": "A–Z", "numeric": "0–9", "special": "!@#",
@@ -304,10 +312,75 @@ func sortedBarsFromMap(m map[string]int) []Bar {
 	return out
 }
 
+// HIBPVsRisk: per-level scatter of log10(hibp_breach_count+1) vs risk_score.
+func HIBPVsRisk(accts []model.Account) []Series {
+	out := []Series{}
+	for _, lc := range levelColors {
+		pts := []Point{}
+		for i := range accts {
+			if accts[i].RiskLevel != lc.name {
+				continue
+			}
+			pts = append(pts, Point{X: math.Log10(float64(accts[i].HIBPBreachCount) + 1), Y: accts[i].RiskScore})
+		}
+		if len(pts) > 0 {
+			out = append(out, Series{Name: lc.name, Color: lc.color, Points: pts})
+		}
+	}
+	return out
+}
+
+// PasswordAgeBuckets: days since pwd_last_set bucketed; skips unset; filters empties.
+func PasswordAgeBuckets(accts []model.Account, now time.Time) []Bar {
+	labels := []string{"< 30d", "30–90d", "90–180d", "180–365d", "1–2y", "2y+"}
+	c := make([]int, 6)
+	nowUnix := now.Unix()
+	for i := range accts {
+		pls := accts[i].PwdLastSet
+		if pls <= 0 {
+			continue
+		}
+		days := float64(nowUnix-pls) / 86400.0
+		switch {
+		case days < 30:
+			c[0]++
+		case days < 90:
+			c[1]++
+		case days < 180:
+			c[2]++
+		case days < 365:
+			c[3]++
+		case days < 730:
+			c[4]++
+		default:
+			c[5]++
+		}
+	}
+	return labeledBars(labels, c, true)
+}
+
+// PasswordAgeScatter: per-level scatter of integer days-ago vs risk_score.
+func PasswordAgeScatter(accts []model.Account, now time.Time) []Series {
+	nowUnix := now.Unix()
+	out := []Series{}
+	for _, lc := range levelColors {
+		pts := []Point{}
+		for i := range accts {
+			if accts[i].RiskLevel != lc.name || accts[i].PwdLastSet <= 0 {
+				continue
+			}
+			pts = append(pts, Point{X: float64((nowUnix - accts[i].PwdLastSet) / 86400), Y: accts[i].RiskScore})
+		}
+		if len(pts) > 0 {
+			out = append(out, Series{Name: lc.name, Color: lc.color, Points: pts})
+		}
+	}
+	return out
+}
+
 // buildChartSeries assembles the account-derived chart series. now is threaded for
 // age-based series added in later tasks.
 func buildChartSeries(accounts []model.Account, now time.Time) ChartSeries {
-	_ = now // used by later tasks (age buckets/scatter)
 	return ChartSeries{
 		RiskDistribution:         RiskDistribution(accounts),
 		HIBPSplit:                HIBPSplit(accounts),
@@ -319,5 +392,8 @@ func buildChartSeries(accounts []model.Account, now time.Time) ChartSeries {
 		SimilarityBuckets:        SimilarityBuckets(accounts),
 		DAExposureByDomain:       DAExposureByDomain(accounts),
 		ComplexityCounts:         ComplexityCounts(accounts),
+		HIBPVsRisk:               HIBPVsRisk(accounts),
+		PasswordAgeBuckets:       PasswordAgeBuckets(accounts, now),
+		PasswordAgeScatter:       PasswordAgeScatter(accounts, now),
 	}
 }

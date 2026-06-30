@@ -151,3 +151,39 @@ func TestComplexityLabelUnknownPassThrough(t *testing.T) {
 		t.Error("numeric -> 0–9")
 	}
 }
+
+func TestHIBPVsRiskDropsEmptyLevels(t *testing.T) {
+	accts := []model.Account{
+		{RiskLevel: "Critical", HIBPBreachCount: 9, RiskScore: 8.5},
+		{RiskLevel: "Low", HIBPBreachCount: 0, RiskScore: 1},
+	}
+	got := HIBPVsRisk(accts)
+	if len(got) != 2 {
+		t.Fatalf("want Critical+Low series, got %d", len(got))
+	}
+	if got[0].Name != "Critical" || len(got[0].Points) != 1 {
+		t.Fatalf("crit = %+v", got[0])
+	}
+	// x = log10(9+1) = 1
+	if got[0].Points[0].X < 0.999 || got[0].Points[0].X > 1.001 {
+		t.Errorf("x = %v, want ~1", got[0].Points[0].X)
+	}
+}
+
+func TestPasswordAgeBucketsUsesNow(t *testing.T) {
+	now := time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC)
+	day := int64(86400)
+	accts := []model.Account{
+		{PwdLastSet: now.Unix() - 10*day},  // < 30d
+		{PwdLastSet: now.Unix() - 800*day}, // 2y+
+		{PwdLastSet: 0},                    // skipped
+	}
+	got := PasswordAgeBuckets(accts, now)
+	names := map[string]int{}
+	for _, b := range got {
+		names[b.Name] = b.Value
+	}
+	if names["< 30d"] != 1 || names["2y+"] != 1 {
+		t.Fatalf("got = %+v", got)
+	}
+}
