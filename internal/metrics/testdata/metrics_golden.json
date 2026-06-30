@@ -1,0 +1,240 @@
+{
+  "summary": {
+    "total_accounts": 5,
+    "cracked": 3,
+    "hibp_breached": 2,
+    "da_pathways": 1,
+    "risk_counts": {
+      "Critical": 1,
+      "High": 2,
+      "Low": 1,
+      "Medium": 1
+    },
+    "posture": {
+      "score": 32.5,
+      "rating": "Weak",
+      "likelihood": "Very High",
+      "breakdown": {
+        "risk": 0,
+        "strength": 17.5,
+        "privilege": 0,
+        "compliance": 15
+      },
+      "reachability": "Very High",
+      "reachability_score": 0.865,
+      "reachability_pct": "\u003e75%",
+      "overall": 4.4,
+      "verdict": "Critical",
+      "verdict_reason": "1 reachable Tier-0 controller + 1 reachable DA pathway"
+    },
+    "generated_at": "2026-06-30T00:00:00Z",
+    "disabled_accounts": 1,
+    "never_expires": 1,
+    "stale_passwords": 1,
+    "escalated_by_shared_da": 0,
+    "escalated_by_mass_reuse": 0,
+    "policy_violations": 1,
+    "high_controlled": 2,
+    "dormant_privileged": 1,
+    "breach_impact": {
+      "probability": "Very High",
+      "probability_pct": "\u003e75%",
+      "estimated_cost": "$1M – $5M+",
+      "recovery_time": "6–12 months"
+    }
+  },
+  "matrix": {
+    "counts": {
+      "Critical": {
+        "Critical": 1,
+        "High": 0,
+        "Low": 0,
+        "Medium": 0,
+        "Unknown": 0
+      },
+      "High": {
+        "Critical": 1,
+        "High": 0,
+        "Low": 0,
+        "Medium": 0,
+        "Unknown": 1
+      },
+      "Low": {
+        "Critical": 0,
+        "High": 0,
+        "Low": 1,
+        "Medium": 0,
+        "Unknown": 0
+      },
+      "Medium": {
+        "Critical": 0,
+        "High": 0,
+        "Low": 0,
+        "Medium": 1,
+        "Unknown": 0
+      }
+    },
+    "total": 5,
+    "max": 1
+  },
+  "domains": [
+    {
+      "domain": "A.LOCAL",
+      "summary": {
+        "total_accounts": 3,
+        "cracked": 2,
+        "hibp_breached": 1,
+        "da_pathways": 1,
+        "risk_counts": {
+          "Critical": 1,
+          "High": 1,
+          "Medium": 1
+        },
+        "posture": {
+          "score": 25,
+          "rating": "Weak",
+          "likelihood": "Very High",
+          "breakdown": {
+            "risk": 0,
+            "strength": 11.7,
+            "privilege": 0,
+            "compliance": 13.3
+          },
+          "reachability": "Very High",
+          "reachability_score": 0.865,
+          "reachability_pct": "\u003e75%",
+          "overall": 3.4,
+          "verdict": "Critical",
+          "verdict_reason": "1 reachable Tier-0 controller + 1 reachable DA pathway"
+        },
+        "generated_at": "2026-06-30T00:00:00Z",
+        "disabled_accounts": 0,
+        "never_expires": 0,
+        "stale_passwords": 0,
+        "escalated_by_shared_da": 0,
+        "escalated_by_mass_reuse": 0,
+        "policy_violations": 1,
+        "high_controlled": 1,
+        "dormant_privileged": 0,
+        "breach_impact": {
+          "probability": "Very High",
+          "probability_pct": "\u003e75%",
+          "estimated_cost": "$1M – $5M+",
+          "recovery_time": "6–12 months"
+        }
+      },
+      "matrix": {
+        "counts": {
+          "Critical": {
+            "Critical": 1,
+            "High": 0,
+            "Low": 0,
+            "Medium": 0,
+            "Unknown": 0
+          },
+          "High": {
+            "Critical": 0,
+            "High": 0,
+            "Low": 0,
+            "Medium": 0,
+            "Unknown": 1
+          },
+          "Low": {
+            "Critical": 0,
+            "High": 0,
+            "Low": 0,
+            "Medium": 0,
+            "Unknown": 0
+          },
+          "Medium": {
+            "Critical": 0,
+            "High": 0,
+            "Low": 0,
+            "Medium": 1,
+            "Unknown": 0
+          }
+        },
+        "total": 3,
+        "max": 1
+      }
+    },
+    {
+      "domain": "B.LOCAL",
+      "summary": {
+        "total_accounts": 2,
+        "cracked": 1,
+        "hibp_breached": 1,
+        "da_pathways": 0,
+        "risk_counts": {
+          "High": 1,
+          "Low": 1
+        },
+        "posture": {
+          "score": 100,
+          "rating": "Strong",
+          "likelihood": "Low",
+          "breakdown": {
+            "risk": 45,
+            "strength": 35,
+            "privilege": 0,
+            "compliance": 20
+          },
+          "reachability": "Low",
+          "reachability_score": 0,
+          "reachability_pct": "\u003c25%",
+          "overall": 100,
+          "verdict": "Sound"
+        },
+        "generated_at": "2026-06-30T00:00:00Z",
+        "disabled_accounts": 1,
+        "never_expires": 1,
+        "stale_passwords": 1,
+        "escalated_by_shared_da": 0,
+        "escalated_by_mass_reuse": 0,
+        "policy_violations": 0,
+        "high_controlled": 1,
+        "dormant_privileged": 1,
+        "breach_impact": {
+          "probability": "Low",
+          "probability_pct": "\u003c25%",
+          "estimated_cost": "$50K – $100K",
+          "recovery_time": "2–4 weeks"
+        }
+      },
+      "matrix": {
+        "counts": {
+          "Critical": {
+            "Critical": 0,
+            "High": 0,
+            "Low": 0,
+            "Medium": 0,
+            "Unknown": 0
+          },
+          "High": {
+            "Critical": 1,
+            "High": 0,
+            "Low": 0,
+            "Medium": 0,
+            "Unknown": 0
+          },
+          "Low": {
+            "Critical": 0,
+            "High": 0,
+            "Low": 1,
+            "Medium": 0,
+            "Unknown": 0
+          },
+          "Medium": {
+            "Critical": 0,
+            "High": 0,
+            "Low": 0,
+            "Medium": 0,
+            "Unknown": 0
+          }
+        },
+        "total": 2,
+        "max": 1
+      }
+    }
+  ]
+}
