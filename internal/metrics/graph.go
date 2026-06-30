@@ -94,6 +94,7 @@ func CrossDomainReuseGraph(rep model.Report, accounts []model.Account) Graph {
 		}
 		g.Edges = append(g.Edges, GraphEdge{Source: parts[0], Target: parts[1], Weight: weight, Label: strconv.Itoa(w) + " shared"})
 	}
+	layout(&g)
 	return g
 }
 
@@ -175,5 +176,6 @@ func SimilarityNetwork(accounts []model.Account, maxNodes int) Graph {
 		}
 		return g.Edges[i].Target < g.Edges[j].Target
 	})
+	layout(&g)
 	return g
 }
