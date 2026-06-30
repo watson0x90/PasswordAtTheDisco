@@ -244,6 +244,57 @@ func PostureScore(accounts []Account) Posture {
 	return p
 }
 
+// Summarize builds the non-sensitive aggregate Summary over an arbitrary account
+// slice. It is the single source for org-level AND per-domain summaries: the store
+// calls it over a whole audit; the metrics package calls it over a domain subset.
+// generatedAt is passed in (no time.Now here) so callers control reproducibility.
+func Summarize(accounts []Account, generatedAt time.Time) Summary {
+	sum := Summary{RiskCounts: map[string]int{}, GeneratedAt: generatedAt}
+	for i := range accounts {
+		acc := accounts[i]
+		sum.TotalAccounts++
+		if acc.Cracked {
+			sum.Cracked++
+		}
+		if acc.HIBPBreached {
+			sum.HIBPBreached++
+		}
+		if acc.HasDAPathway() {
+			sum.DAPathways++
+		}
+		if acc.RiskLevel != "" {
+			sum.RiskCounts[acc.RiskLevel]++
+		}
+		if !acc.Enabled {
+			sum.DisabledAccounts++
+		}
+		if acc.PwdNeverExpires != nil && *acc.PwdNeverExpires {
+			sum.NeverExpires++
+		}
+		if acc.DaysOutOfCompliance > 0 {
+			sum.StalePasswords++
+		}
+		if acc.EscalatedBySharedDA {
+			sum.EscalatedBySharedDA++
+		}
+		if acc.EscalatedByMassReuse {
+			sum.EscalatedByMassReuse++
+		}
+		if acc.Cracked && !acc.MeetsPolicy {
+			sum.PolicyViolations++
+		}
+		if acc.Controlled > 100 {
+			sum.HighControlled++
+		}
+		if !acc.Enabled && (acc.ControlsTier0 || acc.HasDAPathway()) && CredentialObtainable(acc) {
+			sum.DormantPrivileged++
+		}
+	}
+	sum.Posture = PostureScore(accounts)
+	sum.BreachImpact = EstimateBreachImpact(sum.Posture)
+	return sum
+}
+
 // EstimateBreachImpact: reachability-driven (single-source with Posture so $ and verdict agree).
 func EstimateBreachImpact(p Posture) BreachImpact {
 	// No-Data guard: an audit with no active accounts (or explicitly marked no-data)

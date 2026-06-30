@@ -687,47 +687,5 @@ func (s *Store) Summary(id string) (model.Summary, error) {
 	if err != nil {
 		return model.Summary{}, ErrNotFound
 	}
-	sum := model.Summary{RiskCounts: map[string]int{}, GeneratedAt: a.ds.GeneratedAt}
-	for _, acc := range a.ds.Accounts {
-		sum.TotalAccounts++
-		if acc.Cracked {
-			sum.Cracked++
-		}
-		if acc.HIBPBreached {
-			sum.HIBPBreached++
-		}
-		if acc.HasDAPathway() {
-			sum.DAPathways++
-		}
-		if acc.RiskLevel != "" {
-			sum.RiskCounts[acc.RiskLevel]++
-		}
-		if !acc.Enabled {
-			sum.DisabledAccounts++
-		}
-		if acc.PwdNeverExpires != nil && *acc.PwdNeverExpires {
-			sum.NeverExpires++
-		}
-		if acc.DaysOutOfCompliance > 0 {
-			sum.StalePasswords++
-		}
-		if acc.EscalatedBySharedDA {
-			sum.EscalatedBySharedDA++
-		}
-		if acc.EscalatedByMassReuse {
-			sum.EscalatedByMassReuse++
-		}
-		if acc.Cracked && !acc.MeetsPolicy {
-			sum.PolicyViolations++
-		}
-		if acc.Controlled > 100 {
-			sum.HighControlled++
-		}
-		if !acc.Enabled && (acc.ControlsTier0 || acc.HasDAPathway()) && model.CredentialObtainable(acc) {
-			sum.DormantPrivileged++
-		}
-	}
-	sum.Posture = model.PostureScore(a.ds.Accounts) // Hygiene + Reachability + Verdict (single source)
-	sum.BreachImpact = model.EstimateBreachImpact(sum.Posture)
-	return sum, nil
+	return model.Summarize(a.ds.Accounts, a.ds.GeneratedAt), nil
 }
