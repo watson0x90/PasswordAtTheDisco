@@ -175,7 +175,7 @@ func BuildReport(accts []Account) Report {
 		if a.HIBPBreachCount > 0 {
 			rep.HIBPExposed = append(rep.HIBPExposed, toReportAccount(a))
 		}
-		if a.HasDAPathway() {
+		if a.HasObtainableDAPathway() {
 			rep.DAPathways = append(rep.DAPathways, toReportAccount(a))
 		}
 		if a.IsWeak() {

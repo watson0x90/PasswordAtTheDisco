@@ -56,3 +56,20 @@ func TestSummarizeCounts(t *testing.T) {
 		t.Error("posture not populated")
 	}
 }
+
+// A DA pathway counts only when the credential is obtainable (cracked / HIBP /
+// hash shared with a DA or large reuse cluster). A latent DA path on an uncracked,
+// unshared, un-breached account is attack surface, not a realized pathway.
+func TestSummarizeDAPathwaysObtainableOnly(t *testing.T) {
+	gen := time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC)
+	accts := []Account{
+		{DADomains: "A", Cracked: true},      // obtainable: cracked
+		{DADomains: "A", HIBPBreached: true}, // obtainable: HIBP
+		{DADomains: "A"},                     // latent: uncracked, unshared, not breached -> excluded
+		{Cracked: true},                      // no DA path
+	}
+	s := Summarize(accts, gen)
+	if s.DAPathways != 2 {
+		t.Errorf("DAPathways = %d, want 2 (latent DA account excluded)", s.DAPathways)
+	}
+}

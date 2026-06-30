@@ -259,7 +259,7 @@ func Summarize(accounts []Account, generatedAt time.Time) Summary {
 		if acc.HIBPBreached {
 			sum.HIBPBreached++
 		}
-		if acc.HasDAPathway() {
+		if acc.HasObtainableDAPathway() {
 			sum.DAPathways++
 		}
 		if acc.RiskLevel != "" {
@@ -475,6 +475,18 @@ func (a Account) Redacted() Account {
 // HasDAPathway reports whether the account has a Domain Admin pathway.
 func (a Account) HasDAPathway() bool {
 	return a.DADomains != "" && a.DADomains != "None" && a.DADomains != "Unknown"
+}
+
+// HasObtainableDAPathway reports whether the account has a Domain Admin pathway AND
+// its credential is obtainable (cracked, in the HIBP breach corpus, or its hash is
+// shared with a DA / large cracked-reuse cluster). A DA path whose credential an
+// attacker cannot obtain -- uncracked, not breached, hash not shared -- is latent
+// attack surface, not a realized pathway, so it is excluded from the "Domain Admin
+// Pathways" list and the DA-pathway KPI. This mirrors the reachability engine's
+// obtainability predicate (CredentialObtainable) so the Actionable section, the
+// dashboard KPI, and the posture all agree on what counts as a DA pathway.
+func (a Account) HasObtainableDAPathway() bool {
+	return a.HasDAPathway() && CredentialObtainable(a)
 }
 
 // emptyNTHash is the NT hash of an empty password. Every account with no password

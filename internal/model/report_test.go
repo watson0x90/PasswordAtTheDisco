@@ -110,6 +110,34 @@ func TestBuildReportEmpty(t *testing.T) {
 	}
 }
 
+// The "Domain Admin Pathways" list (rep.DAPathways) must include only accounts whose
+// credential is obtainable (cracked / HIBP-breached / hash shared with a DA or large
+// reuse cluster). A DA path on an uncracked, unshared, un-breached account is latent
+// attack surface an attacker can't traverse, so it is excluded.
+func TestBuildReportDAPathwaysObtainableOnly(t *testing.T) {
+	accts := []Account{
+		{Username: "cracked-da", Domain: "A", DADomains: "A", Cracked: true},
+		{Username: "hibp-da", Domain: "A", DADomains: "A", HIBPBreached: true},
+		{Username: "shared-da", Domain: "A", DADomains: "A", EscalatedBySharedDA: true},
+		{Username: "latent-da", Domain: "A", DADomains: "A"}, // uncracked, unshared, not breached -> excluded
+		{Username: "no-da", Domain: "A", Cracked: true},      // no DA path at all
+	}
+	rep := BuildReport(accts)
+	got := map[string]bool{}
+	for _, a := range rep.DAPathways {
+		got[a.Username] = true
+	}
+	if len(rep.DAPathways) != 3 {
+		t.Fatalf("DAPathways len = %d, want 3 (got %v)", len(rep.DAPathways), got)
+	}
+	if !got["cracked-da"] || !got["hibp-da"] || !got["shared-da"] {
+		t.Errorf("obtainable DA accounts missing from DAPathways: %v", got)
+	}
+	if got["latent-da"] {
+		t.Error("latent-da (uncracked, unshared, not breached) must be excluded from DAPathways")
+	}
+}
+
 func TestAggregateTerms(t *testing.T) {
 	accts := []Account{
 		{BannedWords: []string{"summer", "2021"}, KeyboardPatterns: []string{"qwerty"}},
