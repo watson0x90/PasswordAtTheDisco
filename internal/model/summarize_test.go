@@ -73,3 +73,18 @@ func TestSummarizeDAPathwaysObtainableOnly(t *testing.T) {
 		t.Errorf("DAPathways = %d, want 2 (latent DA account excluded)", s.DAPathways)
 	}
 }
+
+func TestSummarizeCoverageEnriched(t *testing.T) {
+	gen := time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC)
+	accts := []Account{
+		{Username: "alice", Coverage: "full"}, // enriched
+		{Username: "bob", Coverage: "full"},   // enriched
+		{Username: "carol", Coverage: "none"}, // not enriched
+		{Username: "dave", Coverage: "full"},  // enriched
+		{Username: "erin", Coverage: ""},      // not enriched (empty)
+	}
+	s := Summarize(accts, gen)
+	if s.CoverageEnriched != 3 {
+		t.Errorf("CoverageEnriched = %d, want 3", s.CoverageEnriched)
+	}
+}

@@ -289,6 +289,9 @@ func Summarize(accounts []Account, generatedAt time.Time) Summary {
 		if !acc.Enabled && (acc.ControlsTier0 || acc.HasDAPathway()) && CredentialObtainable(acc) {
 			sum.DormantPrivileged++
 		}
+		if acc.Coverage == "full" {
+			sum.CoverageEnriched++
+		}
 	}
 	sum.Posture = PostureScore(accounts)
 	sum.BreachImpact = EstimateBreachImpact(sum.Posture)
@@ -788,6 +791,7 @@ type Summary struct {
 	PolicyViolations     int `json:"policy_violations"`       // cracked && !meets_policy
 	HighControlled       int `json:"high_controlled"`         // controlled_object_count > 100
 	DormantPrivileged    int `json:"dormant_privileged"`      // disabled but privileged & credential-compromisable
+	CoverageEnriched     int `json:"coverage_enriched"`       // accounts with BloodHound coverage "full" (enriched)
 
 	// Executive breach impact estimate.
 	BreachImpact BreachImpact `json:"breach_impact"`

@@ -36,6 +36,7 @@
     "policy_violations": 1,
     "high_controlled": 2,
     "dormant_privileged": 1,
+    "coverage_enriched": 4,
     "breach_impact": {
       "probability": "Very High",
       "probability_pct": "\u003e75%",
@@ -474,6 +475,7 @@
         "policy_violations": 1,
         "high_controlled": 1,
         "dormant_privileged": 0,
+        "coverage_enriched": 2,
         "breach_impact": {
           "probability": "Very High",
           "probability_pct": "\u003e75%",
@@ -755,6 +757,7 @@
         "policy_violations": 0,
         "high_controlled": 1,
         "dormant_privileged": 1,
+        "coverage_enriched": 2,
         "breach_impact": {
           "probability": "Low",
           "probability_pct": "\u003c25%",
