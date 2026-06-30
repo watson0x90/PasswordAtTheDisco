@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { api, ApiError, type Account, type Report, type ReportAccount, type ReuseGroup, type Summary } from "../api"
 import { useAccountsData } from "../accountsData"
 import { useAudits } from "../auditsData"
-import { hasDA, RISK_CLASS, RISK_RANK } from "../util"
+import { hasDA, hasObtainableDA, RISK_CLASS, RISK_RANK } from "../util"
 import { OverviewView } from "./Dashboard"
 import { domainReport, domainSummary } from "../domainScope"
 import { AccountLink } from "./AccountLink"
@@ -68,7 +68,7 @@ export function Domains() {
     if (a.cracked) s.cracked++
     if (a.hibp_breached) s.breached++
     if (a.risk_level === "Critical") s.critical++
-    if (hasDA(a.da_domains)) s.da++
+    if (hasObtainableDA(a)) s.da++
   }
   const domains = [...byDomain.values()].sort((a, b) => b.critical - a.critical || b.total - a.total)
 

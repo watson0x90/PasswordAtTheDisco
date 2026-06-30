@@ -1,7 +1,7 @@
 // Pure functions that derive chart/scorecard data from the redacted account set.
 // All inputs come from /api/accounts (no cleartext) so everything is safe to chart.
 import type { Account, Report, Summary, Verdict } from "./api"
-import { hasDA } from "./util"
+import { hasDA, hasObtainableDA } from "./util"
 import { impactIsKnown } from "./matrix"
 
 export type Rating = "Strong" | "Fair" | "Weak" | "No Data"
@@ -221,7 +221,7 @@ export function sharingDistribution(accts: Account[]): Bar[] {
 // Count of accounts with a Domain Admin pathway, per domain (desc).
 export function daExposureByDomain(accts: Account[]): Bar[] {
   const m: Record<string, number> = {}
-  for (const a of accts) if (hasDA(a.da_domains)) m[a.domain] = (m[a.domain] || 0) + 1
+  for (const a of accts) if (hasObtainableDA(a)) m[a.domain] = (m[a.domain] || 0) + 1
   return Object.entries(m)
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value)
@@ -544,6 +544,6 @@ export function kpiCounts(
     total: summary?.total_accounts ?? accounts.length,
     cracked: summary?.cracked ?? accounts.filter((a) => a.cracked).length,
     breached: summary?.hibp_breached ?? accounts.filter((a) => a.hibp_breached).length,
-    da: summary?.da_pathways ?? accounts.filter((a) => hasDA(a.da_domains)).length,
+    da: summary?.da_pathways ?? accounts.filter((a) => hasObtainableDA(a)).length,
   }
 }

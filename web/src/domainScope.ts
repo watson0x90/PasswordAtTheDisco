@@ -1,12 +1,6 @@
 import type { Account, Report, ReportAccount, ReuseGroup, Summary } from "./api"
 import { neverExpiresCount, posture } from "./insights"
-import { hasDA } from "./util"
-
-// credentialObtainable mirrors Go model.CredentialObtainable (NO enabled gate — the
-// caller checks !enabled separately). insights.isReachable is the same condition but
-// additionally requires enabled, so it can't be reused for the dormant (disabled) case.
-const credentialObtainable = (a: Account): boolean =>
-  !!a.cracked || !!a.hibp_breached || !!a.escalated_by_shared_da || !!a.escalated_by_mass_reuse
+import { credentialObtainable, hasDA, hasObtainableDA } from "./util"
 
 // dormant_privileged mirrors Go store.go DormantPrivileged exactly: disabled, privileged
 // (controls Tier-0 or has a DA pathway), AND credential-obtainable.
@@ -29,7 +23,7 @@ export function domainSummary(domainAccounts: Account[], orgSummary: Summary): S
     total_accounts: domainAccounts.length,
     cracked: domainAccounts.filter((a) => a.cracked).length,
     hibp_breached: domainAccounts.filter((a) => a.hibp_breached).length,
-    da_pathways: domainAccounts.filter((a) => hasDA(a.da_domains)).length,
+    da_pathways: domainAccounts.filter((a) => hasObtainableDA(a)).length,
     risk_counts: riskCounts,
     posture: posture(domainAccounts),
     generated_at: orgSummary.generated_at,

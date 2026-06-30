@@ -13,6 +13,29 @@ export function hasDA(daDomains: string): boolean {
   return daDomains !== "" && daDomains !== "None" && daDomains !== "Unknown"
 }
 
+// credentialObtainable mirrors Go model.CredentialObtainable exactly (no enabled gate —
+// callers that need enabled-only reachability use insights.isReachable instead).
+export function credentialObtainable(a: {
+  cracked: boolean
+  hibp_breached: boolean
+  escalated_by_shared_da?: boolean
+  escalated_by_mass_reuse?: boolean
+}): boolean {
+  return !!a.cracked || !!a.hibp_breached || !!a.escalated_by_shared_da || !!a.escalated_by_mass_reuse
+}
+
+// hasObtainableDA mirrors Go Account.HasObtainableDAPathway = HasDAPathway && CredentialObtainable.
+// Use this instead of hasDA() whenever counting "how many DA accounts are a real threat."
+export function hasObtainableDA(a: {
+  cracked: boolean
+  hibp_breached: boolean
+  escalated_by_shared_da?: boolean
+  escalated_by_mass_reuse?: boolean
+  da_domains: string
+}): boolean {
+  return hasDA(a.da_domains) && credentialObtainable(a)
+}
+
 // weaknessTags returns the wordlist-weakness labels for an account (common,
 // dictionary, forbidden word, keyboard pattern). Empty if none / not cracked.
 export function weaknessTags(a: {
