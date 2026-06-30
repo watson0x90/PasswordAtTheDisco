@@ -1,6 +1,10 @@
 package metrics
 
-import "github.com/watson0x90/PasswordAtTheDisco/internal/model"
+import (
+	"sort"
+
+	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
+)
 
 // ExposureHeadline holds the three executive "blast radius" numbers (cracked&DA,
 // cracked&breached, cross-domain reuse) mirroring web/src/exposure.ts exposureHeadline.
@@ -11,10 +15,38 @@ type ExposureHeadline struct {
 	DomainsSpanned    int `json:"domains_spanned"`
 }
 
+// BridgeCluster represents a cross-domain reuse group with ranked metadata.
+type BridgeCluster struct {
+	Domains []string              `json:"domains"`
+	Size    int                   `json:"size"`
+	Cracked bool                  `json:"cracked"`
+	HasDA   bool                  `json:"has_da"`
+	HIBPMax int                   `json:"hibp_max"`
+	Members []model.ReportAccount `json:"members"`
+}
+
+// CrossDomain groups cross-domain reuse clusters (>=2 distinct member domains)
+// ranked by DA-first, then blast radius (size * distinct-domain-count), then
+// first-member username for deterministic tie-breaking.
+type CrossDomain struct {
+	Clusters []BridgeCluster `json:"clusters"`
+	Domains  []string        `json:"domains"`
+}
+
+// HIBPTriage splits HIBP-exposed accounts into tier1 (cracked) and tier2
+// (not cracked), each sorted by breach count desc, then risk score desc,
+// then username asc for deterministic tie-breaking.
+type HIBPTriage struct {
+	Tier1 []model.ReportAccount `json:"tier1"`
+	Tier2 []model.ReportAccount `json:"tier2"`
+}
+
 // ReportSeries holds the dashboard surfaces derived from the reuse-grouped report.
 // (Later tasks add bridges, HIBP triage, worklist, and the two graphs.)
 type ReportSeries struct {
 	ExposureHeadline ExposureHeadline `json:"exposure_headline"`
+	CrossDomain      CrossDomain      `json:"cross_domain"`
+	HIBPTriage       HIBPTriage       `json:"hibp_triage"`
 }
 
 // groupDomains returns the distinct, member-derived domains of a reuse group.
@@ -60,5 +92,96 @@ func ExposureHeadlineOf(accounts []model.Account, rep model.Report) ExposureHead
 func buildReportSeries(rep model.Report, accounts []model.Account) ReportSeries {
 	return ReportSeries{
 		ExposureHeadline: ExposureHeadlineOf(accounts, rep),
+		CrossDomain:      CrossDomainBridges(rep),
+		HIBPTriage:       HIBPTriageOf(rep),
 	}
+}
+
+func sortedKeys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// CrossDomainBridges ranks cross-domain (>=2 domain) reuse clusters: DA-first, then
+// blast radius = size * distinct-domain-count, then first-member username for a
+// deterministic tie-break (the TS relied on input order for ties).
+func CrossDomainBridges(rep model.Report) CrossDomain {
+	clusters := []BridgeCluster{}
+	domains := map[string]bool{}
+	groups := append(append([]model.ReuseGroup{}, rep.CrackedReuse...), rep.UncrackedReuse...)
+	for _, g := range groups {
+		doms := sortedKeys(groupDomains(g))
+		if len(doms) < 2 {
+			continue
+		}
+		for _, d := range doms {
+			domains[d] = true
+		}
+		clusters = append(clusters, BridgeCluster{
+			Domains: doms, Size: g.Size, Cracked: g.Cracked, HasDA: g.HasDAPathway,
+			HIBPMax: g.HIBPBreachCount, Members: g.Members,
+		})
+	}
+	sort.SliceStable(clusters, func(i, j int) bool {
+		di, dj := boolInt(clusters[i].HasDA), boolInt(clusters[j].HasDA)
+		if di != dj {
+			return di > dj
+		}
+		bi := clusters[i].Size * len(clusters[i].Domains)
+		bj := clusters[j].Size * len(clusters[j].Domains)
+		if bi != bj {
+			return bi > bj
+		}
+		return firstMemberName(clusters[i]) < firstMemberName(clusters[j])
+	})
+	return CrossDomain{Clusters: clusters, Domains: sortedKeys(domains)}
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+func firstMemberName(c BridgeCluster) string {
+	if len(c.Members) > 0 {
+		return c.Members[0].Username
+	}
+	return ""
+}
+
+// HIBPTriageOf splits HIBP-exposed accounts into tier1 (cracked) and tier2
+// (not cracked), each sorted by breach count desc, then risk score desc, then
+// username asc (deterministic tie-break).
+func HIBPTriageOf(rep model.Report) HIBPTriage {
+	bySeverity := func(rows []model.ReportAccount) {
+		sort.SliceStable(rows, func(i, j int) bool {
+			if rows[i].HIBPBreachCount != rows[j].HIBPBreachCount {
+				return rows[i].HIBPBreachCount > rows[j].HIBPBreachCount
+			}
+			if rows[i].RiskScore != rows[j].RiskScore {
+				return rows[i].RiskScore > rows[j].RiskScore
+			}
+			return rows[i].Username < rows[j].Username
+		})
+	}
+	var t HIBPTriage
+	t.Tier1 = []model.ReportAccount{}
+	t.Tier2 = []model.ReportAccount{}
+	for i := range rep.HIBPExposed {
+		a := rep.HIBPExposed[i]
+		if a.Cracked {
+			t.Tier1 = append(t.Tier1, a)
+		} else {
+			t.Tier2 = append(t.Tier2, a)
+		}
+	}
+	bySeverity(t.Tier1)
+	bySeverity(t.Tier2)
+	return t
 }

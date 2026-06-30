@@ -337,6 +337,41 @@
       "cracked_hibp": 2,
       "cross_domain_groups": 0,
       "domains_spanned": 0
+    },
+    "cross_domain": {
+      "clusters": [],
+      "domains": []
+    },
+    "hibp_triage": {
+      "tier1": [
+        {
+          "username": "alice",
+          "domain": "A.LOCAL",
+          "cracked": true,
+          "password_length": 7,
+          "risk_level": "Critical",
+          "risk_score": 8.5,
+          "hibp_breach_count": 1200,
+          "shared_with": 3,
+          "da_domains": "A.LOCAL",
+          "controlled_object_count": 150,
+          "enabled": true
+        },
+        {
+          "username": "dave",
+          "domain": "B.LOCAL",
+          "cracked": true,
+          "password_length": 9,
+          "risk_level": "High",
+          "risk_score": 7,
+          "hibp_breach_count": 50,
+          "shared_with": 1,
+          "da_domains": "None",
+          "controlled_object_count": 250,
+          "enabled": false
+        }
+      ],
+      "tier2": []
     }
   },
   "domains": [
