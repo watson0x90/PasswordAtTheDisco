@@ -9,7 +9,9 @@ declare module "node:fs" {
 }
 declare module "node:path" {
   export function join(...parts: string[]): string
+  export function resolve(...parts: string[]): string
 }
 interface ImportMeta {
   readonly dirname: string
 }
+declare var __dirname: string
