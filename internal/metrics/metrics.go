@@ -29,9 +29,6 @@ func Compute(accounts []model.Account, now time.Time) Metrics {
 }
 
 // --- temporary stubs, replaced in Tasks 3 and 4 ---
-type Matrix struct{}
-
-func BuildMatrix(_ []model.Account) Matrix { return Matrix{} }
 
 func ComputeByDomain(_ []model.Account, _ time.Time) []DomainMetrics { return nil }
 
