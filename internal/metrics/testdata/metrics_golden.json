@@ -372,7 +372,60 @@
         }
       ],
       "tier2": []
-    }
+    },
+    "worklist": [
+      {
+        "account": {
+          "username": "alice",
+          "domain": "A.LOCAL",
+          "risk_level": "Critical",
+          "risk_score": 8.5,
+          "hibp_breach_count": 1200,
+          "has_da": true,
+          "controlled_object_count": 150
+        },
+        "priority": 7,
+        "reasons": [
+          "DA",
+          "HIBP 1200",
+          "Cracked",
+          "Shared 3"
+        ]
+      },
+      {
+        "account": {
+          "username": "dave",
+          "domain": "B.LOCAL",
+          "risk_level": "High",
+          "risk_score": 7,
+          "hibp_breach_count": 50,
+          "has_da": false,
+          "controlled_object_count": 250
+        },
+        "priority": 4,
+        "reasons": [
+          "HIBP 50",
+          "Cracked",
+          "Shared 1",
+          "disabled"
+        ]
+      },
+      {
+        "account": {
+          "username": "bob",
+          "domain": "A.LOCAL",
+          "risk_level": "Medium",
+          "risk_score": 4.2,
+          "hibp_breach_count": 0,
+          "has_da": false,
+          "controlled_object_count": 0
+        },
+        "priority": 1,
+        "reasons": [
+          "Cracked"
+        ]
+      }
+    ]
   },
   "domains": [
     {

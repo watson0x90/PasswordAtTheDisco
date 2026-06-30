@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"sort"
+	"strconv"
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 )
@@ -41,12 +42,20 @@ type HIBPTriage struct {
 	Tier2 []model.ReportAccount `json:"tier2"`
 }
 
+// WorklistRow is one ranked remediation account with reason badges.
+type WorklistRow struct {
+	Account  AccountRef `json:"account"`
+	Priority int        `json:"priority"`
+	Reasons  []string   `json:"reasons"`
+}
+
 // ReportSeries holds the dashboard surfaces derived from the reuse-grouped report.
 // (Later tasks add bridges, HIBP triage, worklist, and the two graphs.)
 type ReportSeries struct {
 	ExposureHeadline ExposureHeadline `json:"exposure_headline"`
 	CrossDomain      CrossDomain      `json:"cross_domain"`
 	HIBPTriage       HIBPTriage       `json:"hibp_triage"`
+	Worklist         []WorklistRow    `json:"worklist"`
 }
 
 // groupDomains returns the distinct, member-derived domains of a reuse group.
@@ -94,6 +103,7 @@ func buildReportSeries(rep model.Report, accounts []model.Account) ReportSeries 
 		ExposureHeadline: ExposureHeadlineOf(accounts, rep),
 		CrossDomain:      CrossDomainBridges(rep),
 		HIBPTriage:       HIBPTriageOf(rep),
+		Worklist:         BlastRadius(accounts),
 	}
 }
 
@@ -184,4 +194,48 @@ func HIBPTriageOf(rep model.Report) HIBPTriage {
 	bySeverity(t.Tier1)
 	bySeverity(t.Tier2)
 	return t
+}
+
+// BlastRadius is the ranked remediation worklist (mirrors exposure.ts blastRadius):
+// DA +3, HIBP +2, Cracked +1, Shared +1; rows with priority>0 only; sorted by
+// priority desc, then risk score desc, then username asc (deterministic).
+func BlastRadius(accounts []model.Account) []WorklistRow {
+	rows := []WorklistRow{}
+	for i := range accounts {
+		a := accounts[i]
+		reasons := []string{}
+		priority := 0
+		if a.HasDAPathway() {
+			priority += 3
+			reasons = append(reasons, "DA")
+		}
+		if a.HIBPBreached {
+			priority += 2
+			reasons = append(reasons, "HIBP "+strconv.Itoa(a.HIBPBreachCount))
+		}
+		if a.Cracked {
+			priority++
+			reasons = append(reasons, "Cracked")
+		}
+		if a.SharedWith > 0 {
+			priority++
+			reasons = append(reasons, "Shared "+strconv.Itoa(a.SharedWith))
+		}
+		if !a.Enabled {
+			reasons = append(reasons, "disabled")
+		}
+		if priority > 0 {
+			rows = append(rows, WorklistRow{Account: toRef(a), Priority: priority, Reasons: reasons})
+		}
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].Priority != rows[j].Priority {
+			return rows[i].Priority > rows[j].Priority
+		}
+		if rows[i].Account.RiskScore != rows[j].Account.RiskScore {
+			return rows[i].Account.RiskScore > rows[j].Account.RiskScore
+		}
+		return rows[i].Account.Username < rows[j].Account.Username
+	})
+	return rows
 }

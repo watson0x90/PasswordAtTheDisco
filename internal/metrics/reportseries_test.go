@@ -72,3 +72,24 @@ func TestHIBPTriageTiers(t *testing.T) {
 		t.Fatalf("tier2 = %+v", tr.Tier2)
 	}
 }
+
+func TestBlastRadiusPriorityAndReasons(t *testing.T) {
+	accts := []model.Account{
+		{Username: "danger", DADomains: "A", HIBPBreached: true, HIBPBreachCount: 5, Cracked: true, SharedWith: 2, Enabled: true, RiskScore: 9}, // 3+2+1+1=7
+		{Username: "mild", Cracked: true, Enabled: true, RiskScore: 3},                                                                          // 1
+		{Username: "clean", Enabled: true, RiskScore: 2},                                                                                        // priority 0 -> excluded
+	}
+	rows := BlastRadius(accts)
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want 2", len(rows))
+	}
+	if rows[0].Account.Username != "danger" || rows[0].Priority != 7 {
+		t.Fatalf("row0 = %+v", rows[0])
+	}
+	if len(rows[0].Reasons) != 4 { // DA, HIBP n, Cracked, Shared n
+		t.Errorf("reasons = %v, want 4", rows[0].Reasons)
+	}
+	if rows[1].Account.Username != "mild" || rows[1].Priority != 1 {
+		t.Errorf("row1 = %+v", rows[1])
+	}
+}
