@@ -259,7 +259,8 @@
       }
     ],
     "password_age_buckets": [],
-    "password_age_scatter": []
+    "password_age_scatter": [],
+    "axis_factor_bars": []
   },
   "domains": [
     {
@@ -499,7 +500,8 @@
           }
         ],
         "password_age_buckets": [],
-        "password_age_scatter": []
+        "password_age_scatter": [],
+        "axis_factor_bars": []
       }
     },
     {
@@ -722,7 +724,8 @@
           }
         ],
         "password_age_buckets": [],
-        "password_age_scatter": []
+        "password_age_scatter": [],
+        "axis_factor_bars": []
       }
     }
   ]

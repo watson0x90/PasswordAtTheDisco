@@ -187,3 +187,41 @@ func TestPasswordAgeBucketsUsesNow(t *testing.T) {
 		t.Fatalf("got = %+v", got)
 	}
 }
+
+func TestAxisFactorBarsAveragesAndImpactFlag(t *testing.T) {
+	sb := func(weak, priv float64) *model.ScoreBreakdown {
+		return &model.ScoreBreakdown{WeaknessScore: weak, PrivilegeSubScore: priv}
+	}
+	fp := func(f float64) *float64 { return &f }
+	accts := []model.Account{
+		{RiskLevel: "Critical", ScoreBreakdown: sb(8, 10), ImpactKnown: true, ImpactScore: fp(9)},
+		{RiskLevel: "Critical", ScoreBreakdown: sb(6, 0), ImpactKnown: false}, // not enriched
+	}
+	got := AxisFactorBars(accts)
+	if len(got) != 1 || got[0].Tier != "Critical" {
+		t.Fatalf("got = %+v", got)
+	}
+	// Weakness avg over the whole group (8+6)/2 = 7
+	var weak float64
+	for _, f := range got[0].Exposure {
+		if f.Name == "Weakness" {
+			weak = f.Value
+		}
+	}
+	if weak != 7 {
+		t.Errorf("weakness avg = %v, want 7", weak)
+	}
+	// Privilege avg over ENRICHED only = 10/1 = 10
+	var priv float64
+	for _, f := range got[0].Impact {
+		if f.Name == "Privilege" {
+			priv = f.Value
+		}
+	}
+	if priv != 10 {
+		t.Errorf("privilege avg (enriched) = %v, want 10", priv)
+	}
+	if !got[0].ImpactKnown {
+		t.Error("impact_known should be true (one enriched account in tier)")
+	}
+}

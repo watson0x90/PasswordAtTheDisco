@@ -34,23 +34,40 @@ type Series struct {
 	Points []Point `json:"points"`
 }
 
+// AxisFactor is a single exposure or impact breakdown factor with name, value, and color.
+type AxisFactor struct {
+	Name  string  `json:"name"`
+	Value float64 `json:"value"`
+	Color string  `json:"color"`
+}
+
+// TierFactorBars holds per-tier averaged exposure and impact factors.
+type TierFactorBars struct {
+	Tier        string       `json:"tier"`
+	Color       string       `json:"color"`
+	Exposure    []AxisFactor `json:"exposure"`
+	Impact      []AxisFactor `json:"impact"`
+	ImpactKnown bool         `json:"impact_known"`
+}
+
 // ChartSeries holds the account-derived chart data the dashboards render.
 // Ported verbatim from web/src/insights.ts so the SPA and the exporters show
 // the same numbers. (Later tasks add more fields.)
 type ChartSeries struct {
-	RiskDistribution         []Slice  `json:"risk_distribution"`
-	HIBPSplit                []Slice  `json:"hibp_split"`
-	ExpirationSplit          []Slice  `json:"expiration_split"`
-	LengthBuckets            []Bar    `json:"length_buckets"`
-	ScoreBuckets             []Bar    `json:"score_buckets"`
-	SharingDistribution      []Bar    `json:"sharing_distribution"`
-	ControlledObjectsBuckets []Bar    `json:"controlled_objects_buckets"`
-	SimilarityBuckets        []Bar    `json:"similarity_buckets"`
-	DAExposureByDomain       []Bar    `json:"da_exposure_by_domain"`
-	ComplexityCounts         []Bar    `json:"complexity_counts"`
-	HIBPVsRisk               []Series `json:"hibp_vs_risk"`
-	PasswordAgeBuckets       []Bar    `json:"password_age_buckets"`
-	PasswordAgeScatter       []Series `json:"password_age_scatter"`
+	RiskDistribution         []Slice          `json:"risk_distribution"`
+	HIBPSplit                []Slice          `json:"hibp_split"`
+	ExpirationSplit          []Slice          `json:"expiration_split"`
+	LengthBuckets            []Bar            `json:"length_buckets"`
+	ScoreBuckets             []Bar            `json:"score_buckets"`
+	SharingDistribution      []Bar            `json:"sharing_distribution"`
+	ControlledObjectsBuckets []Bar            `json:"controlled_objects_buckets"`
+	SimilarityBuckets        []Bar            `json:"similarity_buckets"`
+	DAExposureByDomain       []Bar            `json:"da_exposure_by_domain"`
+	ComplexityCounts         []Bar            `json:"complexity_counts"`
+	HIBPVsRisk               []Series         `json:"hibp_vs_risk"`
+	PasswordAgeBuckets       []Bar            `json:"password_age_buckets"`
+	PasswordAgeScatter       []Series         `json:"password_age_scatter"`
+	AxisFactorBars           []TierFactorBars `json:"axis_factor_bars"`
 }
 
 var riskHex = map[string]string{"Critical": "#fb7185", "High": "#fbbf24", "Medium": "#a3e635", "Low": "#22d3ee"}
@@ -378,6 +395,72 @@ func PasswordAgeScatter(accts []model.Account, now time.Time) []Series {
 	return out
 }
 
+// bdAvg averages a score breakdown field over a set of accounts, with 2-decimal rounding.
+// Returns 0 if the set is empty.
+func bdAvg(rows []model.Account, get func(*model.ScoreBreakdown) float64) float64 {
+	if len(rows) == 0 {
+		return 0
+	}
+	var sum float64
+	for i := range rows {
+		if rows[i].ScoreBreakdown != nil {
+			sum += get(rows[i].ScoreBreakdown)
+		}
+	}
+	return math.Round(sum/float64(len(rows))*100) / 100
+}
+
+type factorDef struct {
+	name  string
+	color string
+	get   func(*model.ScoreBreakdown) float64
+}
+
+var expFactors = []factorDef{
+	{"Weakness", "#fbbf24", func(b *model.ScoreBreakdown) float64 { return b.WeaknessScore }},
+	{"HIBP floor", "#fb7185", func(b *model.ScoreBreakdown) float64 { return b.HIBPFloor }},
+	{"Cracked floor", "#f472b6", func(b *model.ScoreBreakdown) float64 { return b.CrackedFloor }},
+	{"Reuse", "#a78bfa", func(b *model.ScoreBreakdown) float64 { return b.ReuseBump }},
+	{"Roastable", "#38bdf8", func(b *model.ScoreBreakdown) float64 { return b.RoastableBump }},
+	{"Age", "#2dd4bf", func(b *model.ScoreBreakdown) float64 { return b.AgePenalty }},
+}
+
+var impFactors = []factorDef{
+	{"Privilege", "#22d3ee", func(b *model.ScoreBreakdown) float64 { return b.PrivilegeSubScore }},
+	{"DA path", "#fb7185", func(b *model.ScoreBreakdown) float64 { return b.DAComponent }},
+	{"Domain", "#a3e635", func(b *model.ScoreBreakdown) float64 { return b.DomainModifier }},
+}
+
+// AxisFactorBars: per-tier averaged breakdown sub-scores. Impact group averages
+// over enriched accounts only; impact_known=false when none in the tier is enriched.
+func AxisFactorBars(accts []model.Account) []TierFactorBars {
+	out := []TierFactorBars{}
+	for _, lc := range levelColors {
+		var group, enriched []model.Account
+		for i := range accts {
+			if accts[i].RiskLevel == lc.name && accts[i].ScoreBreakdown != nil {
+				group = append(group, accts[i])
+				if accts[i].ImpactKnown && accts[i].ImpactScore != nil {
+					enriched = append(enriched, accts[i])
+				}
+			}
+		}
+		if len(group) == 0 {
+			continue
+		}
+		exp := make([]AxisFactor, len(expFactors))
+		for i, f := range expFactors {
+			exp[i] = AxisFactor{Name: f.name, Value: bdAvg(group, f.get), Color: f.color}
+		}
+		imp := make([]AxisFactor, len(impFactors))
+		for i, f := range impFactors {
+			imp[i] = AxisFactor{Name: f.name, Value: bdAvg(enriched, f.get), Color: f.color}
+		}
+		out = append(out, TierFactorBars{Tier: lc.name, Color: lc.color, Exposure: exp, Impact: imp, ImpactKnown: len(enriched) > 0})
+	}
+	return out
+}
+
 // buildChartSeries assembles the account-derived chart series. now is threaded for
 // age-based series added in later tasks.
 func buildChartSeries(accounts []model.Account, now time.Time) ChartSeries {
@@ -395,5 +478,6 @@ func buildChartSeries(accounts []model.Account, now time.Time) ChartSeries {
 		HIBPVsRisk:               HIBPVsRisk(accounts),
 		PasswordAgeBuckets:       PasswordAgeBuckets(accounts, now),
 		PasswordAgeScatter:       PasswordAgeScatter(accounts, now),
+		AxisFactorBars:           AxisFactorBars(accounts),
 	}
 }
