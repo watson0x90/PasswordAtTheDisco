@@ -28,6 +28,7 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/engine"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/enrich"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/hibp"
+	"github.com/watson0x90/PasswordAtTheDisco/internal/metrics"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/policy"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/pwanalysis"
@@ -159,6 +160,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /api/audits/{a}/diff/{b}", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleDiff))))
 	// Views scoped to the session's active audit
 	mux.Handle("GET /api/summary", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleSummary))))
+	mux.Handle("GET /api/metrics", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleMetrics))))
 	mux.Handle("GET /api/accounts", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleAccounts))))
 	mux.Handle("GET /api/audits/{id}/accounts", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleAuditAccounts))))
 	mux.Handle("POST /api/probe", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleProbe)))))
@@ -1441,6 +1443,27 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, model.BuildReport(accts))
+}
+
+// handleMetrics serves the computed dashboard bundle (summary, matrix, chart
+// series, report-derived series, network graphs, and per-domain bundles) for the
+// session's active audit. Like handleReport it reads accounts WITH NT hashes so the
+// reuse-grouped report-series/graphs can be built; metrics.Compute emits only
+// redacted, descriptive numbers -- no cleartext, no NT hash ever leaves here.
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	now := time.Now()
+	id, ok := s.activeAuditRead(sess)
+	if !ok {
+		writeJSON(w, http.StatusOK, metrics.Compute(nil, now))
+		return
+	}
+	accts, err := s.Store.Accounts(id, true) // need NT hashes to group; bundle is redacted
+	if err != nil {
+		writeJSON(w, http.StatusOK, metrics.Compute(nil, now))
+		return
+	}
+	writeJSON(w, http.StatusOK, metrics.Compute(accts, now))
 }
 
 // handleReportTerms returns the recurring forbidden words + keyboard patterns --
