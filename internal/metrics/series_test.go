@@ -57,3 +57,59 @@ func TestBuildChartSeriesAttachedToBundle(t *testing.T) {
 		t.Fatalf("org charts not populated: %+v", m.Charts.RiskDistribution)
 	}
 }
+
+func TestLengthBucketsCrackedOnlyAllSix(t *testing.T) {
+	accts := []model.Account{
+		{Cracked: true, PasswordLength: 7}, {Cracked: true, PasswordLength: 16},
+		{Cracked: false, PasswordLength: 3}, // uncracked excluded
+	}
+	got := LengthBuckets(accts)
+	if len(got) != 6 {
+		t.Fatalf("want 6 bars, got %d", len(got))
+	}
+	if got[0].Name != "1–7" || got[0].Value != 1 {
+		t.Errorf("bucket0 = %+v", got[0])
+	}
+	if got[5].Name != "16+" || got[5].Value != 1 {
+		t.Errorf("bucket5 = %+v", got[5])
+	}
+}
+
+func TestScoreBucketsBoundaries(t *testing.T) {
+	accts := []model.Account{{RiskScore: 8}, {RiskScore: 6}, {RiskScore: 4}, {RiskScore: 2}, {RiskScore: 0}}
+	got := ScoreBuckets(accts)
+	want := []int{1, 1, 1, 1, 1} // 0–2,2–4,4–6,6–8,8–10
+	for i, b := range got {
+		if b.Value != want[i] {
+			t.Errorf("bucket %d (%s) = %d, want %d", i, b.Name, b.Value, want[i])
+		}
+	}
+}
+
+func TestControlledObjectsBucketsFiltersZero(t *testing.T) {
+	accts := []model.Account{{Controlled: 0}, {Controlled: 600}}
+	got := ControlledObjectsBuckets(accts)
+	// "0" bucket has 1 but is value>0 so KEPT; "500+" has 1; the empty middle buckets dropped
+	names := map[string]int{}
+	for _, b := range got {
+		names[b.Name] = b.Value
+	}
+	if names["0"] != 1 || names["500+"] != 1 {
+		t.Fatalf("got = %+v", got)
+	}
+	if _, ok := names["11–50"]; ok {
+		t.Errorf("empty bucket 11–50 should be filtered out")
+	}
+}
+
+func TestSimilarityBucketsSkipsZeroScores(t *testing.T) {
+	accts := []model.Account{{SimilarityScore: 0}, {SimilarityScore: 0.95}, {SimilarityScore: 0.75}}
+	got := SimilarityBuckets(accts)
+	names := map[string]int{}
+	for _, b := range got {
+		names[b.Name] = b.Value
+	}
+	if names["0.9+"] != 1 || names["0.7–0.8"] != 1 {
+		t.Fatalf("got = %+v", got)
+	}
+}

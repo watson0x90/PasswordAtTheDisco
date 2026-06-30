@@ -123,7 +123,88 @@
         "value": 4,
         "color": "#475569"
       }
-    ]
+    ],
+    "length_buckets": [
+      {
+        "name": "1–7",
+        "value": 1
+      },
+      {
+        "name": "8–9",
+        "value": 1
+      },
+      {
+        "name": "10–11",
+        "value": 0
+      },
+      {
+        "name": "12–13",
+        "value": 1
+      },
+      {
+        "name": "14–15",
+        "value": 0
+      },
+      {
+        "name": "16+",
+        "value": 0
+      }
+    ],
+    "score_buckets": [
+      {
+        "name": "0–2",
+        "value": 1
+      },
+      {
+        "name": "2–4",
+        "value": 0
+      },
+      {
+        "name": "4–6",
+        "value": 1
+      },
+      {
+        "name": "6–8",
+        "value": 2
+      },
+      {
+        "name": "8–10",
+        "value": 1
+      }
+    ],
+    "sharing_distribution": [
+      {
+        "name": "0",
+        "value": 3
+      },
+      {
+        "name": "1",
+        "value": 1
+      },
+      {
+        "name": "2",
+        "value": 0
+      },
+      {
+        "name": "3–5",
+        "value": 1
+      },
+      {
+        "name": "6+",
+        "value": 0
+      }
+    ],
+    "controlled_objects_buckets": [
+      {
+        "name": "0",
+        "value": 3
+      },
+      {
+        "name": "101–500",
+        "value": 2
+      }
+    ],
+    "similarity_buckets": []
   },
   "domains": [
     {
@@ -241,7 +322,88 @@
             "value": 3,
             "color": "#475569"
           }
-        ]
+        ],
+        "length_buckets": [
+          {
+            "name": "1–7",
+            "value": 1
+          },
+          {
+            "name": "8–9",
+            "value": 0
+          },
+          {
+            "name": "10–11",
+            "value": 0
+          },
+          {
+            "name": "12–13",
+            "value": 1
+          },
+          {
+            "name": "14–15",
+            "value": 0
+          },
+          {
+            "name": "16+",
+            "value": 0
+          }
+        ],
+        "score_buckets": [
+          {
+            "name": "0–2",
+            "value": 0
+          },
+          {
+            "name": "2–4",
+            "value": 0
+          },
+          {
+            "name": "4–6",
+            "value": 1
+          },
+          {
+            "name": "6–8",
+            "value": 1
+          },
+          {
+            "name": "8–10",
+            "value": 1
+          }
+        ],
+        "sharing_distribution": [
+          {
+            "name": "0",
+            "value": 2
+          },
+          {
+            "name": "1",
+            "value": 0
+          },
+          {
+            "name": "2",
+            "value": 0
+          },
+          {
+            "name": "3–5",
+            "value": 1
+          },
+          {
+            "name": "6+",
+            "value": 0
+          }
+        ],
+        "controlled_objects_buckets": [
+          {
+            "name": "0",
+            "value": 2
+          },
+          {
+            "name": "101–500",
+            "value": 1
+          }
+        ],
+        "similarity_buckets": []
       }
     },
     {
@@ -357,7 +519,88 @@
             "value": 1,
             "color": "#475569"
           }
-        ]
+        ],
+        "length_buckets": [
+          {
+            "name": "1–7",
+            "value": 0
+          },
+          {
+            "name": "8–9",
+            "value": 1
+          },
+          {
+            "name": "10–11",
+            "value": 0
+          },
+          {
+            "name": "12–13",
+            "value": 0
+          },
+          {
+            "name": "14–15",
+            "value": 0
+          },
+          {
+            "name": "16+",
+            "value": 0
+          }
+        ],
+        "score_buckets": [
+          {
+            "name": "0–2",
+            "value": 1
+          },
+          {
+            "name": "2–4",
+            "value": 0
+          },
+          {
+            "name": "4–6",
+            "value": 0
+          },
+          {
+            "name": "6–8",
+            "value": 1
+          },
+          {
+            "name": "8–10",
+            "value": 0
+          }
+        ],
+        "sharing_distribution": [
+          {
+            "name": "0",
+            "value": 1
+          },
+          {
+            "name": "1",
+            "value": 1
+          },
+          {
+            "name": "2",
+            "value": 0
+          },
+          {
+            "name": "3–5",
+            "value": 0
+          },
+          {
+            "name": "6+",
+            "value": 0
+          }
+        ],
+        "controlled_objects_buckets": [
+          {
+            "name": "0",
+            "value": 1
+          },
+          {
+            "name": "101–500",
+            "value": 1
+          }
+        ],
+        "similarity_buckets": []
       }
     }
   ]

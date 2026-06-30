@@ -36,9 +36,14 @@ type Series struct {
 // Ported verbatim from web/src/insights.ts so the SPA and the exporters show
 // the same numbers. (Later tasks add more fields.)
 type ChartSeries struct {
-	RiskDistribution []Slice `json:"risk_distribution"`
-	HIBPSplit        []Slice `json:"hibp_split"`
-	ExpirationSplit  []Slice `json:"expiration_split"`
+	RiskDistribution         []Slice `json:"risk_distribution"`
+	HIBPSplit                []Slice `json:"hibp_split"`
+	ExpirationSplit          []Slice `json:"expiration_split"`
+	LengthBuckets            []Bar   `json:"length_buckets"`
+	ScoreBuckets             []Bar   `json:"score_buckets"`
+	SharingDistribution      []Bar   `json:"sharing_distribution"`
+	ControlledObjectsBuckets []Bar   `json:"controlled_objects_buckets"`
+	SimilarityBuckets        []Bar   `json:"similarity_buckets"`
 }
 
 var riskHex = map[string]string{"Critical": "#fb7185", "High": "#fbbf24", "Medium": "#a3e635", "Low": "#22d3ee"}
@@ -114,13 +119,143 @@ func dropZeroSlices(in []Slice) []Slice {
 	return out
 }
 
+func LengthBuckets(accts []model.Account) []Bar {
+	labels := []string{"1–7", "8–9", "10–11", "12–13", "14–15", "16+"}
+	c := make([]int, 6)
+	for i := range accts {
+		if !accts[i].Cracked {
+			continue
+		}
+		switch n := accts[i].PasswordLength; {
+		case n <= 7:
+			c[0]++
+		case n <= 9:
+			c[1]++
+		case n <= 11:
+			c[2]++
+		case n <= 13:
+			c[3]++
+		case n <= 15:
+			c[4]++
+		default:
+			c[5]++
+		}
+	}
+	return labeledBars(labels, c, false)
+}
+
+func ScoreBuckets(accts []model.Account) []Bar {
+	labels := []string{"0–2", "2–4", "4–6", "6–8", "8–10"}
+	c := make([]int, 5)
+	for i := range accts {
+		s := accts[i].RiskScore
+		switch {
+		case s >= 8:
+			c[4]++
+		case s >= 6:
+			c[3]++
+		case s >= 4:
+			c[2]++
+		case s >= 2:
+			c[1]++
+		default:
+			c[0]++
+		}
+	}
+	return labeledBars(labels, c, false)
+}
+
+func SharingDistribution(accts []model.Account) []Bar {
+	labels := []string{"0", "1", "2", "3–5", "6+"}
+	c := make([]int, 5)
+	for i := range accts {
+		switch n := accts[i].SharedWith; {
+		case n <= 0:
+			c[0]++
+		case n == 1:
+			c[1]++
+		case n == 2:
+			c[2]++
+		case n <= 5:
+			c[3]++
+		default:
+			c[4]++
+		}
+	}
+	return labeledBars(labels, c, false)
+}
+
+func ControlledObjectsBuckets(accts []model.Account) []Bar {
+	labels := []string{"0", "1–10", "11–50", "51–100", "101–500", "500+"}
+	c := make([]int, 6)
+	for i := range accts {
+		switch n := accts[i].Controlled; {
+		case n <= 0:
+			c[0]++
+		case n <= 10:
+			c[1]++
+		case n <= 50:
+			c[2]++
+		case n <= 100:
+			c[3]++
+		case n <= 500:
+			c[4]++
+		default:
+			c[5]++
+		}
+	}
+	return labeledBars(labels, c, true)
+}
+
+func SimilarityBuckets(accts []model.Account) []Bar {
+	labels := []string{"< 0.5", "0.5–0.7", "0.7–0.8", "0.8–0.9", "0.9+"}
+	c := make([]int, 5)
+	for i := range accts {
+		s := accts[i].SimilarityScore
+		if s <= 0 {
+			continue
+		}
+		switch {
+		case s < 0.5:
+			c[0]++
+		case s < 0.7:
+			c[1]++
+		case s < 0.8:
+			c[2]++
+		case s < 0.9:
+			c[3]++
+		default:
+			c[4]++
+		}
+	}
+	return labeledBars(labels, c, true)
+}
+
+// labeledBars zips labels+counts into Bars; when filterZero is true, drops bars
+// whose value is 0 (mirrors the .filter(b=>b.value>0) on the relevant TS series).
+func labeledBars(labels []string, counts []int, filterZero bool) []Bar {
+	out := make([]Bar, 0, len(labels))
+	for i, name := range labels {
+		if filterZero && counts[i] == 0 {
+			continue
+		}
+		out = append(out, Bar{Name: name, Value: counts[i]})
+	}
+	return out
+}
+
 // buildChartSeries assembles the account-derived chart series. now is threaded for
 // age-based series added in later tasks.
 func buildChartSeries(accounts []model.Account, now time.Time) ChartSeries {
 	_ = now // used by later tasks (age buckets/scatter)
 	return ChartSeries{
-		RiskDistribution: RiskDistribution(accounts),
-		HIBPSplit:        HIBPSplit(accounts),
-		ExpirationSplit:  ExpirationSplit(accounts),
+		RiskDistribution:         RiskDistribution(accounts),
+		HIBPSplit:                HIBPSplit(accounts),
+		ExpirationSplit:          ExpirationSplit(accounts),
+		LengthBuckets:            LengthBuckets(accounts),
+		ScoreBuckets:             ScoreBuckets(accounts),
+		SharingDistribution:      SharingDistribution(accounts),
+		ControlledObjectsBuckets: ControlledObjectsBuckets(accounts),
+		SimilarityBuckets:        SimilarityBuckets(accounts),
 	}
 }
