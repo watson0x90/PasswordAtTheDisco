@@ -225,3 +225,40 @@ func TestAxisFactorBarsAveragesAndImpactFlag(t *testing.T) {
 		t.Error("impact_known should be true (one enriched account in tier)")
 	}
 }
+
+func TestTopRiskiestSortedSliced(t *testing.T) {
+	accts := []model.Account{
+		{Username: "a", RiskScore: 3}, {Username: "b", RiskScore: 9}, {Username: "c", RiskScore: 6},
+	}
+	got := TopRiskiest(accts, 2)
+	if len(got) != 2 || got[0].Username != "b" || got[1].Username != "c" {
+		t.Fatalf("got = %+v", got)
+	}
+}
+
+func TestTopControllersSortAndMoreOver100(t *testing.T) {
+	accts := []model.Account{
+		{Username: "z", Controlled: 200}, {Username: "y", Controlled: 500},
+		{Username: "x", Controlled: 150}, {Username: "w", Controlled: 0},
+	}
+	rows, more := TopControllers(accts, 2)
+	if len(rows) != 2 || rows[0].Username != "y" || rows[1].Username != "z" {
+		t.Fatalf("rows = %+v", rows)
+	}
+	// remaining controllers beyond top-2 with >100: x(150) -> 1
+	if more != 1 {
+		t.Errorf("more = %d, want 1", more)
+	}
+}
+
+func TestEscalatedBySharedDAFilteredSorted(t *testing.T) {
+	accts := []model.Account{
+		{Username: "a", EscalatedBySharedDA: true, RiskScore: 5},
+		{Username: "b", EscalatedBySharedDA: false, RiskScore: 9},
+		{Username: "c", EscalatedBySharedDA: true, RiskScore: 8},
+	}
+	got := EscalatedBySharedDA(accts)
+	if len(got) != 2 || got[0].Username != "c" || got[1].Username != "a" {
+		t.Fatalf("got = %+v", got)
+	}
+}

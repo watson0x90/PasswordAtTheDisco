@@ -260,7 +260,76 @@
     ],
     "password_age_buckets": [],
     "password_age_scatter": [],
-    "axis_factor_bars": []
+    "axis_factor_bars": [],
+    "top_riskiest": [
+      {
+        "username": "alice",
+        "domain": "A.LOCAL",
+        "risk_level": "Critical",
+        "risk_score": 8.5,
+        "hibp_breach_count": 1200,
+        "has_da": true,
+        "controlled_object_count": 150
+      },
+      {
+        "username": "dave",
+        "domain": "B.LOCAL",
+        "risk_level": "High",
+        "risk_score": 7,
+        "hibp_breach_count": 50,
+        "has_da": false,
+        "controlled_object_count": 250
+      },
+      {
+        "username": "carol",
+        "domain": "A.LOCAL",
+        "risk_level": "High",
+        "risk_score": 6.1,
+        "hibp_breach_count": 0,
+        "has_da": false,
+        "controlled_object_count": 0
+      },
+      {
+        "username": "bob",
+        "domain": "A.LOCAL",
+        "risk_level": "Medium",
+        "risk_score": 4.2,
+        "hibp_breach_count": 0,
+        "has_da": false,
+        "controlled_object_count": 0
+      },
+      {
+        "username": "erin",
+        "domain": "B.LOCAL",
+        "risk_level": "Low",
+        "risk_score": 1.5,
+        "hibp_breach_count": 0,
+        "has_da": false,
+        "controlled_object_count": 0
+      }
+    ],
+    "escalated_by_shared_da": [],
+    "top_controllers": [
+      {
+        "username": "dave",
+        "domain": "B.LOCAL",
+        "risk_level": "High",
+        "risk_score": 7,
+        "hibp_breach_count": 50,
+        "has_da": false,
+        "controlled_object_count": 250
+      },
+      {
+        "username": "alice",
+        "domain": "A.LOCAL",
+        "risk_level": "Critical",
+        "risk_score": 8.5,
+        "hibp_breach_count": 1200,
+        "has_da": true,
+        "controlled_object_count": 150
+      }
+    ],
+    "top_controllers_more_over_100": 0
   },
   "domains": [
     {
@@ -501,7 +570,49 @@
         ],
         "password_age_buckets": [],
         "password_age_scatter": [],
-        "axis_factor_bars": []
+        "axis_factor_bars": [],
+        "top_riskiest": [
+          {
+            "username": "alice",
+            "domain": "A.LOCAL",
+            "risk_level": "Critical",
+            "risk_score": 8.5,
+            "hibp_breach_count": 1200,
+            "has_da": true,
+            "controlled_object_count": 150
+          },
+          {
+            "username": "carol",
+            "domain": "A.LOCAL",
+            "risk_level": "High",
+            "risk_score": 6.1,
+            "hibp_breach_count": 0,
+            "has_da": false,
+            "controlled_object_count": 0
+          },
+          {
+            "username": "bob",
+            "domain": "A.LOCAL",
+            "risk_level": "Medium",
+            "risk_score": 4.2,
+            "hibp_breach_count": 0,
+            "has_da": false,
+            "controlled_object_count": 0
+          }
+        ],
+        "escalated_by_shared_da": [],
+        "top_controllers": [
+          {
+            "username": "alice",
+            "domain": "A.LOCAL",
+            "risk_level": "Critical",
+            "risk_score": 8.5,
+            "hibp_breach_count": 1200,
+            "has_da": true,
+            "controlled_object_count": 150
+          }
+        ],
+        "top_controllers_more_over_100": 0
       }
     },
     {
@@ -725,7 +836,40 @@
         ],
         "password_age_buckets": [],
         "password_age_scatter": [],
-        "axis_factor_bars": []
+        "axis_factor_bars": [],
+        "top_riskiest": [
+          {
+            "username": "dave",
+            "domain": "B.LOCAL",
+            "risk_level": "High",
+            "risk_score": 7,
+            "hibp_breach_count": 50,
+            "has_da": false,
+            "controlled_object_count": 250
+          },
+          {
+            "username": "erin",
+            "domain": "B.LOCAL",
+            "risk_level": "Low",
+            "risk_score": 1.5,
+            "hibp_breach_count": 0,
+            "has_da": false,
+            "controlled_object_count": 0
+          }
+        ],
+        "escalated_by_shared_da": [],
+        "top_controllers": [
+          {
+            "username": "dave",
+            "domain": "B.LOCAL",
+            "risk_level": "High",
+            "risk_score": 7,
+            "hibp_breach_count": 50,
+            "has_da": false,
+            "controlled_object_count": 250
+          }
+        ],
+        "top_controllers_more_over_100": 0
       }
     }
   ]

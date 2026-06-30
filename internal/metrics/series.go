@@ -34,6 +34,17 @@ type Series struct {
 	Points []Point `json:"points"`
 }
 
+// AccountRef is a redaction-safe account reference for dashboard lists. Username/Domain/RiskLevel/RiskScore are already in exports; HasDA/Controlled/HIBPBreachCount are counts/flags, not credentials.
+type AccountRef struct {
+	Username        string  `json:"username"`
+	Domain          string  `json:"domain"`
+	RiskLevel       string  `json:"risk_level"`
+	RiskScore       float64 `json:"risk_score"`
+	HIBPBreachCount int     `json:"hibp_breach_count"`
+	HasDA           bool    `json:"has_da"`
+	Controlled      int     `json:"controlled_object_count"`
+}
+
 // AxisFactor is a single exposure or impact breakdown factor with name, value, and color.
 type AxisFactor struct {
 	Name  string  `json:"name"`
@@ -54,20 +65,24 @@ type TierFactorBars struct {
 // Ported verbatim from web/src/insights.ts so the SPA and the exporters show
 // the same numbers. (Later tasks add more fields.)
 type ChartSeries struct {
-	RiskDistribution         []Slice          `json:"risk_distribution"`
-	HIBPSplit                []Slice          `json:"hibp_split"`
-	ExpirationSplit          []Slice          `json:"expiration_split"`
-	LengthBuckets            []Bar            `json:"length_buckets"`
-	ScoreBuckets             []Bar            `json:"score_buckets"`
-	SharingDistribution      []Bar            `json:"sharing_distribution"`
-	ControlledObjectsBuckets []Bar            `json:"controlled_objects_buckets"`
-	SimilarityBuckets        []Bar            `json:"similarity_buckets"`
-	DAExposureByDomain       []Bar            `json:"da_exposure_by_domain"`
-	ComplexityCounts         []Bar            `json:"complexity_counts"`
-	HIBPVsRisk               []Series         `json:"hibp_vs_risk"`
-	PasswordAgeBuckets       []Bar            `json:"password_age_buckets"`
-	PasswordAgeScatter       []Series         `json:"password_age_scatter"`
-	AxisFactorBars           []TierFactorBars `json:"axis_factor_bars"`
+	RiskDistribution          []Slice          `json:"risk_distribution"`
+	HIBPSplit                 []Slice          `json:"hibp_split"`
+	ExpirationSplit           []Slice          `json:"expiration_split"`
+	LengthBuckets             []Bar            `json:"length_buckets"`
+	ScoreBuckets              []Bar            `json:"score_buckets"`
+	SharingDistribution       []Bar            `json:"sharing_distribution"`
+	ControlledObjectsBuckets  []Bar            `json:"controlled_objects_buckets"`
+	SimilarityBuckets         []Bar            `json:"similarity_buckets"`
+	DAExposureByDomain        []Bar            `json:"da_exposure_by_domain"`
+	ComplexityCounts          []Bar            `json:"complexity_counts"`
+	HIBPVsRisk                []Series         `json:"hibp_vs_risk"`
+	PasswordAgeBuckets        []Bar            `json:"password_age_buckets"`
+	PasswordAgeScatter        []Series         `json:"password_age_scatter"`
+	AxisFactorBars            []TierFactorBars `json:"axis_factor_bars"`
+	TopRiskiest               []AccountRef     `json:"top_riskiest"`
+	EscalatedBySharedDA       []AccountRef     `json:"escalated_by_shared_da"`
+	TopControllers            []AccountRef     `json:"top_controllers"`
+	TopControllersMoreOver100 int              `json:"top_controllers_more_over_100"`
 }
 
 var riskHex = map[string]string{"Critical": "#fb7185", "High": "#fbbf24", "Medium": "#a3e635", "Low": "#22d3ee"}
@@ -461,10 +476,82 @@ func AxisFactorBars(accts []model.Account) []TierFactorBars {
 	return out
 }
 
+// toRef converts an Account to a redaction-safe AccountRef (slim dashboard list reference).
+func toRef(a model.Account) AccountRef {
+	return AccountRef{
+		Username: a.Username, Domain: a.Domain, RiskLevel: a.RiskLevel, RiskScore: a.RiskScore,
+		HIBPBreachCount: a.HIBPBreachCount, HasDA: a.HasDAPathway(), Controlled: a.Controlled,
+	}
+}
+
+// TopRiskiest: top-n accounts by risk score desc.
+func TopRiskiest(accts []model.Account, n int) []AccountRef {
+	cp := append([]model.Account(nil), accts...)
+	sort.SliceStable(cp, func(i, j int) bool { return cp[i].RiskScore > cp[j].RiskScore })
+	if n < len(cp) {
+		cp = cp[:n]
+	}
+	out := make([]AccountRef, len(cp))
+	for i := range cp {
+		out[i] = toRef(cp[i])
+	}
+	return out
+}
+
+// EscalatedBySharedDA: shared-DA-escalated accounts, risk score desc.
+func EscalatedBySharedDA(accts []model.Account) []AccountRef {
+	var f []model.Account
+	for i := range accts {
+		if accts[i].EscalatedBySharedDA {
+			f = append(f, accts[i])
+		}
+	}
+	sort.SliceStable(f, func(i, j int) bool { return f[i].RiskScore > f[j].RiskScore })
+	out := make([]AccountRef, len(f))
+	for i := range f {
+		out[i] = toRef(f[i])
+	}
+	return out
+}
+
+// TopControllers: controllers (controlled>0) by count desc then username asc;
+// returns the top n plus the count of remaining controllers still over 100.
+func TopControllers(accts []model.Account, n int) ([]AccountRef, int) {
+	var ctrl []model.Account
+	for i := range accts {
+		if accts[i].Controlled > 0 {
+			ctrl = append(ctrl, accts[i])
+		}
+	}
+	sort.SliceStable(ctrl, func(i, j int) bool {
+		if ctrl[i].Controlled != ctrl[j].Controlled {
+			return ctrl[i].Controlled > ctrl[j].Controlled
+		}
+		return ctrl[i].Username < ctrl[j].Username
+	})
+	top := ctrl
+	if n < len(ctrl) {
+		top = ctrl[:n]
+	}
+	rows := make([]AccountRef, len(top))
+	for i := range top {
+		rows[i] = toRef(top[i])
+	}
+	more := 0
+	if n < len(ctrl) {
+		for _, a := range ctrl[n:] {
+			if a.Controlled > 100 {
+				more++
+			}
+		}
+	}
+	return rows, more
+}
+
 // buildChartSeries assembles the account-derived chart series. now is threaded for
 // age-based series added in later tasks.
 func buildChartSeries(accounts []model.Account, now time.Time) ChartSeries {
-	return ChartSeries{
+	cs := ChartSeries{
 		RiskDistribution:         RiskDistribution(accounts),
 		HIBPSplit:                HIBPSplit(accounts),
 		ExpirationSplit:          ExpirationSplit(accounts),
@@ -480,4 +567,8 @@ func buildChartSeries(accounts []model.Account, now time.Time) ChartSeries {
 		PasswordAgeScatter:       PasswordAgeScatter(accounts, now),
 		AxisFactorBars:           AxisFactorBars(accounts),
 	}
+	cs.TopRiskiest = TopRiskiest(accounts, 10)
+	cs.EscalatedBySharedDA = EscalatedBySharedDA(accounts)
+	cs.TopControllers, cs.TopControllersMoreOver100 = TopControllers(accounts, 10)
+	return cs
 }
