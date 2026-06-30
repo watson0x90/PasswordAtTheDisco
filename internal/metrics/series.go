@@ -117,6 +117,8 @@ func RiskDistribution(accts []model.Account) []Slice {
 		}
 		c := riskHex[r]
 		if c == "" {
+			// Forward-compat parity artifact mirroring TS RISK_HEX[r] || "#818cf8".
+			// Currently unreachable: all riskOrder keys exist in riskHex.
 			c = "#818cf8"
 		}
 		out = append(out, Slice{Name: r, Value: counts[r], Color: c})
@@ -324,6 +326,9 @@ func ComplexityCounts(accts []model.Account) []Bar {
 	m := map[string]int{}
 	for i := range accts {
 		if accts[i].Cracked && accts[i].Complexity != "" {
+			// Accumulating by label (rather than by raw enum key then labeling at output,
+			// as the TS does) is equivalent because the complexity-label map is injective:
+			// no two enum keys share a label.
 			m[ComplexityLabel(accts[i].Complexity)]++
 		}
 	}
@@ -527,6 +532,7 @@ func TopControllers(accts []model.Account, n int) ([]AccountRef, int) {
 		if ctrl[i].Controlled != ctrl[j].Controlled {
 			return ctrl[i].Controlled > ctrl[j].Controlled
 		}
+		// ASCII byte-order tie-break (vs TS localeCompare), identical for ASCII AD sAMAccountNames.
 		return ctrl[i].Username < ctrl[j].Username
 	})
 	top := ctrl

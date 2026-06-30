@@ -262,3 +262,47 @@ func TestEscalatedBySharedDAFilteredSorted(t *testing.T) {
 		t.Fatalf("got = %+v", got)
 	}
 }
+
+func TestPasswordAgeScatterUsesNow(t *testing.T) {
+	now := time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC)
+	nowUnix := now.Unix()
+	day := int64(86400)
+
+	accts := []model.Account{
+		{RiskLevel: "Critical", RiskScore: 9, PwdLastSet: nowUnix - 100*day},
+		{RiskLevel: "Low", RiskScore: 1, PwdLastSet: nowUnix - 5*day},
+		{RiskLevel: "Low", RiskScore: 2, PwdLastSet: 0}, // skipped (pwd_last_set <= 0)
+	}
+	got := PasswordAgeScatter(accts, now)
+
+	// Should have exactly 2 series: Critical and Low (in that order per levelColors)
+	if len(got) != 2 {
+		t.Fatalf("want 2 series, got %d: %+v", len(got), got)
+	}
+
+	// Check Critical series
+	if got[0].Name != "Critical" || got[0].Color != "#fb7185" {
+		t.Errorf("crit series header = %+v, want Critical/#fb7185", got[0])
+	}
+	if len(got[0].Points) != 1 {
+		t.Errorf("crit series points = %d, want 1", len(got[0].Points))
+	}
+	if len(got[0].Points) > 0 {
+		if got[0].Points[0].X != 100 || got[0].Points[0].Y != 9 {
+			t.Errorf("crit point = X:%v Y:%v, want X:100 Y:9", got[0].Points[0].X, got[0].Points[0].Y)
+		}
+	}
+
+	// Check Low series
+	if got[1].Name != "Low" || got[1].Color != "#22d3ee" {
+		t.Errorf("low series header = %+v, want Low/#22d3ee", got[1])
+	}
+	if len(got[1].Points) != 1 {
+		t.Errorf("low series points = %d, want 1", len(got[1].Points))
+	}
+	if len(got[1].Points) > 0 {
+		if got[1].Points[0].X != 5 || got[1].Points[0].Y != 1 {
+			t.Errorf("low point = X:%v Y:%v, want X:5 Y:1", got[1].Points[0].X, got[1].Points[0].Y)
+		}
+	}
+}
