@@ -1,4 +1,3 @@
-// Package httpapi wires the HTTP routes, middleware, and handlers for the API.
 package httpapi
 
 import (
@@ -35,7 +34,9 @@ func TestMetricsEndpoint(t *testing.T) {
 	if _, ok := body["reports"]; !ok {
 		t.Error("response missing reports")
 	}
-	// redaction: the raw JSON must not contain the seeded cleartext or any secret key
+	// redaction: the raw JSON must not contain the seeded cleartext or secret keys.
+	// Check both JSON keys (nt_hash, password) and defense-in-depth substring checks
+	// for account-level field names (banned_words, keyboard_patterns).
 	raw := strings.ToLower(rec.Body.String())
 	for _, bad := range []string{"welcome1", "nt_hash", "\"password\"", "banned_words", "keyboard_patterns"} {
 		if strings.Contains(raw, bad) {

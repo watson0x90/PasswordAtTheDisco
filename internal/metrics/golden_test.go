@@ -48,13 +48,15 @@ func TestMetricsGolden(t *testing.T) {
 func TestBundleHasNoSensitiveFields(t *testing.T) {
 	now := time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC)
 	// Feed accounts that DO carry secrets — the bundle must strip every one.
+	// Fixture is deliberately cross-domain (alice in A, bob in B) + HIBP-breached
+	// so the canary exercises both the AccountRef and ReportAccount projections.
 	secret := "SuperSecretCleartextPassword!"
 	ntHash := "ABCDEF0123456789ABCDEF0123456789"
 	accts := []model.Account{
 		{Username: "alice", Domain: "A", Cracked: true, RiskLevel: "Critical", DADomains: "A",
 			Password: secret, NTHash: ntHash, BannedWords: []string{"forbiddenword"},
-			KeyboardPatterns: []string{"qwerty"}},
-		{Username: "bob", Domain: "A", Cracked: true, RiskLevel: "High",
+			KeyboardPatterns: []string{"qwerty"}, HIBPBreached: true, HIBPBreachCount: 5},
+		{Username: "bob", Domain: "B", Cracked: true, RiskLevel: "High",
 			Password: secret, NTHash: ntHash},
 	}
 	raw, err := json.Marshal(Compute(accts, now))
