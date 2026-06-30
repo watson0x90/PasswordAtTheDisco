@@ -7,8 +7,26 @@ import (
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 )
 
-// ExposureHeadline holds the three executive "blast radius" numbers (cracked&DA,
-// cracked&breached, cross-domain reuse) mirroring web/src/exposure.ts exposureHeadline.
+// groupThousands formats a non-negative int with comma thousands separators
+// (e.g. 1200 -> "1,200"), matching the TS toLocaleString() used in exposure.ts.
+func groupThousands(n int) string {
+	s := strconv.Itoa(n)
+	if n < 0 {
+		return s // counts are non-negative; defensive only
+	}
+	// insert commas every 3 digits from the right
+	out := make([]byte, 0, len(s)+len(s)/3)
+	for i, c := range []byte(s) {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			out = append(out, ',')
+		}
+		out = append(out, c)
+	}
+	return string(out)
+}
+
+// ExposureHeadline holds the executive "blast radius" headline numbers (cracked&DA,
+// cracked&breached, cross-domain reuse, domains spanned) mirroring web/src/exposure.ts exposureHeadline.
 type ExposureHeadline struct {
 	CrackedDA         int `json:"cracked_da"`
 	CrackedHIBP       int `json:"cracked_hibp"`
@@ -215,7 +233,7 @@ func BlastRadius(accounts []model.Account) []WorklistRow {
 		}
 		if a.HIBPBreached {
 			priority += 2
-			reasons = append(reasons, "HIBP "+strconv.Itoa(a.HIBPBreachCount))
+			reasons = append(reasons, "HIBP "+groupThousands(a.HIBPBreachCount))
 		}
 		if a.Cracked {
 			priority++

@@ -54,7 +54,7 @@ func TestCrossDomainBridgesRanking(t *testing.T) {
 		t.Errorf("expected DA cluster first, got %+v", cd.Clusters[0])
 	}
 	if len(cd.Domains) != 3 { // A,B,C
-		t.Errorf("domains = %v, want 3", len(cd.Domains))
+		t.Errorf("domains = %v, want 3", cd.Domains)
 	}
 }
 
@@ -89,7 +89,28 @@ func TestBlastRadiusPriorityAndReasons(t *testing.T) {
 	if len(rows[0].Reasons) != 4 { // DA, HIBP n, Cracked, Shared n
 		t.Errorf("reasons = %v, want 4", rows[0].Reasons)
 	}
+	if rows[0].Reasons[1] != "HIBP 5" {
+		t.Errorf("HIBP reason = %q, want \"HIBP 5\"", rows[0].Reasons[1])
+	}
 	if rows[1].Account.Username != "mild" || rows[1].Priority != 1 {
 		t.Errorf("row1 = %+v", rows[1])
+	}
+}
+
+func TestGroupThousands(t *testing.T) {
+	tests := []struct {
+		n    int
+		want string
+	}{
+		{0, "0"},
+		{999, "999"},
+		{1200, "1,200"},
+		{1234567, "1,234,567"},
+	}
+	for _, tt := range tests {
+		got := groupThousands(tt.n)
+		if got != tt.want {
+			t.Errorf("groupThousands(%d) = %q, want %q", tt.n, got, tt.want)
+		}
 	}
 }

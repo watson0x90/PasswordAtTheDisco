@@ -4,6 +4,7 @@ import (
 	"math"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 )
@@ -87,24 +88,15 @@ func CrossDomainReuseGraph(rep model.Report, accounts []model.Account) Graph {
 	sort.Strings(keys)
 	for _, k := range keys {
 		w := pairWeight[k]
-		parts := splitPair(k)
+		src, dst, _ := strings.Cut(k, "|")
 		weight := int(math.Ceil(float64(w) / 10))
 		if weight < 1 {
 			weight = 1
 		}
-		g.Edges = append(g.Edges, GraphEdge{Source: parts[0], Target: parts[1], Weight: weight, Label: strconv.Itoa(w) + " shared"})
+		g.Edges = append(g.Edges, GraphEdge{Source: src, Target: dst, Weight: weight, Label: strconv.Itoa(w) + " shared"})
 	}
 	layout(&g)
 	return g
-}
-
-func splitPair(k string) [2]string {
-	for i := 0; i < len(k); i++ {
-		if k[i] == '|' {
-			return [2]string{k[:i], k[i+1:]}
-		}
-	}
-	return [2]string{k, ""}
 }
 
 // SimilarityNetwork: cracked accounts with similarity_score>=0.7 as nodes, linked by

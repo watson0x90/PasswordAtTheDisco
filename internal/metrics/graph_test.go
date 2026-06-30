@@ -35,3 +35,31 @@ func TestSimilarityNetworkThreshold(t *testing.T) {
 		t.Fatalf("edges = %d, want 1 (a-b)", len(g.Edges))
 	}
 }
+
+func TestReuseGraphPopulatesLayout(t *testing.T) {
+	// Same 2-domain reuse graph as TestCrossDomainReuseGraphNodesEdges.
+	rep := model.Report{UncrackedReuse: []model.ReuseGroup{
+		{Size: 20, Members: []model.ReportAccount{{Domain: "A"}, {Domain: "B"}}},
+	}}
+	accts := []model.Account{{Domain: "A"}, {Domain: "B"}}
+	g := CrossDomainReuseGraph(rep, accts)
+
+	// Assert that every node has X and Y in [0,1].
+	for _, node := range g.Nodes {
+		if node.X < 0 || node.X > 1 || node.Y < 0 || node.Y > 1 {
+			t.Errorf("node %q has X=%.4f Y=%.4f, want both in [0,1]", node.ID, node.X, node.Y)
+		}
+	}
+
+	// Assert that layout ran (not all nodes at 0,0).
+	allZero := true
+	for _, node := range g.Nodes {
+		if node.X != 0 || node.Y != 0 {
+			allZero = false
+			break
+		}
+	}
+	if allZero {
+		t.Errorf("all nodes at (0,0); layout did not run")
+	}
+}
