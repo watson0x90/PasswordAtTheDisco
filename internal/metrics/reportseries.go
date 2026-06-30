@@ -56,6 +56,8 @@ type ReportSeries struct {
 	CrossDomain      CrossDomain      `json:"cross_domain"`
 	HIBPTriage       HIBPTriage       `json:"hibp_triage"`
 	Worklist         []WorklistRow    `json:"worklist"`
+	ReuseGraph       Graph            `json:"reuse_graph"`
+	SimilarityGraph  Graph            `json:"similarity_graph"`
 }
 
 // groupDomains returns the distinct, member-derived domains of a reuse group.
@@ -104,6 +106,8 @@ func buildReportSeries(rep model.Report, accounts []model.Account) ReportSeries 
 		CrossDomain:      CrossDomainBridges(rep),
 		HIBPTriage:       HIBPTriageOf(rep),
 		Worklist:         BlastRadius(accounts),
+		ReuseGraph:       CrossDomainReuseGraph(rep, accounts),
+		SimilarityGraph:  SimilarityNetwork(accounts, 60),
 	}
 }
 

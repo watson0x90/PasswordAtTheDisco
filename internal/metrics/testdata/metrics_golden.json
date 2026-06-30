@@ -425,7 +425,15 @@
           "Cracked"
         ]
       }
-    ]
+    ],
+    "reuse_graph": {
+      "nodes": [],
+      "edges": []
+    },
+    "similarity_graph": {
+      "nodes": [],
+      "edges": []
+    }
   },
   "domains": [
     {
