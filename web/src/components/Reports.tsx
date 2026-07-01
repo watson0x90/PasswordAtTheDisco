@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { api, ApiError } from "../api"
 import { useAuth } from "../auth"
 import { useAudits } from "../auditsData"
@@ -64,6 +64,13 @@ export function Reports() {
   const [ctAcked, setCtAcked] = useState(false)
   const [ctErr, setCtErr] = useState("")
   const [ctBusy, setCtBusy] = useState(false)
+
+  // The cleartext acknowledgement is a deliberate per-export opt-in: reset it when
+  // the active audit changes so a tick on one audit never carries over to another.
+  useEffect(() => {
+    setCtAcked(false)
+    setCtErr("")
+  }, [activeId])
 
   async function downloadCleartext(fmt: "csv" | "html") {
     setCtErr("")

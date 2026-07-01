@@ -424,7 +424,9 @@ async function downloadBlob(path: string, init: RequestInit): Promise<void> {
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  // Defer revocation so the browser has queued the download before the object
+  // URL is released (revoking synchronously after click() is technically racy).
+  setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
 // uploadForm POSTs multipart FormData via XMLHttpRequest so upload progress is observable
