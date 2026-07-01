@@ -41,6 +41,23 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
+## What's new in 2.34
+
+**Readable, sortable exported reports.**
+
+- **Click any column to sort.** Every table in the exported HTML reports is now click-to-sort — ascending,
+  then descending, with a ▲/▼ indicator. Sorting is type-aware: numbers sort numerically, the **Risk** column
+  sorts by severity (Critical → Low), everything else sorts as text. The Exposure × Impact matrix stays a
+  fixed grid.
+- **No more overflow.** Wide tables used to spill past the right edge of the page; they now scroll neatly
+  within their panel. Rows stay on one line and readable.
+- **Still standalone.** The reports remain a single self-contained HTML file — one small inline script, no
+  external assets, no network. Safe to open or email anywhere; if scripts are blocked, the report is fully
+  readable in its default order.
+
+Earlier: one-click all-reports ZIP export (2.33); one source of truth for every number + a model-ready
+bundle (2.32).
+
 ## What's new in 2.33
 
 **One click, every report.**
