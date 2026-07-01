@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { api, ApiError, type Account, type Report, type ReportAccount, type ReuseGroup, type Summary } from "../api"
 import { useAccountsData } from "../accountsData"
 import { useAudits } from "../auditsData"
+import { useMetrics } from "../metricsData"
 import { hasDA, hasObtainableDA, RISK_CLASS, RISK_RANK } from "../util"
 import { OverviewView } from "./Dashboard"
 import { domainReport, domainSummary } from "../domainScope"
@@ -102,6 +103,8 @@ export function Domains() {
 }
 
 function DomainDetail({ domain, accounts, report, reportErr, summary, onBack }: { domain: string; accounts: Account[]; report: Report | null; reportErr: string; summary: Summary | null; onBack: () => void }) {
+  const { bundle } = useMetrics()
+  const dm = bundle?.domains.find(d => d.domain === domain)
   const dSummary = useMemo(() => (summary ? domainSummary(accounts, summary) : null), [accounts, summary])
   const dReport = useMemo(() => domainReport(report, domain, accounts), [report, domain, accounts])
 
@@ -145,7 +148,16 @@ function DomainDetail({ domain, accounts, report, reportErr, summary, onBack }: 
     <>
       <button className="link-btn domain-back" onClick={onBack}>← All domains</button>
 
-      <OverviewView accounts={accounts} summary={dSummary} report={dReport} title={domain} subtitle="Where does this domain stand?" />
+      <OverviewView
+        accounts={accounts}
+        summary={dm ? dm.summary : dSummary}
+        report={dReport}
+        title={domain}
+        subtitle="Where does this domain stand?"
+        matrix={dm?.matrix}
+        coverageEnriched={dm?.summary.coverage_enriched}
+        charts={dm?.charts}
+      />
 
       <div className="section-label">Domain drill-down</div>
       {reportErr && <div className="hint">{reportErr} — cluster/DA panels need the report.</div>}
