@@ -22,7 +22,7 @@ func TestBundleAccounts(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0).UTC()
 	accts := []model.Account{
 		{Username: "alice", Domain: "CORP", Cracked: true, Password: "Hunter2", NTHash: "AAAA1111AAAA1111AAAA1111AAAA1111",
-			BannedWords: []string{"zzbanzz"}, KeyboardPatterns: []string{"zzkbzz"},
+			BannedWords: []string{"zzbanzz"}, KeyboardPatterns: []string{"zzkbzz"}, BannedWordCount: 1, KeyboardPatternCount: 1,
 			RiskLevel: "Critical", RiskScore: 8.1, DADomains: "CORP", PasswordLength: 7},
 		{Username: "bob", Domain: "CORP", Cracked: false, RiskLevel: "Low"},
 	}
@@ -36,6 +36,14 @@ func TestBundleAccounts(t *testing.T) {
 	}
 	if san[0].DADomains != "CORP" || !san[0].HasDAPath {
 		t.Error("da_domains / has_da_path should be identified, not stripped")
+	}
+	// The safe wordlist COUNTS are wired (only the raw matched strings are excluded).
+	if san[0].BannedWordCount != 1 || san[0].KeyboardPatternCount != 1 {
+		t.Errorf("wordlist counts not wired: banned=%d keyboard=%d", san[0].BannedWordCount, san[0].KeyboardPatternCount)
+	}
+	// Defense in depth: the sanitized JSON must not carry the cleartext anywhere.
+	if rawSan := mustJSON(t, san); strings.Contains(rawSan, "Hunter2") {
+		t.Error("sanitized bundle JSON leaked the cleartext password")
 	}
 	// cleartext: password present for cracked, empty for uncracked; still no hash/wordlist.
 	ct := bundleAccounts(accts, true, now)
