@@ -96,6 +96,18 @@ export function Reports() {
     }
   }
 
+  async function downloadAllCleartext() {
+    setCtErr("")
+    setCtBusy(true)
+    try {
+      await api.exportAllCleartext(csrf)
+    } catch (e) {
+      setCtErr(e instanceof ApiError ? e.message : "export failed")
+    } finally {
+      setCtBusy(false)
+    }
+  }
+
   if (!activeId) {
     return <div className="center-state">Select or create an audit (top right) before exporting reports.</div>
   }
@@ -221,6 +233,18 @@ export function Reports() {
         </div>
       </div>
 
+      <div className="panel report-export">
+        <div className="report-export-head">
+          <div>
+            <div className="action-title">Generate all reports (.zip)</div>
+            <div className="action-sub">Every report above in one ZIP — no passwords or hashes.</div>
+          </div>
+          <a className="btn btn-primary" href="/api/export/all.zip" download>
+            Generate all reports (.zip)
+          </a>
+        </div>
+      </div>
+
       {isLead && (
         <div className="panel report-export">
           <div className="action-title">Cleartext export</div>
@@ -258,6 +282,13 @@ export function Reports() {
                 onClick={() => void downloadCleartextBundle()}
               >
                 Bundle (.zip)
+              </button>
+              <button
+                className="btn"
+                disabled={!ctAcked || ctBusy}
+                onClick={() => void downloadAllCleartext()}
+              >
+                Generate all + cleartext (.zip)
               </button>
             </div>
             {ctErr && <div className="cleartext-error">{ctErr}</div>}

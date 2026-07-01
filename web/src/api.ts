@@ -725,6 +725,15 @@ export const api = {
       headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
       body: JSON.stringify({ acknowledge: true, domain }),
     }),
+
+  // Lead-only all-audit cleartext bundle: POST to /api/export/all-cleartext.zip
+  // with the same acknowledge + CSRF contract; reuses downloadBlob.
+  exportAllCleartext: (csrf: string) =>
+    downloadBlob("/export/all-cleartext.zip", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+      body: JSON.stringify({ acknowledge: true }),
+    }),
 }
 
 export interface AuditQuery {
