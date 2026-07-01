@@ -349,6 +349,49 @@ func svgAxisFactorBars(tiers []metrics.TierFactorBars) template.HTML {
 	return template.HTML(sb.String())
 }
 
+// ---- Shared chart bundle ----
+
+// ChartSVG is a single chart ready for rendering: Name (stable snake_case ID used
+// by bundle consumers), Title (display-safe human label), SVG (raw <svg …></svg>
+// markup), and Wide (true for the two network-graph charts that render in the wider
+// graph-grid section rather than the regular chart-grid).
+type ChartSVG struct {
+	Name  string
+	Title string
+	SVG   string
+	Wide  bool
+}
+
+// ChartSVGs returns the org-level charts for m in the canonical order used by the
+// HTML export and future bundle exports. Charts whose underlying SVG helper returns
+// "" (empty dataset) are skipped. Wide=true marks the two network-graph charts
+// (reuse_graph, similarity_graph) that belong in the graph-grid section.
+func ChartSVGs(m metrics.Metrics) []ChartSVG {
+	var out []ChartSVG
+	add := func(name, title string, svg template.HTML, wide bool) {
+		if svg == "" {
+			return
+		}
+		out = append(out, ChartSVG{Name: name, Title: title, SVG: string(svg), Wide: wide})
+	}
+	add("risk_distribution", "Risk distribution", svgSliceAsBar(m.Charts.RiskDistribution), false)
+	add("hibp_exposure", "HIBP exposure", svgSliceAsBar(m.Charts.HIBPSplit), false)
+	add("expiration", "Password expiration", svgSliceAsBar(m.Charts.ExpirationSplit), false)
+	add("length", "Password length", svgBarChart(m.Charts.LengthBuckets, ""), false)
+	add("score", "Risk score", svgBarChart(m.Charts.ScoreBuckets, ""), false)
+	add("sharing", "Account sharing", svgBarChart(m.Charts.SharingDistribution, ""), false)
+	add("controlled", "Controlled objects", svgBarChart(m.Charts.ControlledObjectsBuckets, ""), false)
+	add("similarity", "Password similarity", svgBarChart(m.Charts.SimilarityBuckets, ""), false)
+	add("da_by_domain", "DA pathways by domain", svgBarChart(m.Charts.DAExposureByDomain, "#fb7185"), false)
+	add("complexity", "Password complexity", svgBarChart(m.Charts.ComplexityCounts, ""), false)
+	add("hibp_vs_risk", "HIBP exposure vs risk", svgScatter(m.Charts.HIBPVsRisk), false)
+	add("password_age_scatter", "Password age vs risk", svgScatter(m.Charts.PasswordAgeScatter), false)
+	add("axis_factor_bars", "Axis factor breakdown", svgAxisFactorBars(m.Charts.AxisFactorBars), false)
+	add("reuse_graph", "Cross-domain credential reuse", svgNetworkGraph(m.Reports.ReuseGraph), true)
+	add("similarity_graph", "Password similarity clusters", svgNetworkGraph(m.Reports.SimilarityGraph), true)
+	return out
+}
+
 // ---- Network graph ----
 
 // netW, netH define the network graph viewBox dimensions (px).

@@ -391,36 +391,14 @@ func htmlReport(w io.Writer, name string, generated time.Time, accounts []model.
 		d.Matrix = append(d.Matrix, row)
 	}
 
-	// Precompute chart SVGs from m.Charts — inline SVG, no scripts, no external assets.
-	allCards := []template.HTML{
-		chartCard("Risk distribution", svgSliceAsBar(m.Charts.RiskDistribution)),
-		chartCard("HIBP exposure", svgSliceAsBar(m.Charts.HIBPSplit)),
-		chartCard("Password expiration", svgSliceAsBar(m.Charts.ExpirationSplit)),
-		chartCard("Password length", svgBarChart(m.Charts.LengthBuckets, "")),
-		chartCard("Risk score", svgBarChart(m.Charts.ScoreBuckets, "")),
-		chartCard("Account sharing", svgBarChart(m.Charts.SharingDistribution, "")),
-		chartCard("Controlled objects", svgBarChart(m.Charts.ControlledObjectsBuckets, "")),
-		chartCard("Password similarity", svgBarChart(m.Charts.SimilarityBuckets, "")),
-		chartCard("DA pathways by domain", svgBarChart(m.Charts.DAExposureByDomain, "#fb7185")),
-		chartCard("Password complexity", svgBarChart(m.Charts.ComplexityCounts, "")),
-		// Scatter plots and per-tier breakdown.
-		chartCard("HIBP exposure vs risk", svgScatter(m.Charts.HIBPVsRisk)),
-		chartCard("Password age vs risk", svgScatter(m.Charts.PasswordAgeScatter)),
-		chartCard("Axis factor breakdown", svgAxisFactorBars(m.Charts.AxisFactorBars)),
-	}
-	for _, c := range allCards {
-		if c != "" {
-			d.Charts = append(d.Charts, c)
-		}
-	}
-
-	// Network graphs go in their own wider section (m.Reports).
-	for _, gc := range []template.HTML{
-		chartCard("Cross-domain credential reuse", svgNetworkGraph(m.Reports.ReuseGraph)),
-		chartCard("Password similarity clusters", svgNetworkGraph(m.Reports.SimilarityGraph)),
-	} {
-		if gc != "" {
-			d.Graphs = append(d.Graphs, gc)
+	// Build chart and graph cards from the shared ChartSVGs source — one place
+	// for all chart SVG construction; no drift between the HTML export and bundle.
+	for _, c := range ChartSVGs(m) {
+		card := chartCard(c.Title, template.HTML(c.SVG))
+		if c.Wide {
+			d.Graphs = append(d.Graphs, card)
+		} else {
+			d.Charts = append(d.Charts, card)
 		}
 	}
 
