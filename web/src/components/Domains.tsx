@@ -1,17 +1,14 @@
 import { useEffect, useMemo, useState } from "react"
-import { api, ApiError, type Account, type Report, type ReportAccount, type ReuseGroup, type Summary } from "../api"
+import { api, ApiError, type Account, type ReportAccount, type ReuseGroup } from "../api"
 import { useAuth } from "../auth"
 import { useAccountsData } from "../accountsData"
-import { useAudits } from "../auditsData"
 import { useMetrics } from "../metricsData"
 import { hasDA, hasObtainableDA, RISK_CLASS, RISK_RANK } from "../util"
 import { OverviewView } from "./Dashboard"
-import { domainReport, domainSummary } from "../domainScope"
 import { AccountLink } from "./AccountLink"
 import { useSortablePaged, type SortColumn } from "../sortPage"
 import { SortHeader } from "./SortHeader"
 import { Pager } from "./Pager"
-import { domainDAPaths, domainReuseClusters } from "../domainData"
 
 interface DomainStat {
   domain: string
@@ -25,22 +22,10 @@ interface DomainStat {
 export function Domains() {
   const { accounts, error } = useAccountsData()
   const [selected, setSelected] = useState<string | null>(null)
-  const [report, setReport] = useState<Report | null>(null)
-  const [reportErr, setReportErr] = useState("")
-  const [summary, setSummary] = useState<Summary | null>(null)
-  const { activeId, dataVersion } = useAudits()
 
   useEffect(() => {
     if (selected && accounts && !accounts.some((a) => a.domain === selected)) setSelected(null)
   }, [accounts, selected])
-
-  useEffect(() => {
-    let alive = true
-    setReport(null); setReportErr(""); setSummary(null)
-    api.report().then((r) => alive && setReport(r)).catch((e) => alive && setReportErr(e instanceof ApiError ? e.message : "report unavailable"))
-    api.summary().then((s) => alive && setSummary(s)).catch(() => {})
-    return () => { alive = false }
-  }, [activeId, dataVersion])
 
   if (error && !accounts) return <div className="center-state">{error}</div>
   if (!accounts) {
@@ -50,12 +35,12 @@ export function Domains() {
       </div>
     )
   }
-  if (report && report.total_accounts === 0)
+  if (accounts.length === 0)
     return <div className="center-state">No data yet — select or create an audit and upload a dump.</div>
 
   if (selected) {
     const domainAccts = accounts.filter((a) => a.domain === selected)
-    if (domainAccts.length) return <DomainDetail domain={selected} accounts={domainAccts} report={report} reportErr={reportErr} summary={summary} onBack={() => setSelected(null)} />
+    if (domainAccts.length) return <DomainDetail domain={selected} accounts={domainAccts} onBack={() => setSelected(null)} />
     // else: fall through to the grid (the effect above will clear `selected`)
   }
 
@@ -103,7 +88,10 @@ export function Domains() {
   )
 }
 
-function DomainDetail({ domain, accounts, report, reportErr, summary, onBack }: { domain: string; accounts: Account[]; report: Report | null; reportErr: string; summary: Summary | null; onBack: () => void }) {
+// DomainDetail renders the per-domain dashboard entirely from the bundle (dm.reports).
+// It gates on bundleReady so there is no client-compute fallback; exposure headline,
+// similarity graph, reuse clusters, and DA paths all come from dm.reports.
+function DomainDetail({ domain, accounts, onBack }: { domain: string; accounts: Account[]; onBack: () => void }) {
   const { bundle, loading: bundleLoading } = useMetrics()
   const bundleReady = !bundleLoading && bundle !== null
   const dm = bundleReady ? bundle.domains.find((d) => d.domain === domain) : undefined
@@ -126,14 +114,9 @@ function DomainDetail({ domain, accounts, report, reportErr, summary, onBack }: 
     }
   }
 
-  const dSummary = useMemo(() => (summary ? domainSummary(accounts, summary) : null), [accounts, summary])
-  const dReport = useMemo(() => domainReport(report, domain, accounts), [report, domain, accounts])
-
-  const clusters = useMemo(
-    () => (report ? domainReuseClusters(report, domain) : { cracked: [], uncracked: [] }),
-    [report, domain],
-  )
-  const daPaths = useMemo(() => (report ? domainDAPaths(report, domain) : []), [report, domain])
+  // Bundle-derived data — empty when dm is not yet available (hooks called unconditionally).
+  const clusters = dm?.reports.reuse_clusters ?? { cracked: [], uncracked: [] }
+  const daPaths = dm?.reports.da_paths ?? []
 
   const daCols: SortColumn<ReportAccount>[] = [
     { key: "username", get: (a) => a.username },
@@ -159,11 +142,21 @@ function DomainDetail({ domain, accounts, report, reportErr, summary, onBack }: 
   const neverExpiresRows = useMemo(() => accounts.filter((a) => a.pwd_never_expires === true), [accounts])
   const kerberoastRows = useMemo(() => accounts.filter((a) => a.has_spn === true), [accounts])
 
+  // All useSortablePaged hooks called unconditionally before any early return.
   const daPage = useSortablePaged(daPaths, daCols, { defaultSort: { key: "score", dir: "desc" } })
   const escalatedPage = useSortablePaged(escalatedRows, detailCols, { defaultSort: { key: "score", dir: "desc" } })
   const stalePage = useSortablePaged(staleRows, detailCols, { defaultSort: { key: "days", dir: "desc" } })
   const neverExpiresPage = useSortablePaged(neverExpiresRows, detailCols, { defaultSort: { key: "score", dir: "desc" } })
   const kerberoastPage = useSortablePaged(kerberoastRows, detailCols, { defaultSort: { key: "score", dir: "desc" } })
+
+  // Gate: show spinner while bundle is loading or dm entry is not yet available.
+  if (!bundleReady || !dm) {
+    return (
+      <div className="center-state">
+        <div className="spinner">loading</div>
+      </div>
+    )
+  }
 
   return (
     <>
@@ -214,17 +207,18 @@ function DomainDetail({ domain, accounts, report, reportErr, summary, onBack }: 
 
       <OverviewView
         accounts={accounts}
-        summary={dm ? dm.summary : dSummary}
-        report={dReport}
+        summary={dm.summary}
+        report={null}
         title={domain}
         subtitle="Where does this domain stand?"
-        matrix={dm?.matrix}
-        coverageEnriched={dm?.summary?.coverage_enriched}
-        charts={dm?.charts}
+        matrix={dm.matrix}
+        coverageEnriched={dm.summary.coverage_enriched}
+        charts={dm.charts}
+        exposureHeadline={dm.reports.exposure_headline}
+        similarityGraph={dm.reports.similarity_graph}
       />
 
       <div className="section-label">Domain drill-down</div>
-      {reportErr && <div className="hint">{reportErr} — cluster/DA panels need the report.</div>}
 
       <div className="section-label sub">DA-pathway accounts</div>
       <div className="panel">
