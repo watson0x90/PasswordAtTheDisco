@@ -41,6 +41,26 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
+## What's new in 2.32
+
+**One source of truth for every number — and a bundle you can hand to an AI.**
+
+- **No more dashboard/export drift.** A single Go metrics library computes every derived number once; the
+  dashboards, the HTML/CSV reports, and the JSON exports all render *that* — so an export can never disagree
+  with what's on screen. The duplicated client-side calculations (and the ~36k lines of test code that pinned
+  them) are gone; the SPA renders the server bundle directly.
+- **Exports match the dashboards — per-domain and pixel-for-pixel.** Every report can be scoped to a single
+  domain (`?domain=`), and the HTML export now embeds the same charts and relationship graphs you see on
+  screen as self-contained inline SVG.
+- **A cleartext export tier, deliberately gated.** Leads can export the actual cracked passwords (HTML/CSV)
+  behind an explicit acknowledgement, CSRF, and a **fail-closed audit log that never records the password** —
+  NT hashes are never included, and the default exports stay fully redacted.
+- **A model bundle for Gemini / Kiro.** One `.zip` — `report.json` (full metrics + per-account rows) plus
+  every chart as an SVG the JSON references — that a model can post-process and drop straight into a report it
+  generates. Sanitized by default (identities kept, no secrets), with a lead-gated cleartext variant; per-domain too.
+
+Earlier: getting Tier-0 right (2.29); the executive scoring rework (2.28); an **MCP server** for AI agents (2.21).
+
 ## What's new in 2.29
 
 **Getting Tier-0 right — accurate detection, a justified verdict, and the receipts.**
