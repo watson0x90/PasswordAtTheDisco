@@ -210,8 +210,9 @@ export function Reports() {
           <div>
             <div className="action-title">Model bundle (.zip)</div>
             <div className="action-sub">
-              All sanitized exports in one ZIP — scoring signals, reuse graph, and domain breakdown with{" "}
-              <b>all identity removed</b>. Suitable for offline model review or sharing with an AI.
+              One ZIP for an AI to post-process: <code>report.json</code> (full metrics + per-account rows) plus every
+              chart as an SVG. Rows keep <b>usernames and domain names</b> so a model can write a named report — but{" "}
+              <b>no cleartext passwords or NT hashes</b>. (Use the fully-anonymized JSON above to share without identity.)
             </div>
           </div>
           <a className="btn" href="/api/export/bundle.zip" download>
