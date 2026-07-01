@@ -36,13 +36,21 @@ type Series struct {
 
 // AccountRef is a redaction-safe account reference for dashboard lists. Username/Domain/RiskLevel/RiskScore are already in exports; HasDA/Controlled/HIBPBreachCount are counts/flags, not credentials.
 type AccountRef struct {
-	Username        string  `json:"username"`
-	Domain          string  `json:"domain"`
-	RiskLevel       string  `json:"risk_level"`
-	RiskScore       float64 `json:"risk_score"`
-	HIBPBreachCount int     `json:"hibp_breach_count"`
-	HasDA           bool    `json:"has_da"`
-	Controlled      int     `json:"controlled_object_count"`
+	Username             string  `json:"username"`
+	Domain               string  `json:"domain"`
+	RiskLevel            string  `json:"risk_level"`
+	RiskScore            float64 `json:"risk_score"`
+	HIBPBreachCount      int     `json:"hibp_breach_count"`
+	HasDA                bool    `json:"has_da"`
+	Controlled           int     `json:"controlled_object_count"`
+	Enabled              bool    `json:"enabled"`
+	Cracked              bool    `json:"cracked"`
+	HIBPBreached         bool    `json:"hibp_breached"`
+	DADomains            string  `json:"da_domains"`
+	ControlsTier0        bool    `json:"controls_tier0"`
+	EscalatedBySharedDA  bool    `json:"escalated_by_shared_da"`
+	EscalatedByMassReuse bool    `json:"escalated_by_mass_reuse"`
+	MeetsPolicy          bool    `json:"meets_policy"`
 }
 
 // AxisFactor is a single exposure or impact breakdown factor with name, value, and color.
@@ -484,8 +492,21 @@ func AxisFactorBars(accts []model.Account) []TierFactorBars {
 // toRef converts an Account to a redaction-safe AccountRef (slim dashboard list reference).
 func toRef(a model.Account) AccountRef {
 	return AccountRef{
-		Username: a.Username, Domain: a.Domain, RiskLevel: a.RiskLevel, RiskScore: a.RiskScore,
-		HIBPBreachCount: a.HIBPBreachCount, HasDA: a.HasDAPathway(), Controlled: a.Controlled,
+		Username:             a.Username,
+		Domain:               a.Domain,
+		RiskLevel:            a.RiskLevel,
+		RiskScore:            a.RiskScore,
+		HIBPBreachCount:      a.HIBPBreachCount,
+		HasDA:                a.HasDAPathway(),
+		Controlled:           a.Controlled,
+		Enabled:              a.Enabled,
+		Cracked:              a.Cracked,
+		HIBPBreached:         a.HIBPBreached,
+		DADomains:            a.DADomains,
+		ControlsTier0:        a.ControlsTier0,
+		EscalatedBySharedDA:  a.EscalatedBySharedDA,
+		EscalatedByMassReuse: a.EscalatedByMassReuse,
+		MeetsPolicy:          a.MeetsPolicy,
 	}
 }
 

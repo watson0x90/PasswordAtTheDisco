@@ -306,3 +306,52 @@ func TestPasswordAgeScatterUsesNow(t *testing.T) {
 		}
 	}
 }
+
+func TestToRefCopiesAllDisplayFields(t *testing.T) {
+	a := model.Account{
+		Username:             "alice",
+		Domain:               "CORP.LOCAL",
+		RiskLevel:            "Critical",
+		RiskScore:            9.5,
+		HIBPBreachCount:      3,
+		Controlled:           42,
+		Enabled:              true,
+		Cracked:              true,
+		HIBPBreached:         true,
+		DADomains:            "CORP.LOCAL",
+		ControlsTier0:        true,
+		EscalatedBySharedDA:  true,
+		EscalatedByMassReuse: false,
+		MeetsPolicy:          false,
+	}
+	ref := toRef(a)
+
+	// Check all fields are copied correctly
+	if ref.Username != "alice" || ref.Domain != "CORP.LOCAL" {
+		t.Errorf("basic fields: username=%q, domain=%q", ref.Username, ref.Domain)
+	}
+	if ref.Enabled != true {
+		t.Errorf("Enabled = %v, want true", ref.Enabled)
+	}
+	if ref.Cracked != true {
+		t.Errorf("Cracked = %v, want true", ref.Cracked)
+	}
+	if ref.HIBPBreached != true {
+		t.Errorf("HIBPBreached = %v, want true", ref.HIBPBreached)
+	}
+	if ref.DADomains != "CORP.LOCAL" {
+		t.Errorf("DADomains = %q, want CORP.LOCAL", ref.DADomains)
+	}
+	if ref.ControlsTier0 != true {
+		t.Errorf("ControlsTier0 = %v, want true", ref.ControlsTier0)
+	}
+	if ref.EscalatedBySharedDA != true {
+		t.Errorf("EscalatedBySharedDA = %v, want true", ref.EscalatedBySharedDA)
+	}
+	if ref.EscalatedByMassReuse != false {
+		t.Errorf("EscalatedByMassReuse = %v, want false", ref.EscalatedByMassReuse)
+	}
+	if ref.MeetsPolicy != false {
+		t.Errorf("MeetsPolicy = %v, want false", ref.MeetsPolicy)
+	}
+}

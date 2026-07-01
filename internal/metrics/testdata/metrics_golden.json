@@ -270,7 +270,15 @@
         "risk_score": 8.5,
         "hibp_breach_count": 1200,
         "has_da": true,
-        "controlled_object_count": 150
+        "controlled_object_count": 150,
+        "enabled": true,
+        "cracked": true,
+        "hibp_breached": true,
+        "da_domains": "A.LOCAL",
+        "controls_tier0": true,
+        "escalated_by_shared_da": false,
+        "escalated_by_mass_reuse": false,
+        "meets_policy": false
       },
       {
         "username": "dave",
@@ -279,7 +287,15 @@
         "risk_score": 7,
         "hibp_breach_count": 50,
         "has_da": false,
-        "controlled_object_count": 250
+        "controlled_object_count": 250,
+        "enabled": false,
+        "cracked": true,
+        "hibp_breached": true,
+        "da_domains": "None",
+        "controls_tier0": true,
+        "escalated_by_shared_da": false,
+        "escalated_by_mass_reuse": false,
+        "meets_policy": true
       },
       {
         "username": "carol",
@@ -288,7 +304,15 @@
         "risk_score": 6.1,
         "hibp_breach_count": 0,
         "has_da": false,
-        "controlled_object_count": 0
+        "controlled_object_count": 0,
+        "enabled": true,
+        "cracked": false,
+        "hibp_breached": false,
+        "da_domains": "None",
+        "controls_tier0": false,
+        "escalated_by_shared_da": false,
+        "escalated_by_mass_reuse": false,
+        "meets_policy": true
       },
       {
         "username": "bob",
@@ -297,7 +321,15 @@
         "risk_score": 4.2,
         "hibp_breach_count": 0,
         "has_da": false,
-        "controlled_object_count": 0
+        "controlled_object_count": 0,
+        "enabled": true,
+        "cracked": true,
+        "hibp_breached": false,
+        "da_domains": "None",
+        "controls_tier0": false,
+        "escalated_by_shared_da": false,
+        "escalated_by_mass_reuse": false,
+        "meets_policy": true
       },
       {
         "username": "erin",
@@ -306,7 +338,15 @@
         "risk_score": 1.5,
         "hibp_breach_count": 0,
         "has_da": false,
-        "controlled_object_count": 0
+        "controlled_object_count": 0,
+        "enabled": true,
+        "cracked": false,
+        "hibp_breached": false,
+        "da_domains": "None",
+        "controls_tier0": false,
+        "escalated_by_shared_da": false,
+        "escalated_by_mass_reuse": false,
+        "meets_policy": true
       }
     ],
     "escalated_by_shared_da": [],
@@ -318,7 +358,15 @@
         "risk_score": 7,
         "hibp_breach_count": 50,
         "has_da": false,
-        "controlled_object_count": 250
+        "controlled_object_count": 250,
+        "enabled": false,
+        "cracked": true,
+        "hibp_breached": true,
+        "da_domains": "None",
+        "controls_tier0": true,
+        "escalated_by_shared_da": false,
+        "escalated_by_mass_reuse": false,
+        "meets_policy": true
       },
       {
         "username": "alice",
@@ -327,7 +375,15 @@
         "risk_score": 8.5,
         "hibp_breach_count": 1200,
         "has_da": true,
-        "controlled_object_count": 150
+        "controlled_object_count": 150,
+        "enabled": true,
+        "cracked": true,
+        "hibp_breached": true,
+        "da_domains": "A.LOCAL",
+        "controls_tier0": true,
+        "escalated_by_shared_da": false,
+        "escalated_by_mass_reuse": false,
+        "meets_policy": false
       }
     ],
     "top_controllers_more_over_100": 0
@@ -383,7 +439,15 @@
           "risk_score": 8.5,
           "hibp_breach_count": 1200,
           "has_da": true,
-          "controlled_object_count": 150
+          "controlled_object_count": 150,
+          "enabled": true,
+          "cracked": true,
+          "hibp_breached": true,
+          "da_domains": "A.LOCAL",
+          "controls_tier0": true,
+          "escalated_by_shared_da": false,
+          "escalated_by_mass_reuse": false,
+          "meets_policy": false
         },
         "priority": 7,
         "reasons": [
@@ -401,7 +465,15 @@
           "risk_score": 7,
           "hibp_breach_count": 50,
           "has_da": false,
-          "controlled_object_count": 250
+          "controlled_object_count": 250,
+          "enabled": false,
+          "cracked": true,
+          "hibp_breached": true,
+          "da_domains": "None",
+          "controls_tier0": true,
+          "escalated_by_shared_da": false,
+          "escalated_by_mass_reuse": false,
+          "meets_policy": true
         },
         "priority": 4,
         "reasons": [
@@ -419,7 +491,15 @@
           "risk_score": 4.2,
           "hibp_breach_count": 0,
           "has_da": false,
-          "controlled_object_count": 0
+          "controlled_object_count": 0,
+          "enabled": true,
+          "cracked": true,
+          "hibp_breached": false,
+          "da_domains": "None",
+          "controls_tier0": false,
+          "escalated_by_shared_da": false,
+          "escalated_by_mass_reuse": false,
+          "meets_policy": true
         },
         "priority": 1,
         "reasons": [
@@ -685,7 +765,15 @@
             "risk_score": 8.5,
             "hibp_breach_count": 1200,
             "has_da": true,
-            "controlled_object_count": 150
+            "controlled_object_count": 150,
+            "enabled": true,
+            "cracked": true,
+            "hibp_breached": true,
+            "da_domains": "A.LOCAL",
+            "controls_tier0": true,
+            "escalated_by_shared_da": false,
+            "escalated_by_mass_reuse": false,
+            "meets_policy": false
           },
           {
             "username": "carol",
@@ -694,7 +782,15 @@
             "risk_score": 6.1,
             "hibp_breach_count": 0,
             "has_da": false,
-            "controlled_object_count": 0
+            "controlled_object_count": 0,
+            "enabled": true,
+            "cracked": false,
+            "hibp_breached": false,
+            "da_domains": "None",
+            "controls_tier0": false,
+            "escalated_by_shared_da": false,
+            "escalated_by_mass_reuse": false,
+            "meets_policy": true
           },
           {
             "username": "bob",
@@ -703,7 +799,15 @@
             "risk_score": 4.2,
             "hibp_breach_count": 0,
             "has_da": false,
-            "controlled_object_count": 0
+            "controlled_object_count": 0,
+            "enabled": true,
+            "cracked": true,
+            "hibp_breached": false,
+            "da_domains": "None",
+            "controls_tier0": false,
+            "escalated_by_shared_da": false,
+            "escalated_by_mass_reuse": false,
+            "meets_policy": true
           }
         ],
         "escalated_by_shared_da": [],
@@ -715,7 +819,15 @@
             "risk_score": 8.5,
             "hibp_breach_count": 1200,
             "has_da": true,
-            "controlled_object_count": 150
+            "controlled_object_count": 150,
+            "enabled": true,
+            "cracked": true,
+            "hibp_breached": true,
+            "da_domains": "A.LOCAL",
+            "controls_tier0": true,
+            "escalated_by_shared_da": false,
+            "escalated_by_mass_reuse": false,
+            "meets_policy": false
           }
         ],
         "top_controllers_more_over_100": 0
@@ -952,7 +1064,15 @@
             "risk_score": 7,
             "hibp_breach_count": 50,
             "has_da": false,
-            "controlled_object_count": 250
+            "controlled_object_count": 250,
+            "enabled": false,
+            "cracked": true,
+            "hibp_breached": true,
+            "da_domains": "None",
+            "controls_tier0": true,
+            "escalated_by_shared_da": false,
+            "escalated_by_mass_reuse": false,
+            "meets_policy": true
           },
           {
             "username": "erin",
@@ -961,7 +1081,15 @@
             "risk_score": 1.5,
             "hibp_breach_count": 0,
             "has_da": false,
-            "controlled_object_count": 0
+            "controlled_object_count": 0,
+            "enabled": true,
+            "cracked": false,
+            "hibp_breached": false,
+            "da_domains": "None",
+            "controls_tier0": false,
+            "escalated_by_shared_da": false,
+            "escalated_by_mass_reuse": false,
+            "meets_policy": true
           }
         ],
         "escalated_by_shared_da": [],
@@ -973,7 +1101,15 @@
             "risk_score": 7,
             "hibp_breach_count": 50,
             "has_da": false,
-            "controlled_object_count": 250
+            "controlled_object_count": 250,
+            "enabled": false,
+            "cracked": true,
+            "hibp_breached": true,
+            "da_domains": "None",
+            "controls_tier0": true,
+            "escalated_by_shared_da": false,
+            "escalated_by_mass_reuse": false,
+            "meets_policy": true
           }
         ],
         "top_controllers_more_over_100": 0
