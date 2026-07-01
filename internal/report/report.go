@@ -1,5 +1,7 @@
-// Package report renders an audit's REDACTED findings as a CSV or a
-// self-contained HTML report. Cleartext passwords are never included.
+// Package report renders an audit's findings as a CSV or a self-contained HTML
+// report. The default (redacted) variants never include cleartext passwords.
+// CSVCleartext and HTMLCleartext are lead-gated variants that include the
+// cleartext password for cracked accounts; callers must gate access appropriately.
 package report
 
 import (
@@ -97,16 +99,39 @@ func ComputeDiff(a, b []model.Account) Diff {
 }
 
 // CSV writes the accounts as a redacted CSV (no password column).
-// CSV writes the redacted per-account summary: one row per account with crack
-// status, HIBP exposure, password reuse, and any pathway to a Tier-0 / privileged
+// It renders the per-account summary: one row per account with crack status,
+// HIBP exposure, password reuse, and any pathway to a Tier-0 / privileged
 // (Domain Admin) account. It never includes a cleartext password or an NT hash.
 func CSV(w io.Writer, accounts []model.Account) error {
+	return csvReport(w, accounts, false)
+}
+
+// CSVCleartext writes the accounts as a cleartext CSV with a password column
+// immediately after username. Cracked accounts show the cleartext password;
+// uncracked accounts have an empty cell. NTHash and wordlist fragments
+// (BannedWords, KeyboardPatterns) are NEVER included. Access MUST be gated by
+// the caller (lead role + CSRF + acknowledge + audit log).
+func CSVCleartext(w io.Writer, accounts []model.Account) error {
+	return csvReport(w, accounts, true)
+}
+
+func csvReport(w io.Writer, accounts []model.Account, cleartext bool) error {
 	cw := csv.NewWriter(w)
-	header := []string{
-		"domain", "username", "enabled", "status", "password_length", "complexity",
-		"meets_policy", "risk_level", "risk_score", "risk_vector", "hibp_found", "hibp_breach_count",
-		"reused", "shared_with", "tier0_pathway", "tier0_pathway_domains", "controlled_objects",
-		"common_password", "dictionary_word", "forbidden_words", "keyboard_patterns",
+	var header []string
+	if cleartext {
+		header = []string{
+			"domain", "username", "password", "enabled", "status", "password_length", "complexity",
+			"meets_policy", "risk_level", "risk_score", "risk_vector", "hibp_found", "hibp_breach_count",
+			"reused", "shared_with", "tier0_pathway", "tier0_pathway_domains", "controlled_objects",
+			"common_password", "dictionary_word", "forbidden_words", "keyboard_patterns",
+		}
+	} else {
+		header = []string{
+			"domain", "username", "enabled", "status", "password_length", "complexity",
+			"meets_policy", "risk_level", "risk_score", "risk_vector", "hibp_found", "hibp_breach_count",
+			"reused", "shared_with", "tier0_pathway", "tier0_pathway_domains", "controlled_objects",
+			"common_password", "dictionary_word", "forbidden_words", "keyboard_patterns",
+		}
 	}
 	if err := cw.Write(header); err != nil {
 		return err
@@ -123,14 +148,31 @@ func CSV(w io.Writer, accounts []model.Account) error {
 		if tier0 {
 			tier0Domains = a.DADomains
 		}
-		row := []string{
-			csvSafe(a.Domain), csvSafe(a.Username), yesNo(a.Enabled), status, pwLen, csvSafe(pwanalysis.ComplexityLabel(a.Complexity)),
-			yesNo(a.MeetsPolicy), csvSafe(a.RiskLevel), strconv.FormatFloat(a.RiskScore, 'f', 1, 64), csvSafe(a.RiskVector),
-			yesNo(a.HIBPBreached), strconv.Itoa(a.HIBPBreachCount),
-			yesNo(a.SharedWith > 0), strconv.Itoa(a.SharedWith),
-			yesNo(tier0), csvSafe(tier0Domains), strconv.Itoa(a.Controlled),
-			// wordlist weakness signals (counts/booleans only -- never the matched word)
-			yesNo(a.IsCommon), yesNo(a.IsDictionaryWord), strconv.Itoa(a.BannedWordCount), strconv.Itoa(a.KeyboardPatternCount),
+		var row []string
+		if cleartext {
+			pw := ""
+			if a.Cracked {
+				pw = csvSafe(a.Password)
+			}
+			row = []string{
+				csvSafe(a.Domain), csvSafe(a.Username), pw, yesNo(a.Enabled), status, pwLen, csvSafe(pwanalysis.ComplexityLabel(a.Complexity)),
+				yesNo(a.MeetsPolicy), csvSafe(a.RiskLevel), strconv.FormatFloat(a.RiskScore, 'f', 1, 64), csvSafe(a.RiskVector),
+				yesNo(a.HIBPBreached), strconv.Itoa(a.HIBPBreachCount),
+				yesNo(a.SharedWith > 0), strconv.Itoa(a.SharedWith),
+				yesNo(tier0), csvSafe(tier0Domains), strconv.Itoa(a.Controlled),
+				// wordlist weakness signals (counts/booleans only -- never the matched word)
+				yesNo(a.IsCommon), yesNo(a.IsDictionaryWord), strconv.Itoa(a.BannedWordCount), strconv.Itoa(a.KeyboardPatternCount),
+			}
+		} else {
+			row = []string{
+				csvSafe(a.Domain), csvSafe(a.Username), yesNo(a.Enabled), status, pwLen, csvSafe(pwanalysis.ComplexityLabel(a.Complexity)),
+				yesNo(a.MeetsPolicy), csvSafe(a.RiskLevel), strconv.FormatFloat(a.RiskScore, 'f', 1, 64), csvSafe(a.RiskVector),
+				yesNo(a.HIBPBreached), strconv.Itoa(a.HIBPBreachCount),
+				yesNo(a.SharedWith > 0), strconv.Itoa(a.SharedWith),
+				yesNo(tier0), csvSafe(tier0Domains), strconv.Itoa(a.Controlled),
+				// wordlist weakness signals (counts/booleans only -- never the matched word)
+				yesNo(a.IsCommon), yesNo(a.IsDictionaryWord), strconv.Itoa(a.BannedWordCount), strconv.Itoa(a.KeyboardPatternCount),
+			}
 		}
 		if err := cw.Write(row); err != nil {
 			return err
@@ -244,6 +286,9 @@ type htmlData struct {
 	// Graphs holds pre-rendered network graph SVG cards (wider; own section).
 	Graphs   []template.HTML
 	Accounts []model.Account
+	// Cleartext signals that this is a cleartext export; the template renders
+	// a warning banner and a Password column in the Accounts table.
+	Cleartext bool
 }
 
 var riskColor = map[string]string{"Critical": "#fb7185", "High": "#fbbf24", "Medium": "#a3e635", "Low": "#22d3ee"}
@@ -252,6 +297,19 @@ var riskColor = map[string]string{"Critical": "#fb7185", "High": "#fbbf24", "Med
 // All counts (DA pathways, risk distribution, per-domain stats) are sourced from
 // metrics.Compute so the exported numbers are provably identical to the dashboard.
 func HTML(w io.Writer, name string, generated time.Time, accounts []model.Account) error {
+	return htmlReport(w, name, generated, accounts, false)
+}
+
+// HTMLCleartext writes a self-contained cleartext report: identical layout to
+// HTML() but with an added Password column (cracked accounts only) and a
+// prominent "⚠ CONTAINS CLEARTEXT PASSWORDS" warning banner. NTHash and wordlist
+// fragments (BannedWords, KeyboardPatterns) are NEVER included. Access MUST be
+// gated by the caller (lead role + CSRF + acknowledge + audit log).
+func HTMLCleartext(w io.Writer, name string, generated time.Time, accounts []model.Account) error {
+	return htmlReport(w, name, generated, accounts, true)
+}
+
+func htmlReport(w io.Writer, name string, generated time.Time, accounts []model.Account, cleartext bool) error {
 	// Single bundle computation — the same path taken by the API and the SPA.
 	// Compute from the FULL accounts so reuse-group-derived surfaces (the
 	// cross-domain reuse graph, keyed on NT-hash reuse via model.BuildReport)
@@ -259,15 +317,19 @@ func HTML(w io.Writer, name string, generated time.Time, accounts []model.Accoun
 	// (see metrics.TestBundleHasNoSensitiveFields).
 	m := metrics.Compute(accounts, generated)
 
-	// The Accounts table renders account fields directly, so redact defensively
-	// here — this report never emits cleartext passwords or NT hashes regardless
-	// of whether the caller passed redacted or full accounts. Redaction is thus a
-	// self-enforced invariant of HTML(), not something the caller must remember.
-	redacted := make([]model.Account, len(accounts))
+	// Project accounts for the Accounts table. Redacted path strips Password,
+	// NTHash, and wordlist fragments. Cleartext path keeps Password but still
+	// strips NTHash and wordlist fragments — never emitting pass-the-hash
+	// credentials or raw wordlist matches regardless of mode.
+	projected := make([]model.Account, len(accounts))
 	for i := range accounts {
-		redacted[i] = accounts[i].Redacted()
+		if cleartext {
+			projected[i] = accounts[i].RedactedKeepPassword()
+		} else {
+			projected[i] = accounts[i].Redacted()
+		}
 	}
-	d := htmlData{Name: name, Generated: generated.UTC().Format("2006-01-02 15:04 UTC"), Accounts: redacted}
+	d := htmlData{Name: name, Generated: generated.UTC().Format("2006-01-02 15:04 UTC"), Accounts: projected, Cleartext: cleartext}
 
 	// Top-level counts from the bundle summary.
 	// d.DA uses DAPathways (obtainable-only count) — fixes parity with the dashboard
@@ -386,6 +448,7 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:"Segoe UI",syst
 h1{font-size:22px;margin:0 0 4px}
 .sub{color:var(--dim);font-size:13px;margin-bottom:6px}
 .redact{display:inline-block;font-size:11px;color:#7dd3fc;border:1px solid #1e4b66;background:rgba(34,211,238,.08);border-radius:6px;padding:2px 9px;margin-bottom:24px}
+.cleartext-banner{display:block;font-size:13px;color:#fb7185;border:1px solid rgba(251,113,133,.4);background:rgba(251,113,133,.1);border-radius:8px;padding:10px 16px;margin-bottom:20px;font-weight:600}
 .label{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--faint);margin:28px 0 12px;font-weight:600}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px}
 .exec{display:flex;gap:32px;align-items:center;flex-wrap:wrap}
@@ -419,7 +482,7 @@ td{padding:7px 10px;border-bottom:1px solid #1b2236;white-space:nowrap}
 <body><div class="wrap">
 <h1>{{.Name}}</h1>
 <div class="sub">Password!AtTheDisco — generated {{.Generated}}</div>
-<span class="redact">Redacted report · no cleartext passwords</span>
+{{if .Cleartext}}<div class="cleartext-banner">⚠ CONTAINS CLEARTEXT PASSWORDS — handle per your data policy</div>{{else}}<span class="redact">Redacted report · no cleartext passwords</span>{{end}}
 
 <div class="label">Security posture</div>
 <div class="panel exec">
@@ -475,9 +538,10 @@ td{padding:7px 10px;border-bottom:1px solid #1b2236;white-space:nowrap}
 
 <div class="label">Accounts ({{.Total}})</div>
 <div class="panel"><table>
-<tr><th>Username</th><th>Domain</th><th>Risk</th><th>Score</th><th>HIBP</th><th>Complexity</th><th>Policy</th><th>Shared</th><th>DA</th><th>Controlled</th><th>Weaknesses</th></tr>
+<tr><th>Username</th><th>Domain</th>{{if .Cleartext}}<th>Password</th>{{end}}<th>Risk</th><th>Score</th><th>HIBP</th><th>Complexity</th><th>Policy</th><th>Shared</th><th>DA</th><th>Controlled</th><th>Weaknesses</th></tr>
 {{range .Accounts}}<tr>
 <td>{{.Username}}{{if not .Enabled}}<span class="muted"> · disabled</span>{{end}}</td><td class="muted">{{.Domain}}</td>
+{{if $.Cleartext}}<td>{{if .Cracked}}{{.Password}}{{else}}<span class="muted">—</span>{{end}}</td>{{end}}
 <td><span class="badge" style="color:{{color .RiskLevel}};border-color:{{color .RiskLevel}}">{{.RiskLevel}}</span></td>
 <td>{{f1 .RiskScore}}</td>
 <td>{{if .HIBPBreached}}<span style="color:#fb7185">{{.HIBPBreachCount}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
@@ -490,7 +554,7 @@ td{padding:7px 10px;border-bottom:1px solid #1b2236;white-space:nowrap}
 </tr>{{end}}
 </table></div>
 
-<div class="foot">Generated by Password!AtTheDisco · cleartext passwords are never written to disk or included in reports</div>
+<div class="foot">Generated by Password!AtTheDisco · {{if .Cleartext}}cleartext passwords included for cracked accounts — handle per your data policy{{else}}cleartext passwords are never written to disk or included in reports{{end}}</div>
 </div></body></html>`
 
 // ---- focused HTML reports (complement the focused CSVs) ----

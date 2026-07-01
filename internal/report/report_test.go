@@ -543,3 +543,164 @@ func TestHTMLGraphsAndScatter(t *testing.T) {
 		t.Error("HTML output must contain escaped node label '>admin&lt;1<' in an SVG <text> element but it was not found")
 	}
 }
+
+// TestCSVCleartextAndRedacted verifies:
+//   - CSVCleartext: cracked account has password in column 2, no NT hash, uncracked cell empty.
+//   - CSV (redacted): same full accounts produce output with neither password nor hash,
+//     and no password column in the header.
+func TestCSVCleartextAndRedacted(t *testing.T) {
+	const ntHash = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1"
+	accts := []model.Account{
+		{Username: "alice", Domain: "CORP", Password: "Hunter2", NTHash: ntHash,
+			Cracked: true, PasswordLength: 7, RiskLevel: "High", RiskScore: 7.0,
+			BannedWords: []string{"hunter"}, BannedWordCount: 1},
+		{Username: "bob", Domain: "CORP", Cracked: false, RiskLevel: "Low", RiskScore: 2.0},
+	}
+
+	// --- CSVCleartext ---
+	var ctBuf bytes.Buffer
+	if err := CSVCleartext(&ctBuf, accts); err != nil {
+		t.Fatalf("CSVCleartext: %v", err)
+	}
+	ctOut := ctBuf.String()
+	ctRows := strings.Split(strings.TrimSpace(ctOut), "\n")
+	if len(ctRows) != 3 {
+		t.Fatalf("CSVCleartext: want 3 rows (header+2), got %d:\n%s", len(ctRows), ctOut)
+	}
+
+	// Header must have "password" as the 3rd column (index 2).
+	ctHeader := ctRows[0]
+	ctCols := strings.Split(ctHeader, ",")
+	if len(ctCols) < 3 || ctCols[2] != "password" {
+		t.Errorf("CSVCleartext: password column not at index 2 in header: %s", ctHeader)
+	}
+
+	// Cracked account row must contain Hunter2.
+	if !strings.Contains(ctRows[1], "Hunter2") {
+		t.Errorf("CSVCleartext: cracked row missing password:\n%s", ctRows[1])
+	}
+	// Cleartext CSV must NEVER contain the NT hash.
+	if strings.Contains(ctOut, ntHash) {
+		t.Errorf("CSVCleartext: LEAKED NT HASH:\n%s", ctOut)
+	}
+	// BannedWords substrings must never appear (only the count is safe).
+	if strings.Contains(ctOut, "hunter") {
+		t.Errorf("CSVCleartext: leaked BannedWords substring 'hunter':\n%s", ctOut)
+	}
+
+	// Uncracked account row: the password cell (index 2) must be empty.
+	// Parse bob's row manually; the row is the 3rd line (index 2).
+	// We can't use encoding/csv here trivially, so check that the value in
+	// the password column position is empty by confirming Hunter2 is NOT in row 3.
+	if strings.Contains(ctRows[2], "Hunter2") {
+		t.Errorf("CSVCleartext: uncracked row must have empty password cell, not Hunter2:\n%s", ctRows[2])
+	}
+
+	// --- CSV (redacted) ---
+	var rdBuf bytes.Buffer
+	if err := CSV(&rdBuf, accts); err != nil {
+		t.Fatalf("CSV (redacted): %v", err)
+	}
+	rdOut := rdBuf.String()
+
+	// Redacted CSV must NOT contain Hunter2.
+	if strings.Contains(rdOut, "Hunter2") {
+		t.Errorf("CSV (redacted): LEAKED CLEARTEXT PASSWORD:\n%s", rdOut)
+	}
+	// Redacted CSV must NOT contain the NT hash.
+	if strings.Contains(rdOut, ntHash) {
+		t.Errorf("CSV (redacted): LEAKED NT HASH:\n%s", rdOut)
+	}
+	// Redacted CSV header must NOT have a "password" column.
+	rdHeader := strings.SplitN(rdOut, "\n", 2)[0]
+	for _, col := range strings.Split(rdHeader, ",") {
+		if col == "password" {
+			t.Errorf("CSV (redacted) header contains 'password' column: %s", rdHeader)
+		}
+	}
+}
+
+// TestHTMLCleartextAndRedacted verifies:
+//   - HTMLCleartext: contains password (Hunter2), cleartext banner, no NT hash, no wordlist
+//     fragments, no <script>.
+//   - HTML (redacted): given the same full accounts, contains neither password nor hash —
+//     extends the self-redaction guard from TestHTMLGraphsAndScatter.
+func TestHTMLCleartextAndRedacted(t *testing.T) {
+	const ntHash = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+	const pw = "Hunter2"
+	when := time.Unix(1_700_000_000, 0)
+
+	accts := []model.Account{
+		{Username: "alice", Domain: "CORP", Password: pw, NTHash: ntHash,
+			Cracked: true, PasswordLength: 7, RiskLevel: "High", RiskScore: 7.0,
+			BannedWords: []string{"hunter"}, BannedWordCount: 1,
+			KeyboardPatterns: []string{"qwerty"}, KeyboardPatternCount: 1},
+		{Username: "bob", Domain: "CORP", Cracked: false, RiskLevel: "Low", RiskScore: 2.0},
+	}
+
+	// --- HTMLCleartext ---
+	var ctBuf bytes.Buffer
+	if err := HTMLCleartext(&ctBuf, "TestEngage", when, accts); err != nil {
+		t.Fatalf("HTMLCleartext: %v", err)
+	}
+	ctOut := ctBuf.String()
+
+	// Must contain cleartext password.
+	if !strings.Contains(ctOut, pw) {
+		t.Errorf("HTMLCleartext: missing cleartext password %q in output", pw)
+	}
+	// Must contain the warning banner.
+	if !strings.Contains(ctOut, "CONTAINS CLEARTEXT PASSWORDS") {
+		t.Errorf("HTMLCleartext: missing cleartext warning banner")
+	}
+	if !strings.Contains(ctOut, "cleartext-banner") {
+		t.Errorf("HTMLCleartext: missing cleartext-banner CSS class")
+	}
+	// Must NOT contain NT hash.
+	if strings.Contains(ctOut, ntHash) {
+		t.Errorf("HTMLCleartext: LEAKED NT HASH")
+	}
+	// Must NOT contain raw wordlist fragments.
+	if strings.Contains(ctOut, "hunter") {
+		t.Errorf("HTMLCleartext: leaked BannedWords fragment 'hunter'")
+	}
+	if strings.Contains(ctOut, "qwerty") {
+		t.Errorf("HTMLCleartext: leaked KeyboardPatterns fragment 'qwerty'")
+	}
+	// Self-contained: no <script> tags.
+	if strings.Contains(ctOut, "<script") {
+		t.Errorf("HTMLCleartext: must not contain <script> tags (self-contained requirement)")
+	}
+	// Password column header must appear.
+	if !strings.Contains(ctOut, "<th>Password</th>") {
+		t.Errorf("HTMLCleartext: missing Password column header in accounts table")
+	}
+	// Must be valid HTML (has closing tag).
+	if !strings.Contains(ctOut, "</html>") {
+		t.Errorf("HTMLCleartext: output missing </html>")
+	}
+
+	// --- HTML (redacted) — extended self-redaction guard ---
+	var rdBuf bytes.Buffer
+	if err := HTML(&rdBuf, "TestEngage", when, accts); err != nil {
+		t.Fatalf("HTML (redacted): %v", err)
+	}
+	rdOut := rdBuf.String()
+
+	// Redacted HTML must NEVER emit the cleartext password, regardless of input.
+	if strings.Contains(rdOut, pw) {
+		t.Errorf("HTML (redacted): LEAKED CLEARTEXT PASSWORD — self-redaction invariant violated")
+	}
+	// Redacted HTML must NEVER emit the NT hash.
+	if strings.Contains(rdOut, ntHash) {
+		t.Errorf("HTML (redacted): LEAKED NT HASH — self-redaction invariant violated")
+	}
+	// Redacted HTML must NOT contain a cleartext banner.
+	if strings.Contains(rdOut, "CONTAINS CLEARTEXT PASSWORDS") {
+		t.Errorf("HTML (redacted): cleartext banner must not appear in redacted output")
+	}
+	// Redacted HTML must NOT have a Password column header.
+	if strings.Contains(rdOut, "<th>Password</th>") {
+		t.Errorf("HTML (redacted): Password column header must not appear in redacted output")
+	}
+}

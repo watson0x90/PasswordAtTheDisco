@@ -475,6 +475,17 @@ func (a Account) Redacted() Account {
 	return a
 }
 
+// RedactedKeepPassword returns a copy with the NT hash, banned-word matches,
+// and keyboard-pattern matches cleared — identical to Redacted() — but keeping
+// the cleartext Password. Use ONLY via the lead-gated cleartext export tier;
+// the caller is responsible for gating, CSRF validation, and audit logging.
+func (a Account) RedactedKeepPassword() Account {
+	a.NTHash = ""
+	a.BannedWords = nil
+	a.KeyboardPatterns = nil
+	return a
+}
+
 // HasDAPathway reports whether the account has a Domain Admin pathway.
 func (a Account) HasDAPathway() bool {
 	return a.DADomains != "" && a.DADomains != "None" && a.DADomains != "Unknown"

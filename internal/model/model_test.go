@@ -68,6 +68,49 @@ func TestRecomputeSharingByHash(t *testing.T) {
 	}
 }
 
+// TestRedactedKeepPassword verifies that RedactedKeepPassword clears the NT hash
+// and wordlist fragments (NTHash, BannedWords, KeyboardPatterns) but keeps the
+// cleartext Password and all other non-sensitive fields.
+func TestRedactedKeepPassword(t *testing.T) {
+	a := Account{
+		Username:         "alice",
+		Domain:           "CORP",
+		Password:         "Hunter2",
+		NTHash:           "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1",
+		BannedWords:      []string{"hunter"},
+		KeyboardPatterns: []string{"qwerty"},
+		Cracked:          true,
+		RiskLevel:        "Critical",
+		RiskScore:        9.0,
+	}
+	r := a.RedactedKeepPassword()
+
+	// Password MUST be kept.
+	if r.Password != "Hunter2" {
+		t.Errorf("RedactedKeepPassword: Password should be kept, got %q", r.Password)
+	}
+	// NTHash MUST be cleared.
+	if r.NTHash != "" {
+		t.Errorf("RedactedKeepPassword: NTHash should be cleared, got %q", r.NTHash)
+	}
+	// BannedWords MUST be cleared.
+	if len(r.BannedWords) != 0 {
+		t.Errorf("RedactedKeepPassword: BannedWords should be cleared, got %v", r.BannedWords)
+	}
+	// KeyboardPatterns MUST be cleared.
+	if len(r.KeyboardPatterns) != 0 {
+		t.Errorf("RedactedKeepPassword: KeyboardPatterns should be cleared, got %v", r.KeyboardPatterns)
+	}
+	// Non-sensitive fields must be preserved.
+	if r.Username != "alice" || r.Domain != "CORP" || r.RiskLevel != "Critical" || r.Cracked != true {
+		t.Errorf("RedactedKeepPassword: non-sensitive fields modified: %+v", r)
+	}
+	// Verify it doesn't mutate the original.
+	if a.NTHash == "" || len(a.BannedWords) == 0 {
+		t.Error("RedactedKeepPassword mutated the original account")
+	}
+}
+
 func TestEscalateSharedWithDAByHash(t *testing.T) {
 	const shared = "AABBCCDDEEFF00112233445566778899"
 	accts := []Account{
