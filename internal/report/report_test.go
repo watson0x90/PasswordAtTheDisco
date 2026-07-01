@@ -345,3 +345,55 @@ func TestWeakPasswordsHTML(t *testing.T) {
 		}
 	}
 }
+
+// TestHTMLDACountObtainableOnly pins the parity bug fix: the HTML report's DA
+// count must equal the OBTAINABLE DA pathway count (HasObtainableDAPathway), not
+// the raw HasDAPathway count, so it matches the dashboard and /api/metrics.
+//
+// Setup: two accounts both have DADomains set, but only one is cracked (obtainable).
+// Old code: DA = 2 (counted raw HasDAPathway for both).
+// Fixed code: DA = 1 (only the cracked account is obtainable).
+func TestHTMLDACountObtainableOnly(t *testing.T) {
+	when := time.Unix(1_700_000_000, 0)
+
+	// Has DA pathway but NOT obtainable (uncracked, unbreached, hash not shared).
+	// Old HTML() counted this via HasDAPathway() — the bug.
+	latentDA := model.Account{
+		Username: "latent_da", Domain: "CORP", Enabled: true,
+		DADomains: "CORP", Cracked: false, HIBPBreached: false,
+		RiskLevel: "Medium", RiskScore: 5.0,
+	}
+	// Has DA pathway AND obtainable (cracked).
+	realDA := model.Account{
+		Username: "real_da", Domain: "CORP", Enabled: true,
+		DADomains: "CORP", Cracked: true,
+		RiskLevel: "Critical", RiskScore: 9.5,
+	}
+
+	var b bytes.Buffer
+	if err := HTML(&b, "BugFixTest", when, []model.Account{latentDA, realDA}); err != nil {
+		t.Fatalf("HTML: %v", err)
+	}
+	out := b.String()
+
+	// Template renders: <div class="v" style="color:#fb7185">{{.DA}}</div><div class="k">DA pathways</div>
+	// DA must be 1 (only realDA is obtainable), not 2.
+	wantDA := `style="color:#fb7185">1</div><div class="k">DA pathways</div>`
+	if !strings.Contains(out, wantDA) {
+		t.Errorf("DA count should be 1 (obtainable only), not 2; want substring %q in output", wantDA)
+	}
+	badDA := `style="color:#fb7185">2</div><div class="k">DA pathways</div>`
+	if strings.Contains(out, badDA) {
+		t.Errorf("DA count is 2 — old bug is still present; should be 1 (obtainable only)")
+	}
+
+	// Posture score section must be present.
+	if !strings.Contains(out, "Security posture") {
+		t.Errorf("HTML missing 'Security posture' section")
+	}
+
+	// Exposure × Impact matrix section must be present.
+	if !strings.Contains(out, "Exposure × Impact") {
+		t.Errorf("HTML missing 'Exposure × Impact' matrix section")
+	}
+}

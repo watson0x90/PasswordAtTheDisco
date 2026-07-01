@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/watson0x90/PasswordAtTheDisco/internal/metrics"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/pwanalysis"
 )
@@ -211,6 +212,16 @@ type domRow struct {
 	Total, Cracked, Breached, Critical, DA int
 }
 
+type matrixCell struct {
+	Count int
+	Color string
+}
+
+type matrixRow struct {
+	Exposure string
+	Cells    []matrixCell
+}
+
 type htmlData struct {
 	Name, Generated    string
 	Score              float64
@@ -227,55 +238,32 @@ type htmlData struct {
 	Total, Cracked, Breached, DA int
 	Risk                         []riskRow
 	Domains                      []domRow
+	Matrix                       []matrixRow
 	Accounts                     []model.Account
 }
 
 var riskColor = map[string]string{"Critical": "#fb7185", "High": "#fbbf24", "Medium": "#a3e635", "Low": "#22d3ee"}
 
 // HTML writes a self-contained (inline CSS, no scripts/assets) redacted report.
+// All counts (DA pathways, risk distribution, per-domain stats) are sourced from
+// metrics.Compute so the exported numbers are provably identical to the dashboard.
 func HTML(w io.Writer, name string, generated time.Time, accounts []model.Account) error {
 	d := htmlData{Name: name, Generated: generated.UTC().Format("2006-01-02 15:04 UTC"), Accounts: accounts}
 
-	riskCounts := map[string]int{}
-	doms := map[string]*domRow{}
-	for _, a := range accounts {
-		d.Total++
-		if a.Cracked {
-			d.Cracked++
-		}
-		if a.HIBPBreached {
-			d.Breached++
-		}
-		if a.HasDAPathway() {
-			d.DA++
-		}
-		if !a.Enabled && (a.ControlsTier0 || a.HasDAPathway()) && model.CredentialObtainable(a) {
-			d.DormantPrivileged++
-		}
-		if a.RiskLevel != "" {
-			riskCounts[a.RiskLevel]++
-		}
-		dr := doms[a.Domain]
-		if dr == nil {
-			dr = &domRow{Domain: a.Domain}
-			doms[a.Domain] = dr
-		}
-		dr.Total++
-		if a.Cracked {
-			dr.Cracked++
-		}
-		if a.HIBPBreached {
-			dr.Breached++
-		}
-		if a.RiskLevel == "Critical" {
-			dr.Critical++
-		}
-		if a.HasDAPathway() {
-			dr.DA++
-		}
-	}
+	// Single bundle computation — the same path taken by the API and the SPA.
+	m := metrics.Compute(accounts, generated)
 
-	p := model.PostureScore(accounts)
+	// Top-level counts from the bundle summary.
+	// d.DA uses DAPathways (obtainable-only count) — fixes parity with the dashboard
+	// which counts HasObtainableDAPathway() via model.Summarize, not raw HasDAPathway().
+	d.Total = m.Summary.TotalAccounts
+	d.Cracked = m.Summary.Cracked
+	d.Breached = m.Summary.HIBPBreached
+	d.DA = m.Summary.DAPathways
+	d.DormantPrivileged = m.Summary.DormantPrivileged
+
+	// Posture from the bundle summary.
+	p := m.Summary.Posture
 	d.Score, d.Rating, d.Likelihood = p.Score, p.Rating, p.Likelihood
 	d.Verdict, d.VerdictReason = p.Verdict, p.VerdictReason
 	d.Reachability, d.ReachabilityPct, d.Overall = p.Reachability, p.ReachabilityPct, p.Overall
@@ -284,6 +272,8 @@ func HTML(w io.Writer, name string, generated time.Time, accounts []model.Accoun
 	// Privilege (index 2) is always 0 — display as 0% rather than dividing by zero.
 	d.BRPct = [4]int{int(d.BR[0] / 45 * 100), int(d.BR[1] / 35 * 100), 0, int(d.BR[3] / 20 * 100)}
 
+	// Risk distribution from the bundle summary.
+	riskCounts := m.Summary.RiskCounts
 	maxRisk := 1
 	for _, c := range riskCounts {
 		if c > maxRisk {
@@ -295,12 +285,37 @@ func HTML(w io.Writer, name string, generated time.Time, accounts []model.Accoun
 			d.Risk = append(d.Risk, riskRow{Level: lvl, Count: c, Pct: c * 100 / maxRisk, Color: riskColor[lvl]})
 		}
 	}
-	for _, dr := range doms {
-		d.Domains = append(d.Domains, *dr)
+
+	// Per-domain rows from the bundle (each domain's Summary is the obtainable-DA count too).
+	for _, dm := range m.Domains {
+		d.Domains = append(d.Domains, domRow{
+			Domain:   dm.Domain,
+			Total:    dm.Summary.TotalAccounts,
+			Cracked:  dm.Summary.Cracked,
+			Breached: dm.Summary.HIBPBreached,
+			Critical: dm.Summary.RiskCounts["Critical"],
+			DA:       dm.Summary.DAPathways,
+		})
 	}
 	sort.Slice(d.Domains, func(i, j int) bool {
-		return d.Domains[i].Critical > d.Domains[j].Critical || (d.Domains[i].Critical == d.Domains[j].Critical && d.Domains[i].Total > d.Domains[j].Total)
+		return d.Domains[i].Critical > d.Domains[j].Critical ||
+			(d.Domains[i].Critical == d.Domains[j].Critical && d.Domains[i].Total > d.Domains[j].Total)
 	})
+
+	// Exposure × Impact matrix — precomputed so the template needs no func calls.
+	expTiers := []metrics.Tier{metrics.TierCritical, metrics.TierHigh, metrics.TierMedium, metrics.TierLow}
+	impCols := []string{"Critical", "High", "Medium", "Low", metrics.ImpactUnknown}
+	for _, exp := range expTiers {
+		row := matrixRow{Exposure: string(exp)}
+		for _, imp := range impCols {
+			cellLevel := metrics.CellLevel(exp, imp)
+			row.Cells = append(row.Cells, matrixCell{
+				Count: m.Matrix.Counts[exp][imp],
+				Color: riskColor[string(cellLevel)],
+			})
+		}
+		d.Matrix = append(d.Matrix, row)
+	}
 
 	return htmlTemplate.Execute(w, d)
 }
@@ -387,6 +402,12 @@ td{padding:7px 10px;border-bottom:1px solid #1b2236;white-space:nowrap}
 <div class="panel"><table>
 <tr><th>Domain</th><th>Accounts</th><th>Cracked</th><th>Breached</th><th>Critical</th><th>DA paths</th></tr>
 {{range .Domains}}<tr><td>{{.Domain}}</td><td>{{.Total}}</td><td>{{.Cracked}}</td><td>{{.Breached}}</td><td style="color:#fb7185">{{.Critical}}</td><td style="color:#fb7185">{{.DA}}</td></tr>{{end}}
+</table></div>
+
+<div class="label">Exposure × Impact</div>
+<div class="panel"><table>
+<tr><th>Exposure \ Impact</th><th>Critical</th><th>High</th><th>Medium</th><th>Low</th><th>Unknown</th></tr>
+{{range .Matrix}}<tr><td style="font-weight:600">{{.Exposure}}</td>{{range .Cells}}<td style="background:{{.Color}}18;color:{{.Color}};text-align:center">{{.Count}}</td>{{end}}</tr>{{end}}
 </table></div>
 
 <div class="label">Accounts ({{.Total}})</div>
