@@ -240,7 +240,7 @@ export function Reports() {
             <div className="action-sub">Every report above in one ZIP — no passwords or hashes.</div>
           </div>
           <a className="btn btn-primary" href="/api/export/all.zip" download>
-            Generate all reports (.zip)
+            Download all (.zip)
           </a>
         </div>
       </div>
