@@ -233,6 +233,56 @@ func TestFocusedHTMLRedactsAndRenders(t *testing.T) {
 // lives in the model package.
 func BuildReportFor(a []model.Account) model.Report { return model.BuildReport(a) }
 
+// TestHTMLChartsSection verifies that HTML() embeds inline SVG charts derived
+// from m.Charts, renders chart section titles, and introduces no <script> tags.
+func TestHTMLChartsSection(t *testing.T) {
+	// Two Critical cracked accounts + one Low uncracked.
+	// RiskDistribution → Critical:2, Low:1.
+	// HIBPSplit → Breached:1 (alice), Not in HIBP:2.
+	// LengthBuckets → "8–9":1 (alice, len=9), "14–15":1 (bob, len=14).
+	accts := []model.Account{
+		{Username: "alice", Domain: "CORP", Cracked: true, PasswordLength: 9,
+			HIBPBreached: true, HIBPBreachCount: 5, RiskLevel: "Critical", RiskScore: 9,
+			Complexity: "mixedalphanum"},
+		{Username: "bob", Domain: "CORP", Cracked: true, PasswordLength: 14,
+			RiskLevel: "Critical", RiskScore: 8},
+		{Username: "carol", Domain: "CORP", Cracked: false,
+			RiskLevel: "Low", RiskScore: 2},
+	}
+	var b bytes.Buffer
+	if err := HTML(&b, "ChartTest", time.Unix(1_700_000_000, 0), accts); err != nil {
+		t.Fatal(err)
+	}
+	out := b.String()
+
+	// Must contain inline SVG chart elements.
+	if !strings.Contains(out, "<svg") {
+		t.Error("HTML output should contain <svg chart elements")
+	}
+	// Self-contained requirement: no <script> tags ever.
+	if strings.Contains(out, "<script") {
+		t.Error("HTML output must not contain <script> tags (self-contained requirement)")
+	}
+	// Chart section label must appear.
+	if !strings.Contains(out, ">Charts<") {
+		t.Error("HTML output missing Charts section label")
+	}
+	// Chart card titles must appear.
+	for _, title := range []string{"Risk distribution", "Password length", "HIBP exposure"} {
+		if !strings.Contains(out, title) {
+			t.Errorf("HTML output missing chart card title %q", title)
+		}
+	}
+	// SVG value text for the Critical count (2) must appear — e.g. fill="#e8edf7">2</text>.
+	if !strings.Contains(out, `fill="#e8edf7">2</text>`) {
+		t.Error("charts SVG should contain a bar value of 2 (2 Critical accounts in RiskDistribution)")
+	}
+	// The "8–9" length bucket label must appear (alice, length=9).
+	if !strings.Contains(out, "8") {
+		t.Error("charts SVG should contain the 8–9 length bucket label")
+	}
+}
+
 func TestFocusedHTMLHasGapColumns(t *testing.T) {
 	accts := []model.Account{
 		{Username: "alice", Domain: "CORP", Cracked: true, Complexity: "mixedalphaspecialnum",

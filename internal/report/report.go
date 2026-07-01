@@ -239,7 +239,9 @@ type htmlData struct {
 	Risk                         []riskRow
 	Domains                      []domRow
 	Matrix                       []matrixRow
-	Accounts                     []model.Account
+	// Charts holds pre-rendered SVG chart cards (inline SVG, no scripts).
+	Charts   []template.HTML
+	Accounts []model.Account
 }
 
 var riskColor = map[string]string{"Critical": "#fb7185", "High": "#fbbf24", "Medium": "#a3e635", "Low": "#22d3ee"}
@@ -317,6 +319,26 @@ func HTML(w io.Writer, name string, generated time.Time, accounts []model.Accoun
 		d.Matrix = append(d.Matrix, row)
 	}
 
+	// Precompute chart SVGs from m.Charts — inline SVG, no scripts, no external assets.
+	// Deferred series (scatter/axis-factor): HIBPVsRisk, PasswordAgeScatter, AxisFactorBars.
+	allCards := []template.HTML{
+		chartCard("Risk distribution", svgSliceAsBar(m.Charts.RiskDistribution)),
+		chartCard("HIBP exposure", svgSliceAsBar(m.Charts.HIBPSplit)),
+		chartCard("Password expiration", svgSliceAsBar(m.Charts.ExpirationSplit)),
+		chartCard("Password length", svgBarChart(m.Charts.LengthBuckets, "")),
+		chartCard("Risk score", svgBarChart(m.Charts.ScoreBuckets, "")),
+		chartCard("Account sharing", svgBarChart(m.Charts.SharingDistribution, "")),
+		chartCard("Controlled objects", svgBarChart(m.Charts.ControlledObjectsBuckets, "")),
+		chartCard("Password similarity", svgBarChart(m.Charts.SimilarityBuckets, "")),
+		chartCard("DA pathways by domain", svgBarChart(m.Charts.DAExposureByDomain, "#fb7185")),
+		chartCard("Password complexity", svgBarChart(m.Charts.ComplexityCounts, "")),
+	}
+	for _, c := range allCards {
+		if c != "" {
+			d.Charts = append(d.Charts, c)
+		}
+	}
+
 	return htmlTemplate.Execute(w, d)
 }
 
@@ -362,6 +384,9 @@ td{padding:7px 10px;border-bottom:1px solid #1b2236;white-space:nowrap}
 .muted{color:var(--faint)}
 .wtag{display:inline-block;font-size:10px;color:#fbbf24;border:1px solid rgba(251,191,36,.4);background:rgba(251,191,36,.1);border-radius:999px;padding:1px 7px;margin:1px 2px 1px 0}
 .foot{color:var(--faint);font-size:11px;margin-top:30px;text-align:center}
+.chart-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:14px}
+.chart-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+.chart-title{font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--faint);margin-bottom:10px;font-weight:600}
 </style></head>
 <body><div class="wrap">
 <h1>{{.Name}}</h1>
@@ -409,6 +434,11 @@ td{padding:7px 10px;border-bottom:1px solid #1b2236;white-space:nowrap}
 <tr><th>Exposure \ Impact</th><th>Critical</th><th>High</th><th>Medium</th><th>Low</th><th>Unknown</th></tr>
 {{range .Matrix}}<tr><td style="font-weight:600">{{.Exposure}}</td>{{range .Cells}}<td style="background:{{.Color}}18;color:{{.Color}};text-align:center">{{.Count}}</td>{{end}}</tr>{{end}}
 </table></div>
+
+{{if .Charts}}
+<div class="label">Charts</div>
+<div class="chart-grid">{{range .Charts}}{{.}}{{end}}</div>
+{{end}}
 
 <div class="label">Accounts ({{.Total}})</div>
 <div class="panel"><table>
