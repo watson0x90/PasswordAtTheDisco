@@ -1,11 +1,89 @@
 package report
 
 import (
+	"archive/zip"
+	"encoding/json"
+	"fmt"
+	"io"
 	"strconv"
 	"time"
 
+	"github.com/watson0x90/PasswordAtTheDisco/internal/metrics"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 )
+
+// bundleReport is the top-level JSON document written to report.json inside the
+// BundleZip archive. It is an allowlist structure.
+type bundleReport struct {
+	SchemaVersion int               `json:"schema_version"`
+	GeneratedAt   time.Time         `json:"generated_at"`
+	ToolVersion   string            `json:"tool_version"`
+	Scope         string            `json:"scope"`
+	Cleartext     bool              `json:"cleartext"`
+	Metrics       metrics.Metrics   `json:"metrics"`
+	Accounts      []BundleAccount   `json:"accounts"`
+	Images        map[string]string `json:"images"`
+}
+
+// BundleZip writes a self-contained ZIP archive to w. The archive contains:
+//   - report.json — indented JSON of bundleReport (accounts via bundleAccounts,
+//     images manifest mapping chart name -> "images/<name>.svg").
+//   - images/<name>.svg — one entry per ChartSVGs(m) result.
+//
+// Binding constraints:
+//   - stdlib only (archive/zip, encoding/json).
+//   - Sanitized bundle (cleartext=false): no cleartext password, no NTHash anywhere.
+//   - Cleartext bundle: password only in report.json accounts, never in SVG images.
+//   - NTHash is NEVER emitted in any output path.
+func BundleZip(w io.Writer, name, scope string, cleartext bool, m metrics.Metrics, accounts []model.Account, now time.Time, version string) error {
+	charts := ChartSVGs(m)
+
+	// Build the images manifest (only entries that will actually be written).
+	images := make(map[string]string, len(charts))
+	for _, c := range charts {
+		images[c.Name] = fmt.Sprintf("images/%s.svg", c.Name)
+	}
+
+	rep := bundleReport{
+		SchemaVersion: 1,
+		GeneratedAt:   now,
+		ToolVersion:   version,
+		Scope:         scope,
+		Cleartext:     cleartext,
+		Metrics:       m,
+		Accounts:      bundleAccounts(accounts, cleartext, now),
+		Images:        images,
+	}
+
+	zw := zip.NewWriter(w)
+
+	// Write report.json.
+	rjBytes, err := json.MarshalIndent(rep, "", "  ")
+	if err != nil {
+		return fmt.Errorf("bundle: marshal report: %w", err)
+	}
+	rjf, err := zw.Create("report.json")
+	if err != nil {
+		return fmt.Errorf("bundle: create report.json: %w", err)
+	}
+	if _, err := rjf.Write(rjBytes); err != nil {
+		return fmt.Errorf("bundle: write report.json: %w", err)
+	}
+
+	// Write each chart SVG into images/.
+	for _, c := range charts {
+		path := fmt.Sprintf("images/%s.svg", c.Name)
+		cf, err := zw.Create(path)
+		if err != nil {
+			return fmt.Errorf("bundle: create %s: %w", path, err)
+		}
+		if _, err := io.WriteString(cf, c.SVG); err != nil {
+			return fmt.Errorf("bundle: write %s: %w", path, err)
+		}
+	}
+
+	return zw.Close()
+}
 
 // BundlePeer is an identified similar-peer reference for the model export bundle.
 // Unlike SanitizedPeer (which uses an opaque id), BundlePeer carries the real

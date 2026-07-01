@@ -1,11 +1,15 @@
 package report
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/json"
+	"io"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/watson0x90/PasswordAtTheDisco/internal/metrics"
 	"github.com/watson0x90/PasswordAtTheDisco/internal/model"
 )
 
@@ -16,6 +20,82 @@ func mustJSON(t *testing.T, v any) string {
 		t.Fatalf("mustJSON: %v", err)
 	}
 	return string(b)
+}
+
+func TestBundleZip(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	accts := []model.Account{
+		{Username: "alice", Domain: "A", NTHash: "AAAA0000AAAA0000AAAA0000AAAA0000", Cracked: true, Password: "Hunter2", PasswordLength: 7, RiskLevel: "High", RiskScore: 7},
+		{Username: "bob", Domain: "B", NTHash: "AAAA0000AAAA0000AAAA0000AAAA0000", Cracked: true, Password: "Hunter2", PasswordLength: 7, RiskLevel: "High", RiskScore: 7},
+	}
+	m := metrics.Compute(accts, now)
+
+	// --- sanitized ---
+	var buf bytes.Buffer
+	if err := BundleZip(&buf, "Eng", "org", false, m, accts, now, "vtest"); err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := map[string][]byte{}
+	for _, f := range zr.File {
+		rc, _ := f.Open()
+		b, _ := io.ReadAll(rc)
+		rc.Close()
+		files[f.Name] = b
+	}
+	rj, ok := files["report.json"]
+	if !ok {
+		t.Fatal("missing report.json")
+	}
+	var rep bundleReport
+	if err := json.Unmarshal(rj, &rep); err != nil {
+		t.Fatal(err)
+	}
+	if rep.Cleartext || rep.Scope != "org" {
+		t.Errorf("scope/cleartext wrong: %+v", rep.Scope)
+	}
+	// every image in the manifest exists as a zip entry.
+	for name, path := range rep.Images {
+		if _, ok := files[path]; !ok {
+			t.Errorf("manifest references missing image %s -> %s", name, path)
+		}
+	}
+	// sanitized zip bytes carry no cleartext/hash.
+	all := buf.String()
+	if strings.Contains(all, "Hunter2") || strings.Contains(all, "AAAA0000") {
+		t.Error("sanitized bundle LEAKED a secret")
+	}
+
+	// --- cleartext ---
+	var cbuf bytes.Buffer
+	if err := BundleZip(&cbuf, "Eng", "org", true, m, accts, now, "vtest"); err != nil {
+		t.Fatal(err)
+	}
+	czr, _ := zip.NewReader(bytes.NewReader(cbuf.Bytes()), int64(cbuf.Len()))
+	var cj []byte
+	imgHasSecret := false
+	for _, f := range czr.File {
+		rc, _ := f.Open()
+		b, _ := io.ReadAll(rc)
+		rc.Close()
+		if f.Name == "report.json" {
+			cj = b
+		} else if strings.HasPrefix(f.Name, "images/") && strings.Contains(string(b), "Hunter2") {
+			imgHasSecret = true
+		}
+	}
+	if !strings.Contains(string(cj), "Hunter2") {
+		t.Error("cleartext bundle report.json should contain the password")
+	}
+	if imgHasSecret {
+		t.Error("cleartext MUST NOT appear in any image svg")
+	}
+	if strings.Contains(string(cj), "AAAA0000") {
+		t.Error("NT hash must never appear")
+	}
 }
 
 func TestBundleAccounts(t *testing.T) {
