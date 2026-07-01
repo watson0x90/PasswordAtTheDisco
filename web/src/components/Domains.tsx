@@ -218,7 +218,6 @@ function DomainDetail({ domain, accounts, onBack }: { domain: string; accounts: 
       <OverviewView
         accounts={accounts}
         summary={dm.summary}
-        report={null}
         title={domain}
         subtitle="Where does this domain stand?"
         matrix={dm.matrix}

@@ -1,13 +1,12 @@
 import { useAccountsData } from "../accountsData"
 import { useAudits } from "../auditsData"
-import { axisFactorBars, complexityCounts, controlledObjectsBuckets, crossDomainReuseGraph, daExposureByDomain, expirationSplit, hibpVsRisk, passwordAgeBuckets, passwordAgeScatter, scoreBuckets, sharingDistribution, similarityBuckets, topRiskiest } from "../insights"
 import type { TierFactorBars } from "../insights"
 import { AccountLink } from "./AccountLink"
 import { AxisFactorBars, Bars, ChartCard, Donut, HBars, ScatterPlot } from "./Charts"
 import { NetworkGraph } from "./NetworkGraph"
 import { SimilarityClusters } from "./SimilarityClusters"
 import { RISK_CLASS, hasDA } from "../util"
-import type { Account, Report } from "../api"
+import type { Account } from "../api"
 import type { ChartSeries, Graph, TierFactorBars as BundleTierFactorBars } from "../metricsBundle"
 
 // The bundle's TierFactorBars uses impact_known (Go JSON tag) while the insights.ts
@@ -17,16 +16,17 @@ function normalizeTierFactorBars(bars: BundleTierFactorBars[]): TierFactorBars[]
   return bars.map((b) => ({ ...b, impactKnown: b.impact_known }))
 }
 
+// charts is required — both callers gate on bundleReady so the bundle is always
+// present when Insights is rendered. accounts is still needed for the SimilarityClusters
+// node-click breakdown; reuseGraph is org-only (absent on per-domain path by design).
 export function Insights({
-  report,
   accounts: accountsProp,
   charts,
   reuseGraph,
   similarityGraph,
 }: {
-  report: Report | null
   accounts?: Account[]
-  charts?: ChartSeries
+  charts: ChartSeries
   reuseGraph?: Graph
   similarityGraph?: Graph
 }) {
@@ -39,24 +39,22 @@ export function Insights({
   if (!accounts) return <div className="center-state"><div className="spinner">loading</div></div>
   if (accounts.length === 0) return <div className="center-state">No data in this audit yet — upload a domain to populate insights.</div>
 
-  // When charts bundle is provided (org path), use server-computed series.
-  // When absent (per-domain path), fall back to client-side compute from accounts.
-  const scoreBucketsData = charts ? charts.score_buckets : scoreBuckets(accounts)
-  const sharingData = charts ? charts.sharing_distribution : sharingDistribution(accounts)
-  const hibpVsRiskData = charts ? charts.hibp_vs_risk : hibpVsRisk(accounts)
-  const complexity = charts ? charts.complexity_counts : complexityCounts(accounts)
-  const da = charts ? charts.da_exposure_by_domain : daExposureByDomain(accounts)
-  const controlledBuckets = charts ? charts.controlled_objects_buckets : controlledObjectsBuckets(accounts)
-  const ageBuckets = charts ? charts.password_age_buckets : passwordAgeBuckets(accounts)
-  const simBuckets = charts ? charts.similarity_buckets : similarityBuckets(accounts)
+  // All series come from the Go bundle (server-computed). Parent gates on bundleReady
+  // so charts is always present — no client-compute fallbacks remain.
+  const scoreBucketsData = charts.score_buckets
+  const sharingData = charts.sharing_distribution
+  const hibpVsRiskData = charts.hibp_vs_risk
+  const complexity = charts.complexity_counts
+  const da = charts.da_exposure_by_domain
+  const controlledBuckets = charts.controlled_objects_buckets
+  const ageBuckets = charts.password_age_buckets
+  const simBuckets = charts.similarity_buckets
   // Normalize impact_known → impactKnown for Charts.tsx compatibility
-  const axisBars = charts ? normalizeTierFactorBars(charts.axis_factor_bars) : axisFactorBars(accounts)
-  const ageScatter = charts ? charts.password_age_scatter : passwordAgeScatter(accounts)
-  const expirSlices = charts ? charts.expiration_split : expirationSplit(accounts)
-  const crossDomain = reuseGraph ?? crossDomainReuseGraph(report, accounts)
-  // topRiskiest: AccountRef now carries enabled/da_domains/hibp_breached, so use the
-  // bundle's server-computed list on the org path and fall back to client-compute for domains.
-  const topN = charts ? charts.top_riskiest : topRiskiest(accounts, 10)
+  const axisBars = normalizeTierFactorBars(charts.axis_factor_bars)
+  const ageScatter = charts.password_age_scatter
+  const expirSlices = charts.expiration_split
+  // topRiskiest is server-computed (AccountRef carries enabled/da_domains/hibp_breached).
+  const topN = charts.top_riskiest
 
   return (
     <>
@@ -141,16 +139,18 @@ export function Insights({
             <div className="chart-empty">No expiration data — run BloodHound enrichment to populate.</div>
           )}
         </ChartCard>
-        <ChartCard title="Cross-domain credential reuse">
-          {crossDomain.nodes.length >= 2 ? (
-            <NetworkGraph nodes={crossDomain.nodes} edges={crossDomain.edges} />
-          ) : (
-            <div className="chart-empty">Cross-domain graph requires ≥ 2 domains with shared credentials.</div>
-          )}
-        </ChartCard>
+        {reuseGraph && (
+          <ChartCard title="Cross-domain credential reuse">
+            {reuseGraph.nodes.length >= 2 ? (
+              <NetworkGraph nodes={reuseGraph.nodes} edges={reuseGraph.edges} />
+            ) : (
+              <div className="chart-empty">Cross-domain graph requires ≥ 2 domains with shared credentials.</div>
+            )}
+          </ChartCard>
+        )}
       </div>
 
-      <SimilarityClusters accounts={accounts} graph={similarityGraph} />
+      {similarityGraph && <SimilarityClusters accounts={accounts} graph={similarityGraph} />}
 
       <div className="section-label">Top 10 Riskiest Accounts</div>
       <div className="panel">

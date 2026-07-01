@@ -1,11 +1,10 @@
-import { useEffect, useState, type ReactNode } from "react"
-import { api, ApiError, type Account, type BreachImpact, type Posture, type Report, type Summary } from "../api"
+import { useState, type ReactNode } from "react"
+import { ApiError, type Account, type BreachImpact, type Posture, type Summary } from "../api"
 import { useAuth } from "../auth"
 import { useAudits } from "../auditsData"
 import { useAccountsData } from "../accountsData"
 import { useNav } from "../nav"
-import { riskDistribution, hibpSplit, lengthBuckets, kpiCounts } from "../insights"
-import { coverageStats, exposureImpactMatrix, isProvisional, TIERS, type ExposureImpactMatrix, type ImpactCol, type Tier } from "../matrix"
+import { TIERS, type ExposureImpactMatrix, type ImpactCol, type Tier } from "../matrix"
 import { Bars, ChartCard, Donut, MatrixHeatmap } from "./Charts"
 import { ExposureHeadline } from "./ExposureHeadline"
 import { Insights } from "./Insights"
@@ -56,19 +55,11 @@ function bundleMatrixToEI(m: BundleMatrix): ExposureImpactMatrix {
 
 export function Dashboard() {
   const nav = useNav()
-  const { activeId, audits, loading: auditsLoading, dataVersion } = useAudits()
+  const { activeId, audits, loading: auditsLoading } = useAudits()
   const { accounts, error } = useAccountsData()
   // Posture / summary comes from the MetricsBundle (single server fetch) so it
-  // never drifts from the score the heatmap and coverage banner display. The
-  // separate api.summary() call is dropped in favour of bundle.summary.
+  // never drifts from the score the heatmap and coverage banner display.
   const { bundle, loading: bundleLoading } = useMetrics()
-
-  const [report, setReport] = useState<Report | null>(null)
-  useEffect(() => {
-    let alive = true
-    api.report().then((r) => alive && setReport(r)).catch(() => {})
-    return () => { alive = false }
-  }, [activeId, dataVersion])
 
   if (auditsLoading) return <div className="center-state"><div className="spinner">loading</div></div>
   if (!activeId) {
@@ -79,29 +70,27 @@ export function Dashboard() {
   if (!accounts) return <div className="center-state"><div className="spinner">loading</div></div>
   if (accounts.length === 0) return <GetStarted />
 
-  // Gate on both loading flag and bundle presence: the provider briefly holds a
-  // stale bundle across audit switches, so we must not render the org Overview
-  // with a cross-audit bundle. When not ready, summary/matrix/coverageEnriched
-  // are all undefined and OverviewView falls back to account-computed values.
+  // Gate on bundle readiness: the provider briefly holds a stale bundle across
+  // audit switches. Render the loading state until the bundle is ready so
+  // OverviewView always receives real server-computed data (no account-compute fallback).
   const bundleReady = !bundleLoading && bundle !== null
-  const summary = bundleReady ? bundle.summary : null
+  if (!bundleReady) return <div className="center-state"><div className="spinner">loading</div></div>
 
   return (
     <>
       <OverviewView
         accounts={accounts}
-        summary={summary}
-        report={report}
-        matrix={bundleReady ? bundle.matrix : undefined}
-        coverageEnriched={bundleReady ? bundle.summary.coverage_enriched : undefined}
-        charts={bundleReady ? bundle.charts : undefined}
-        reuseGraph={bundleReady ? bundle.reports.reuse_graph : undefined}
-        exposureHeadline={bundleReady ? bundle.reports.exposure_headline : undefined}
-        similarityGraph={bundleReady ? bundle.reports.similarity_graph : undefined}
+        summary={bundle.summary}
+        matrix={bundle.matrix}
+        coverageEnriched={bundle.summary.coverage_enriched}
+        charts={bundle.charts}
+        reuseGraph={bundle.reports.reuse_graph}
+        exposureHeadline={bundle.reports.exposure_headline}
+        similarityGraph={bundle.reports.similarity_graph}
         subtitle="Where do we stand? Org-wide posture at a glance."
         actions={
           <>
-            <RecalcControl hasScored={!!summary?.generated_at} />
+            <RecalcControl hasScored={!!bundle.summary.generated_at} />
             <button className="btn" onClick={() => nav("reports")}>Reports &amp; export →</button>
           </>
         }
@@ -113,20 +102,21 @@ export function Dashboard() {
 }
 
 // OverviewView is the presentational Overview dashboard, shared by the org Dashboard
-// (its default render) and the per-domain page (fed domain-scoped accounts/summary/
-// report). Its own body derives only from props — no context, no fetching. Org-global
-// chrome that DOES need context (the Recalc/Reports buttons, the rescore-suggestion
-// banner, the background-jobs card) is injected by the Dashboard wrapper via the
-// `actions` and `notice` slots / rendered as siblings, so the domain page never shows it.
+// (its default render) and the per-domain page (fed domain-scoped accounts/summary).
+// Its own body derives only from props — no context, no fetching. Org-global chrome
+// (Recalc/Reports buttons, rescore-suggestion banner, background-jobs card) is
+// injected via the `actions` and `notice` slots so the domain page never shows it.
+// All bundle props are required — both callers gate on bundleReady, so every prop is
+// guaranteed to be present when OverviewView is rendered. reuseGraph is optional
+// (org-only; absent on the per-domain path by design).
 export function OverviewView({
   accounts,
   summary,
-  report,
   title = "Overview",
   subtitle = "Where do we stand? Posture at a glance.",
   actions,
   notice,
-  matrix: bundleMatrix,
+  matrix,
   coverageEnriched,
   charts,
   reuseGraph,
@@ -134,56 +124,46 @@ export function OverviewView({
   similarityGraph,
 }: {
   accounts: Account[]
-  summary: Summary | null
-  report: Report | null
+  summary: Summary
   title?: string
   subtitle?: string
   actions?: ReactNode
   notice?: ReactNode
-  // Optional — when provided by the org Dashboard the heatmap, coverage banner,
-  // and Impact Unknown count use the server-computed bundle values instead of
-  // recomputing from the accounts array. When absent (Domains.tsx per-domain path)
-  // the existing account-derived computation is used unchanged.
-  matrix?: BundleMatrix
-  coverageEnriched?: number
-  // When provided (org path), Insights renders chart series from the bundle
-  // instead of recomputing client-side. Absent on the per-domain path.
-  charts?: ChartSeries
+  // Bundle-sourced — required; both callers (org Dashboard, per-domain DomainDetail)
+  // gate on bundleReady so these are always present when OverviewView is rendered.
+  matrix: BundleMatrix
+  coverageEnriched: number
+  charts: ChartSeries
+  // reuseGraph is org-only (cross-domain reuse); absent on the per-domain path.
   reuseGraph?: Graph
-  // When provided (org path), ExposureHeadline uses server-computed values
-  // instead of computing client-side. Absent on per-domain path.
-  exposureHeadline?: BundleExposureHeadline
-  // When provided (org path), SimilarityClusters uses server-computed graph
-  // instead of computing client-side. Absent on the per-domain path.
-  similarityGraph?: Graph
+  exposureHeadline: BundleExposureHeadline
+  similarityGraph: Graph
 }) {
-  const { total, cracked, breached, da } = kpiCounts(summary, accounts)
+  // KPIs from server summary — authoritative counts that match the report/export.
+  const total = summary.total_accounts
+  const cracked = summary.cracked
+  const breached = summary.hibp_breached
+  const da = summary.da_pathways
   const crackPct = total ? Math.round((cracked / total) * 100) : 0
 
-  // Coverage banner: prefer bundle value (server-computed) when present.
-  const cov =
-    coverageEnriched !== undefined && bundleMatrix !== undefined
-      ? { enriched: coverageEnriched, total: bundleMatrix.total, partial: coverageEnriched < bundleMatrix.total }
-      : coverageStats(accounts)
+  // Coverage banner: server-computed enrichment count against the bundle matrix total.
+  const cov = { enriched: coverageEnriched, total: matrix.total, partial: coverageEnriched < matrix.total }
 
-  // Exposure × Impact matrix: prefer bundle (Go server) when present; fall back to
-  // client-side compute for the per-domain path (Domains.tsx passes no bundleMatrix).
-  const eiMatrix: ExposureImpactMatrix = bundleMatrix
-    ? bundleMatrixToEI(bundleMatrix)
-    : exposureImpactMatrix(accounts)
+  // Exposure × Impact matrix: always from the bundle (Go server-computed).
+  const eiMatrix: ExposureImpactMatrix = bundleMatrixToEI(matrix)
 
-  // Impact Unknown: sum the "Unknown" column from the bundle matrix, or count via
-  // isProvisional on the per-domain accounts fallback.
-  const impactUnknown = bundleMatrix
-    ? TIERS.reduce((sum, tier) => sum + ((bundleMatrix.counts[tier] as Record<string, number>)["Unknown"] ?? 0), 0)
-    : accounts.filter(isProvisional).length
+  // Impact Unknown: sum the "Unknown" column across all exposure tiers in the bundle matrix.
+  const impactUnknown = TIERS.reduce(
+    (sum, tier) => sum + ((matrix.counts[tier] as Record<string, number>)["Unknown"] ?? 0),
+    0,
+  )
 
   return (
     <>
       <div className="view-head">
         <div className="section-label">{title}</div>
         <div className="export-actions">
-          {summary?.generated_at && <span className="muted data-ts">Data scored {new Date(summary.generated_at).toLocaleString()}</span>}
+          {summary.generated_at && <span className="muted data-ts">Data scored {new Date(summary.generated_at).toLocaleString()}</span>}
           {actions}
         </div>
       </div>
@@ -206,29 +186,23 @@ export function OverviewView({
         <Stat label="Impact Unknown" value={impactUnknown} sub="no BloodHound coverage" tip={GLOSSARY.impact_unknown} accent delay={0.24} />
       </div>
 
-      <ExposureHeadline accounts={accounts} report={report} headline={exposureHeadline} />
-      {summary && (
-        <div className="stat-grid stat-grid-secondary">
-          <Stat label="Disabled" value={summary.disabled_accounts} delay={0} />
-          <Stat label="Never Expires" value={summary.never_expires} sub="password set to never expire" delay={0.06} />
-          <Stat label="Stale Passwords" value={summary.stale_passwords} sub="past max age policy" accent delay={0.12} />
-          <Stat label="Policy Violations" value={summary.policy_violations} sub="cracked & failing policy" accent delay={0.18} />
-          <Stat label="Escalated (Shared-DA)" value={summary.escalated_by_shared_da} sub="shares hash with a DA" tip={GLOSSARY.escalated_shared_da} crit delay={0.24} />
-          <Stat label="High Privilege" value={summary.high_controlled} sub="controls > 100 objects" tip={GLOSSARY.high_controlled} crit delay={0.3} />
-        </div>
-      )}
+      <ExposureHeadline headline={exposureHeadline} />
+      <div className="stat-grid stat-grid-secondary">
+        <Stat label="Disabled" value={summary.disabled_accounts} delay={0} />
+        <Stat label="Never Expires" value={summary.never_expires} sub="password set to never expire" delay={0.06} />
+        <Stat label="Stale Passwords" value={summary.stale_passwords} sub="past max age policy" accent delay={0.12} />
+        <Stat label="Policy Violations" value={summary.policy_violations} sub="cracked & failing policy" accent delay={0.18} />
+        <Stat label="Escalated (Shared-DA)" value={summary.escalated_by_shared_da} sub="shares hash with a DA" tip={GLOSSARY.escalated_shared_da} crit delay={0.24} />
+        <Stat label="High Privilege" value={summary.high_controlled} sub="controls > 100 objects" tip={GLOSSARY.high_controlled} crit delay={0.3} />
+      </div>
 
       <div className="section-label">Security Posture</div>
-      {summary ? (
-        <PostureCard
-          posture={summary.posture}
-          breachImpact={summary.breach_impact}
-          dormantPrivileged={summary.dormant_privileged}
-          enabledCount={summary.total_accounts - summary.disabled_accounts}
-        />
-      ) : (
-        <div className="panel"><div className="center-state"><div className="spinner">scoring</div></div></div>
-      )}
+      <PostureCard
+        posture={summary.posture}
+        breachImpact={summary.breach_impact}
+        dormantPrivileged={summary.dormant_privileged}
+        enabledCount={summary.total_accounts - summary.disabled_accounts}
+      />
 
       <div className="section-label">Exposure × Impact <InfoTip text={GLOSSARY.exposure_impact_matrix} /></div>
       <div className="panel matrix-panel">
@@ -238,17 +212,17 @@ export function OverviewView({
       <div className="section-label">Charts</div>
       <div className="chart-grid">
         <ChartCard title="Risk distribution">
-          <Donut data={charts ? charts.risk_distribution : riskDistribution(accounts)} />
+          <Donut data={charts.risk_distribution} />
         </ChartCard>
         <ChartCard title="HIBP exposure">
-          <Donut data={charts ? charts.hibp_split : hibpSplit(accounts)} />
+          <Donut data={charts.hibp_split} />
         </ChartCard>
         <ChartCard title="Password length (cracked)">
-          <Bars data={charts ? charts.length_buckets : lengthBuckets(accounts)} color="#818cf8" />
+          <Bars data={charts.length_buckets} color="#818cf8" />
         </ChartCard>
       </div>
 
-      <Insights report={report} accounts={accounts} charts={charts} reuseGraph={reuseGraph} similarityGraph={similarityGraph} />
+      <Insights accounts={accounts} charts={charts} reuseGraph={reuseGraph} similarityGraph={similarityGraph} />
     </>
   )
 }

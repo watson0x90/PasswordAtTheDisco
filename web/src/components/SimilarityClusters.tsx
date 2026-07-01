@@ -1,17 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { api, ApiError, type Account } from "../api"
 import { useAuth } from "../auth"
 import { RISK_CLASS } from "../util"
-import { similarityNetwork } from "../insights"
 import { NetworkGraph } from "./NetworkGraph"
 import { AccountLink } from "./AccountLink"
 import type { Graph } from "../metricsBundle"
 
-export function SimilarityClusters({ accounts, graph }: { accounts: Account[]; graph?: Graph }) {
-  // When the bundle graph is provided (org path), use pre-computed server nodes/edges.
-  // Otherwise compute the similarity network client-side (per-domain fallback).
-  const computedNet = useMemo(() => similarityNetwork(accounts), [accounts])
-  const net = graph ?? computedNet
+// graph is required — both callers (org Dashboard and per-domain DomainDetail) pass
+// bundle.reports.similarity_graph / dm.reports.similarity_graph from the Go bundle.
+// accounts is still needed for the SimilarityBreakdown drill-down (node-click lookup).
+export function SimilarityClusters({ accounts, graph }: { accounts: Account[]; graph: Graph }) {
+  const net = graph
   const [expanded, setExpanded] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [modalH, setModalH] = useState(() => Math.round(window.innerHeight * 0.7))
