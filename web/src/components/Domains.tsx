@@ -149,11 +149,21 @@ function DomainDetail({ domain, accounts, onBack }: { domain: string; accounts: 
   const neverExpiresPage = useSortablePaged(neverExpiresRows, detailCols, { defaultSort: { key: "score", dir: "desc" } })
   const kerberoastPage = useSortablePaged(kerberoastRows, detailCols, { defaultSort: { key: "score", dir: "desc" } })
 
-  // Gate: show spinner while bundle is loading or dm entry is not yet available.
-  if (!bundleReady || !dm) {
+  // Gate: spinner while the bundle is still loading; a distinct message if the
+  // bundle is ready but this domain has no metrics entry (avoids an inescapable
+  // spinner — there is no client-compute fallback anymore).
+  if (!bundleReady) {
     return (
       <div className="center-state">
         <div className="spinner">loading</div>
+      </div>
+    )
+  }
+  if (!dm) {
+    return (
+      <div className="center-state">
+        <button className="link-btn domain-back" onClick={onBack}>← All domains</button>
+        <div>Domain metrics not available — try refreshing.</div>
       </div>
     )
   }
