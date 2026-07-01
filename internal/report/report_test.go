@@ -553,7 +553,7 @@ func TestCSVCleartextAndRedacted(t *testing.T) {
 	accts := []model.Account{
 		{Username: "alice", Domain: "CORP", Password: "Hunter2", NTHash: ntHash,
 			Cracked: true, PasswordLength: 7, RiskLevel: "High", RiskScore: 7.0,
-			BannedWords: []string{"hunter"}, BannedWordCount: 1},
+			BannedWords: []string{"zzbannedfragzz"}, BannedWordCount: 1},
 		{Username: "bob", Domain: "CORP", Cracked: false, RiskLevel: "Low", RiskScore: 2.0},
 	}
 
@@ -584,8 +584,8 @@ func TestCSVCleartextAndRedacted(t *testing.T) {
 		t.Errorf("CSVCleartext: LEAKED NT HASH:\n%s", ctOut)
 	}
 	// BannedWords substrings must never appear (only the count is safe).
-	if strings.Contains(ctOut, "hunter") {
-		t.Errorf("CSVCleartext: leaked BannedWords substring 'hunter':\n%s", ctOut)
+	if strings.Contains(ctOut, "zzbannedfragzz") {
+		t.Errorf("CSVCleartext: leaked BannedWords fragment:\n%s", ctOut)
 	}
 
 	// Uncracked account row: the password cell (index 2) must be empty.
@@ -630,12 +630,17 @@ func TestHTMLCleartextAndRedacted(t *testing.T) {
 	const pw = "Hunter2"
 	when := time.Unix(1_700_000_000, 0)
 
+	const xssPw = `"><script>alert(1)</script>`
 	accts := []model.Account{
 		{Username: "alice", Domain: "CORP", Password: pw, NTHash: ntHash,
 			Cracked: true, PasswordLength: 7, RiskLevel: "High", RiskScore: 7.0,
-			BannedWords: []string{"hunter"}, BannedWordCount: 1,
-			KeyboardPatterns: []string{"qwerty"}, KeyboardPatternCount: 1},
+			BannedWords: []string{"zzbannedfragzz"}, BannedWordCount: 1,
+			KeyboardPatterns: []string{"zzkeyboardfragzz"}, KeyboardPatternCount: 1},
 		{Username: "bob", Domain: "CORP", Cracked: false, RiskLevel: "Low", RiskScore: 2.0},
+		// A cracked account whose cleartext is hostile markup — proves the password
+		// cell is auto-escaped by html/template (element-content context), not live.
+		{Username: "mallory", Domain: "CORP", Password: xssPw, Cracked: true,
+			PasswordLength: 26, RiskLevel: "Critical", RiskScore: 9.0},
 	}
 
 	// --- HTMLCleartext ---
@@ -661,15 +666,19 @@ func TestHTMLCleartextAndRedacted(t *testing.T) {
 		t.Errorf("HTMLCleartext: LEAKED NT HASH")
 	}
 	// Must NOT contain raw wordlist fragments.
-	if strings.Contains(ctOut, "hunter") {
-		t.Errorf("HTMLCleartext: leaked BannedWords fragment 'hunter'")
+	if strings.Contains(ctOut, "zzbannedfragzz") {
+		t.Errorf("HTMLCleartext: leaked BannedWords fragment")
 	}
-	if strings.Contains(ctOut, "qwerty") {
-		t.Errorf("HTMLCleartext: leaked KeyboardPatterns fragment 'qwerty'")
+	if strings.Contains(ctOut, "zzkeyboardfragzz") {
+		t.Errorf("HTMLCleartext: leaked KeyboardPatterns fragment")
 	}
-	// Self-contained: no <script> tags.
+	// Self-contained AND escaping proof: a cracked password of hostile markup must
+	// be auto-escaped, so no live <script> tag appears and the escaped form does.
 	if strings.Contains(ctOut, "<script") {
-		t.Errorf("HTMLCleartext: must not contain <script> tags (self-contained requirement)")
+		t.Errorf("HTMLCleartext: hostile password not escaped — live <script> in output")
+	}
+	if !strings.Contains(ctOut, "&lt;script&gt;alert(1)&lt;/script&gt;") {
+		t.Errorf("HTMLCleartext: expected escaped password markup (&lt;script&gt;...) not found — auto-escaping not exercised")
 	}
 	// Password column header must appear.
 	if !strings.Contains(ctOut, "<th>Password</th>") {

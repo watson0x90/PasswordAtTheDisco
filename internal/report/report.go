@@ -117,26 +117,31 @@ func CSVCleartext(w io.Writer, accounts []model.Account) error {
 
 func csvReport(w io.Writer, accounts []model.Account, cleartext bool) error {
 	cw := csv.NewWriter(w)
-	var header []string
+	// The password column exists only in the cleartext variant; every other column
+	// is identical, so build a single header and splice in "password" after
+	// "username" when needed.
+	header := []string{"domain", "username"}
 	if cleartext {
-		header = []string{
-			"domain", "username", "password", "enabled", "status", "password_length", "complexity",
-			"meets_policy", "risk_level", "risk_score", "risk_vector", "hibp_found", "hibp_breach_count",
-			"reused", "shared_with", "tier0_pathway", "tier0_pathway_domains", "controlled_objects",
-			"common_password", "dictionary_word", "forbidden_words", "keyboard_patterns",
-		}
-	} else {
-		header = []string{
-			"domain", "username", "enabled", "status", "password_length", "complexity",
-			"meets_policy", "risk_level", "risk_score", "risk_vector", "hibp_found", "hibp_breach_count",
-			"reused", "shared_with", "tier0_pathway", "tier0_pathway_domains", "controlled_objects",
-			"common_password", "dictionary_word", "forbidden_words", "keyboard_patterns",
-		}
+		header = append(header, "password")
 	}
+	header = append(header,
+		"enabled", "status", "password_length", "complexity",
+		"meets_policy", "risk_level", "risk_score", "risk_vector", "hibp_found", "hibp_breach_count",
+		"reused", "shared_with", "tier0_pathway", "tier0_pathway_domains", "controlled_objects",
+		"common_password", "dictionary_word", "forbidden_words", "keyboard_patterns",
+	)
 	if err := cw.Write(header); err != nil {
 		return err
 	}
-	for _, a := range accounts {
+	for i := range accounts {
+		// Defense in depth: project through the redaction that matches the mode
+		// BEFORE reading any field, so a future column addition can never leak an
+		// NT hash or wordlist fragment even if it references a raw account field.
+		// The cleartext projection keeps Password; the redacted one clears it too.
+		a := accounts[i].Redacted()
+		if cleartext {
+			a = accounts[i].RedactedKeepPassword()
+		}
 		status := "Uncracked"
 		pwLen := "" // password length is only meaningful for a cracked account
 		if a.Cracked {
@@ -148,32 +153,23 @@ func csvReport(w io.Writer, accounts []model.Account, cleartext bool) error {
 		if tier0 {
 			tier0Domains = a.DADomains
 		}
-		var row []string
+		row := []string{csvSafe(a.Domain), csvSafe(a.Username)}
 		if cleartext {
-			pw := ""
+			pw := "" // cleartext only for cracked accounts
 			if a.Cracked {
 				pw = csvSafe(a.Password)
 			}
-			row = []string{
-				csvSafe(a.Domain), csvSafe(a.Username), pw, yesNo(a.Enabled), status, pwLen, csvSafe(pwanalysis.ComplexityLabel(a.Complexity)),
-				yesNo(a.MeetsPolicy), csvSafe(a.RiskLevel), strconv.FormatFloat(a.RiskScore, 'f', 1, 64), csvSafe(a.RiskVector),
-				yesNo(a.HIBPBreached), strconv.Itoa(a.HIBPBreachCount),
-				yesNo(a.SharedWith > 0), strconv.Itoa(a.SharedWith),
-				yesNo(tier0), csvSafe(tier0Domains), strconv.Itoa(a.Controlled),
-				// wordlist weakness signals (counts/booleans only -- never the matched word)
-				yesNo(a.IsCommon), yesNo(a.IsDictionaryWord), strconv.Itoa(a.BannedWordCount), strconv.Itoa(a.KeyboardPatternCount),
-			}
-		} else {
-			row = []string{
-				csvSafe(a.Domain), csvSafe(a.Username), yesNo(a.Enabled), status, pwLen, csvSafe(pwanalysis.ComplexityLabel(a.Complexity)),
-				yesNo(a.MeetsPolicy), csvSafe(a.RiskLevel), strconv.FormatFloat(a.RiskScore, 'f', 1, 64), csvSafe(a.RiskVector),
-				yesNo(a.HIBPBreached), strconv.Itoa(a.HIBPBreachCount),
-				yesNo(a.SharedWith > 0), strconv.Itoa(a.SharedWith),
-				yesNo(tier0), csvSafe(tier0Domains), strconv.Itoa(a.Controlled),
-				// wordlist weakness signals (counts/booleans only -- never the matched word)
-				yesNo(a.IsCommon), yesNo(a.IsDictionaryWord), strconv.Itoa(a.BannedWordCount), strconv.Itoa(a.KeyboardPatternCount),
-			}
+			row = append(row, pw)
 		}
+		row = append(row,
+			yesNo(a.Enabled), status, pwLen, csvSafe(pwanalysis.ComplexityLabel(a.Complexity)),
+			yesNo(a.MeetsPolicy), csvSafe(a.RiskLevel), strconv.FormatFloat(a.RiskScore, 'f', 1, 64), csvSafe(a.RiskVector),
+			yesNo(a.HIBPBreached), strconv.Itoa(a.HIBPBreachCount),
+			yesNo(a.SharedWith > 0), strconv.Itoa(a.SharedWith),
+			yesNo(tier0), csvSafe(tier0Domains), strconv.Itoa(a.Controlled),
+			// wordlist weakness signals (counts/booleans only -- never the matched word)
+			yesNo(a.IsCommon), yesNo(a.IsDictionaryWord), strconv.Itoa(a.BannedWordCount), strconv.Itoa(a.KeyboardPatternCount),
+		)
 		if err := cw.Write(row); err != nil {
 			return err
 		}
