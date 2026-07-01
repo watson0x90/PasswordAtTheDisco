@@ -41,6 +41,20 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
+## What's new in 2.33
+
+**One click, every report.**
+
+- **Download all reports as one ZIP.** A single **"Download all (.zip)"** button in the Reports tab bundles
+  every export — the accounts CSV, the focused cracked / HIBP / weak / reuse reports (CSV *and* HTML), the
+  full HTML report, the sanitized JSON, and the model bundle — into one archive. No more clicking through ten
+  downloads. Fully redacted: no cleartext passwords or NT hashes anywhere.
+- **Cleartext, still gated.** A lead-only **"Generate all + cleartext (.zip)"** companion adds the cracked
+  passwords into a clearly-segregated `cleartext/` folder — behind the same typed acknowledgement and
+  fail-closed audit as the rest of the cleartext tier. NT hashes are never included.
+
+Earlier: one source of truth for every number + a model-ready bundle (2.32); getting Tier-0 right (2.29).
+
 ## What's new in 2.32
 
 **One source of truth for every number — and a bundle you can hand to an AI.**
