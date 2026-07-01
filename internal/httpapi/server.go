@@ -191,6 +191,9 @@ func (s *Server) Routes() http.Handler {
 	// Cleartext exports: lead-only, CSRF-protected, fail-closed audit-logged.
 	mux.Handle("POST /api/export/cleartext.csv", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleExportCleartextCSV)))))
 	mux.Handle("POST /api/export/cleartext.html", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleExportCleartextHTML)))))
+	// Model-export bundle: sanitized GET (any operator) + gated cleartext POST (lead).
+	mux.Handle("GET /api/export/bundle.zip", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportBundle))))
+	mux.Handle("POST /api/export/cleartext.zip", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleExportCleartextBundle)))))
 	// Per-domain password policies: any operator may read; lead may edit
 	mux.Handle("GET /api/policies", s.requireAuth(http.HandlerFunc(s.handleGetPolicies)))
 	mux.Handle("PUT /api/policies", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleSetPolicies))))
@@ -2028,7 +2031,7 @@ func (s *Server) exportAccountsRead(w http.ResponseWriter, r *http.Request, labe
 	return meta, accts, true
 }
 
-// download sets attachment headers for a report file (ext "csv", "html", or "json").
+// download sets attachment headers for a report file (ext "csv", "html", "json", or "zip").
 func download(w http.ResponseWriter, name, suffix, ext string) {
 	fn := safeFilename(name)
 	if suffix != "" {
@@ -2040,6 +2043,9 @@ func download(w http.ResponseWriter, name, suffix, ext string) {
 	}
 	if ext == "json" {
 		ctype = "application/json; charset=utf-8"
+	}
+	if ext == "zip" {
+		ctype = "application/zip"
 	}
 	w.Header().Set("Content-Type", ctype)
 	w.Header().Set("Content-Disposition", `attachment; filename="`+fn+"."+ext+`"`)
@@ -2394,6 +2400,119 @@ func (s *Server) handleExportCleartextHTML(w http.ResponseWriter, r *http.Reques
 	download(w, meta.Name, suffix, "html")
 	// (7) Render — cleartext passwords are deliberately included here.
 	_ = report.HTMLCleartext(w, name, time.Now().UTC(), accts)
+}
+
+// handleExportBundle streams a self-contained ZIP bundle (report.json + images/*.svg)
+// for the active audit. Accounts are sanitized by BundleZip (no cleartext, no NT hash).
+// Full (unredacted) accounts are loaded so metrics.Compute can build accurate reuse groups;
+// sanitization is enforced inside BundleZip via cleartext=false.
+func (s *Server) handleExportBundle(w http.ResponseWriter, r *http.Request) {
+	ver := s.Build.Version
+	if ver == "" {
+		ver = "dev"
+	}
+	sess, _ := sessionFrom(r.Context())
+	id, ok := s.activeAudit(w, sess)
+	if !ok {
+		return
+	}
+	accts, err := s.Store.Accounts(id, true) // unredacted: NT hashes needed for reuse grouping; BundleZip sanitizes output
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		return
+	}
+	meta, _ := s.Store.Meta(id)
+	now := time.Now()
+	scope := "org"
+	suffix := ""
+	if domain := r.URL.Query().Get("domain"); domain != "" {
+		accts = filterAccounts(accts, func(a model.Account) bool { return a.Domain == domain })
+		if len(accts) == 0 {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "domain not found"})
+			return
+		}
+		scope = "domain:" + domain
+		suffix = safeFilename(domain)
+	}
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "export", Target: meta.Name + " — bundle (" + scope + ")", Source: r.RemoteAddr, Result: "ok"})
+	m := metrics.Compute(accts, now)
+	download(w, meta.Name, suffix, "zip")
+	_ = report.BundleZip(w, meta.Name, scope, false, m, accts, now, ver)
+}
+
+// handleExportCleartextBundle serves a lead-only, fail-closed-audited cleartext ZIP
+// bundle. Mirrors handleExportCleartextCSV gate-for-gate; cleartext appears only in
+// report.json accounts — BundleZip ensures no SVG image carries a password.
+func (s *Server) handleExportCleartextBundle(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	// (1) Lead-role check — fail-closed audit + 403.
+	if sess.Role != auth.RoleLead {
+		if !s.auditOrFail(w, audit.Event{
+			Actor: sess.Username, Role: string(sess.Role),
+			Action: "export_cleartext", Source: r.RemoteAddr, Result: "denied",
+		}) {
+			return
+		}
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	// (2) Decode JSON body; require explicit acknowledgement before loading any data.
+	defer r.Body.Close()
+	var body struct {
+		Acknowledge bool   `json:"acknowledge"`
+		Domain      string `json:"domain"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+	if !body.Acknowledge {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "acknowledgement required"})
+		return
+	}
+	// (3) Resolve active audit + load FULL accounts (with secrets).
+	id, ok := s.activeAudit(w, sess)
+	if !ok {
+		return
+	}
+	accts, err := s.Store.Accounts(id, true)
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		return
+	}
+	meta, _ := s.Store.Meta(id)
+	now := time.Now()
+	// (4) Optional domain filter.
+	label := "cleartext bundle"
+	scope := "org"
+	suffix := "CLEARTEXT"
+	if body.Domain != "" {
+		accts = filterAccounts(accts, func(a model.Account) bool { return a.Domain == body.Domain })
+		if len(accts) == 0 {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "domain not found"})
+			return
+		}
+		label += " (domain=" + body.Domain + ")"
+		scope = "domain:" + body.Domain
+		suffix = safeFilename(body.Domain) + "_CLEARTEXT"
+	}
+	// (5) Fail-closed audit — if the write fails, refuse (500) and skip the file.
+	if !s.auditOrFail(w, audit.Event{
+		Actor: sess.Username, Role: string(sess.Role),
+		Action: "export_cleartext", Target: meta.Name + " — " + label,
+		Source: r.RemoteAddr, Result: "ok",
+	}) {
+		return
+	}
+	// (6) Set download headers.
+	download(w, meta.Name, suffix, "zip")
+	// (7) Render — cleartext passwords appear in report.json accounts; no SVG carries a password.
+	ver := s.Build.Version
+	if ver == "" {
+		ver = "dev"
+	}
+	m := metrics.Compute(accts, now)
+	_ = report.BundleZip(w, meta.Name, scope, true, m, accts, now, ver)
 }
 
 // safeFilename keeps only filename-safe characters from an audit name.

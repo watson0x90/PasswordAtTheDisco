@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -2425,5 +2426,269 @@ func TestExportCleartextFailClosed(t *testing.T) {
 	}
 	if strings.Contains(r.Body.String(), "Welcome1") {
 		t.Fatal("CLEARTEXT emitted despite audit write failure")
+	}
+}
+
+// parseZip unzips response body bytes into a map of zip-path → file contents.
+func parseZip(t *testing.T, data []byte) map[string][]byte {
+	t.Helper()
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("parse zip: %v", err)
+	}
+	out := make(map[string][]byte)
+	for _, f := range zr.File {
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatalf("open zip entry %s: %v", f.Name, err)
+		}
+		b, readErr := io.ReadAll(rc)
+		rc.Close()
+		if readErr != nil {
+			t.Fatalf("read zip entry %s: %v", f.Name, readErr)
+		}
+		out[f.Name] = b
+	}
+	return out
+}
+
+// TestExportBundleSanitized covers GET /api/export/bundle.zip (sanitized, no cleartext).
+func TestExportBundleSanitized(t *testing.T) {
+	srv := newServer("secret")
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	ingestAndOpen(t, srv, cleartextFixture, lc, lcsrf)
+
+	// (1) No auth → 401.
+	if r := do(srv, "GET", "/api/export/bundle.zip", nil); r.Code != http.StatusUnauthorized {
+		t.Fatalf("no auth: want 401, got %d", r.Code)
+	}
+
+	// (2) Org-wide → 200, zip content-type, .zip disposition, report.json parses,
+	//     images/ present, and NO cleartext / NT hash anywhere in the raw zip bytes.
+	r := do(srv, "GET", "/api/export/bundle.zip", lc)
+	if r.Code != http.StatusOK {
+		t.Fatalf("org bundle: want 200, got %d %s", r.Code, r.Body.String())
+	}
+	ct := r.Result().Header.Get("Content-Type")
+	if !strings.Contains(ct, "zip") {
+		t.Errorf("Content-Type should indicate zip, got: %s", ct)
+	}
+	cd := r.Result().Header.Get("Content-Disposition")
+	if !strings.Contains(cd, ".zip") {
+		t.Errorf("Content-Disposition should contain .zip, got: %s", cd)
+	}
+	zipBytes := r.Body.Bytes()
+	if bytes.Contains(zipBytes, []byte("Welcome1")) {
+		t.Error("sanitized bundle MUST NOT contain Welcome1 in raw zip bytes")
+	}
+	if bytes.Contains(zipBytes, []byte("AAAA0000000000000000000000000077")) {
+		t.Error("sanitized bundle MUST NOT contain NT hash in raw zip bytes")
+	}
+
+	entries := parseZip(t, zipBytes)
+	rjBytes, ok := entries["report.json"]
+	if !ok {
+		t.Fatal("report.json not found in bundle")
+	}
+	var rep struct {
+		Scope    string `json:"scope"`
+		Accounts []struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+		} `json:"accounts"`
+		Images map[string]string `json:"images"`
+	}
+	if err := json.Unmarshal(rjBytes, &rep); err != nil {
+		t.Fatalf("report.json parse: %v", err)
+	}
+	if rep.Scope != "org" {
+		t.Errorf("org bundle scope: want 'org', got %q", rep.Scope)
+	}
+	if len(rep.Accounts) == 0 {
+		t.Error("report.json has no accounts")
+	}
+	for _, a := range rep.Accounts {
+		if a.Password != "" {
+			t.Errorf("sanitized bundle account %s must have empty password, got %q", a.Username, a.Password)
+		}
+	}
+	if len(rep.Images) == 0 {
+		t.Error("report.json images manifest is empty")
+	}
+	for name, imgPath := range rep.Images {
+		if _, ok := entries[imgPath]; !ok {
+			t.Errorf("image %s listed in manifest (%s) but not present in zip", name, imgPath)
+		}
+	}
+
+	// (3) ?domain=CORP → scope="domain:CORP", only CORP accounts.
+	r = do(srv, "GET", "/api/export/bundle.zip?domain=CORP", lc)
+	if r.Code != http.StatusOK {
+		t.Fatalf("domain=CORP: want 200, got %d %s", r.Code, r.Body.String())
+	}
+	entries2 := parseZip(t, r.Body.Bytes())
+	var rep2 struct {
+		Scope    string `json:"scope"`
+		Accounts []struct {
+			Username string `json:"username"`
+			Domain   string `json:"domain"`
+		} `json:"accounts"`
+	}
+	if err := json.Unmarshal(entries2["report.json"], &rep2); err != nil {
+		t.Fatalf("report.json (domain) parse: %v", err)
+	}
+	if rep2.Scope != "domain:CORP" {
+		t.Errorf("domain bundle scope: want 'domain:CORP', got %q", rep2.Scope)
+	}
+	for _, a := range rep2.Accounts {
+		if a.Domain != "CORP" {
+			t.Errorf("domain bundle has non-CORP account: %s@%s", a.Username, a.Domain)
+		}
+	}
+
+	// (4) Unknown domain → 404.
+	if r := do(srv, "GET", "/api/export/bundle.zip?domain=GHOST", lc); r.Code != http.StatusNotFound {
+		t.Fatalf("unknown domain: want 404, got %d", r.Code)
+	}
+}
+
+// TestExportCleartextBundle covers POST /api/export/cleartext.zip (gated, cleartext).
+func TestExportCleartextBundle(t *testing.T) {
+	var buf bytes.Buffer
+	srv := newServerAudit("secret", &buf)
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	ingestAndOpen(t, srv, cleartextFixture, lc, lcsrf)
+
+	// Share the active audit with the analyst session so role check fires first.
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	openAudit(t, srv, ac, acsrf, func() string {
+		r := do(srv, "GET", "/api/me", lc)
+		var m struct {
+			ActiveAudit string `json:"active_audit"`
+		}
+		_ = json.Unmarshal(r.Body.Bytes(), &m)
+		return m.ActiveAudit
+	}())
+
+	// (1) Analyst → 403 + export_cleartext denied audit, no cleartext in body or log.
+	r := postJSON(srv, "/api/export/cleartext.zip", ac, acsrf, `{"acknowledge":true}`)
+	if r.Code != http.StatusForbidden {
+		t.Fatalf("analyst: want 403, got %d %s", r.Code, r.Body.String())
+	}
+	if bytes.Contains(r.Body.Bytes(), []byte("Welcome1")) {
+		t.Error("cleartext leaked in analyst 403 body")
+	}
+	logs := buf.String()
+	if !strings.Contains(logs, "export_cleartext") || !strings.Contains(logs, `"result":"denied"`) {
+		t.Fatalf("denied audit event missing: %s", logs)
+	}
+	if strings.Contains(logs, "Welcome1") {
+		t.Fatalf("AUDIT LOG LEAKED CLEARTEXT after analyst denial: %s", logs)
+	}
+
+	// (2) No acknowledge → 400, no cleartext.
+	r = postJSON(srv, "/api/export/cleartext.zip", lc, lcsrf, `{"acknowledge":false}`)
+	if r.Code != http.StatusBadRequest {
+		t.Fatalf("no ack: want 400, got %d", r.Code)
+	}
+	if bytes.Contains(r.Body.Bytes(), []byte("Welcome1")) {
+		t.Error("cleartext leaked in no-ack 400 body")
+	}
+
+	// (3) No CSRF → 403 (middleware; no audit event fired).
+	r = postJSON(srv, "/api/export/cleartext.zip", lc, "", `{"acknowledge":true}`)
+	if r.Code != http.StatusForbidden {
+		t.Fatalf("no CSRF: want 403, got %d", r.Code)
+	}
+
+	// (4) Lead + CSRF + acknowledge → 200, zip, CLEARTEXT in disposition,
+	//     report.json accounts has Welcome1, NO image has Welcome1, NT hash absent
+	//     everywhere, export_cleartext ok audit without the password.
+	buf.Reset()
+	r = postJSON(srv, "/api/export/cleartext.zip", lc, lcsrf, `{"acknowledge":true}`)
+	if r.Code != http.StatusOK {
+		t.Fatalf("happy path: want 200, got %d %s", r.Code, r.Body.String())
+	}
+	cd := r.Result().Header.Get("Content-Disposition")
+	if !strings.Contains(cd, "CLEARTEXT") {
+		t.Errorf("Content-Disposition should contain CLEARTEXT, got: %s", cd)
+	}
+	if !strings.Contains(cd, ".zip") {
+		t.Errorf("Content-Disposition should contain .zip, got: %s", cd)
+	}
+
+	zipBytes := r.Body.Bytes()
+	if bytes.Contains(zipBytes, []byte("AAAA0000000000000000000000000077")) {
+		t.Error("cleartext bundle MUST NOT contain NT hash AAAA... in raw bytes")
+	}
+	if bytes.Contains(zipBytes, []byte("BBBB0000000000000000000000000077")) {
+		t.Error("cleartext bundle MUST NOT contain NT hash BBBB... in raw bytes")
+	}
+
+	entries := parseZip(t, zipBytes)
+	rjBytes := entries["report.json"]
+	var rep struct {
+		Accounts []struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+		} `json:"accounts"`
+	}
+	if err := json.Unmarshal(rjBytes, &rep); err != nil {
+		t.Fatalf("report.json parse: %v", err)
+	}
+	foundPw := false
+	for _, a := range rep.Accounts {
+		if a.Password == "Welcome1" {
+			foundPw = true
+		}
+	}
+	if !foundPw {
+		t.Error("cleartext bundle report.json should contain Welcome1 in accounts")
+	}
+	for name, content := range entries {
+		if strings.HasPrefix(name, "images/") && bytes.Contains(content, []byte("Welcome1")) {
+			t.Errorf("image %s LEAKED cleartext password Welcome1", name)
+		}
+	}
+
+	logs = buf.String()
+	if !strings.Contains(logs, "export_cleartext") || !strings.Contains(logs, `"result":"ok"`) {
+		t.Fatalf("export_cleartext ok audit event missing: %s", logs)
+	}
+	if strings.Contains(logs, "Welcome1") {
+		t.Fatalf("AUDIT LOG LEAKED CLEARTEXT PASSWORD: %s", logs)
+	}
+
+	// (5) Domain scoping: CORP → only CORP accounts; GHOST → 404.
+	r = postJSON(srv, "/api/export/cleartext.zip", lc, lcsrf, `{"acknowledge":true,"domain":"CORP"}`)
+	if r.Code != http.StatusOK {
+		t.Fatalf("domain=CORP: want 200, got %d %s", r.Code, r.Body.String())
+	}
+	cdDomain := r.Result().Header.Get("Content-Disposition")
+	if !strings.Contains(cdDomain, "CLEARTEXT") || !strings.Contains(cdDomain, "CORP") {
+		t.Errorf("domain Content-Disposition should contain CLEARTEXT and CORP, got: %s", cdDomain)
+	}
+	entries3 := parseZip(t, r.Body.Bytes())
+	var rep3 struct {
+		Scope    string `json:"scope"`
+		Accounts []struct {
+			Domain string `json:"domain"`
+		} `json:"accounts"`
+	}
+	if err := json.Unmarshal(entries3["report.json"], &rep3); err != nil {
+		t.Fatalf("domain report.json parse: %v", err)
+	}
+	if rep3.Scope != "domain:CORP" {
+		t.Errorf("domain bundle scope: want 'domain:CORP', got %q", rep3.Scope)
+	}
+	for _, a := range rep3.Accounts {
+		if a.Domain != "CORP" {
+			t.Errorf("domain bundle has non-CORP account (domain=%s)", a.Domain)
+		}
+	}
+
+	r = postJSON(srv, "/api/export/cleartext.zip", lc, lcsrf, `{"acknowledge":true,"domain":"GHOST"}`)
+	if r.Code != http.StatusNotFound {
+		t.Fatalf("unknown domain: want 404, got %d", r.Code)
 	}
 }
