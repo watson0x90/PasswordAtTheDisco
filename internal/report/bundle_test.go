@@ -136,18 +136,37 @@ func TestWriteBundleIntoPrefix(t *testing.T) {
 	if err := zw.Close(); err != nil {
 		t.Fatal(err)
 	}
-	zr, _ := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
-	var haveReport bool
+	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reportJSON []byte
 	for _, f := range zr.File {
 		if f.Name == "model_bundle/report.json" {
-			haveReport = true
+			rc, _ := f.Open()
+			reportJSON, _ = io.ReadAll(rc)
+			rc.Close()
 		}
 		if !strings.HasPrefix(f.Name, "model_bundle/") {
 			t.Errorf("entry %q not under prefix", f.Name)
 		}
 	}
-	if !haveReport {
-		t.Error("missing model_bundle/report.json")
+	if reportJSON == nil {
+		t.Fatal("missing model_bundle/report.json")
+	}
+	// The manifest inside report.json must stay RELATIVE ("images/<name>.svg") — the
+	// prefix belongs on the zip ENTRY path only, never in the manifest values.
+	var rep bundleReport
+	if err := json.Unmarshal(reportJSON, &rep); err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Images) == 0 {
+		t.Error("expected a non-empty images manifest")
+	}
+	for name, path := range rep.Images {
+		if !strings.HasPrefix(path, "images/") || strings.Contains(path, "model_bundle/") {
+			t.Errorf("manifest entry %s = %q must be relative (images/...), not prefixed", name, path)
+		}
 	}
 }
 
