@@ -103,8 +103,9 @@ export function Domains() {
 }
 
 function DomainDetail({ domain, accounts, report, reportErr, summary, onBack }: { domain: string; accounts: Account[]; report: Report | null; reportErr: string; summary: Summary | null; onBack: () => void }) {
-  const { bundle } = useMetrics()
-  const dm = bundle?.domains.find(d => d.domain === domain)
+  const { bundle, loading: bundleLoading } = useMetrics()
+  const bundleReady = !bundleLoading && bundle !== null
+  const dm = bundleReady ? bundle.domains.find((d) => d.domain === domain) : undefined
   const dSummary = useMemo(() => (summary ? domainSummary(accounts, summary) : null), [accounts, summary])
   const dReport = useMemo(() => domainReport(report, domain, accounts), [report, domain, accounts])
 
@@ -155,7 +156,7 @@ function DomainDetail({ domain, accounts, report, reportErr, summary, onBack }: 
         title={domain}
         subtitle="Where does this domain stand?"
         matrix={dm?.matrix}
-        coverageEnriched={dm?.summary.coverage_enriched}
+        coverageEnriched={dm?.summary?.coverage_enriched}
         charts={dm?.charts}
       />
 
