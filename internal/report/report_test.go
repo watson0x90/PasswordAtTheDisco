@@ -525,7 +525,10 @@ func TestHTMLGraphsAndScatter(t *testing.T) {
 	if strings.Contains(out, "admin<1") {
 		t.Error("HTML output contains unescaped '<' in node label 'admin<1' — XSS risk; must be escaped as 'admin&lt;1'")
 	}
-	if !strings.Contains(out, "admin&lt;1") {
-		t.Error("HTML output must contain 'admin&lt;1' (escaped node label / table cell) but it was not found")
+	// Pin the positive assertion to the SVG <text> body (">admin&lt;1<"), so it
+	// proves the graph label path escapes — not merely the accounts table, which
+	// html/template would escape regardless.
+	if !strings.Contains(out, ">admin&lt;1<") {
+		t.Error("HTML output must contain escaped node label '>admin&lt;1<' in an SVG <text> element but it was not found")
 	}
 }

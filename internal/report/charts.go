@@ -257,6 +257,9 @@ func svgAxisFactorBars(tiers []metrics.TierFactorBars) template.HTML {
 		}
 		totalH += axisTierH + len(t.Exposure)*svgRowH + axisSubH + len(t.Impact)*svgRowH + 8
 	}
+	if totalH == 4 { // every tier had empty factor slices — nothing to draw
+		return ""
+	}
 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, `<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" style="display:block">`,
@@ -313,7 +316,7 @@ func svgAxisFactorBars(tiers []metrics.TierFactorBars) template.HTML {
 		}
 		fmt.Fprintf(&sb,
 			`<text x="4" y="%d" font-size="%d" font-family="'Segoe UI',system-ui,sans-serif" fill="%s">Impact%s</text>`,
-			y+14, svgFontSz, impTextColor, html.EscapeString(impSuffix))
+			y+14, svgFontSz, impTextColor, impSuffix)
 		y += axisSubH
 
 		// Impact factor bars.
