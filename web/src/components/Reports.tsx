@@ -84,6 +84,18 @@ export function Reports() {
     }
   }
 
+  async function downloadCleartextBundle() {
+    setCtErr("")
+    setCtBusy(true)
+    try {
+      await api.exportCleartextBundle(undefined, csrf)
+    } catch (e) {
+      setCtErr(e instanceof ApiError ? e.message : "export failed")
+    } finally {
+      setCtBusy(false)
+    }
+  }
+
   if (!activeId) {
     return <div className="center-state">Select or create an audit (top right) before exporting reports.</div>
   }
@@ -193,6 +205,21 @@ export function Reports() {
         </div>
       </div>
 
+      <div className="panel report-export">
+        <div className="report-export-head">
+          <div>
+            <div className="action-title">Model bundle (.zip)</div>
+            <div className="action-sub">
+              All sanitized exports in one ZIP — scoring signals, reuse graph, and domain breakdown with{" "}
+              <b>all identity removed</b>. Suitable for offline model review or sharing with an AI.
+            </div>
+          </div>
+          <a className="btn" href="/api/export/bundle.zip" download>
+            Model bundle (.zip)
+          </a>
+        </div>
+      </div>
+
       {isLead && (
         <div className="panel report-export">
           <div className="action-title">Cleartext export</div>
@@ -223,6 +250,13 @@ export function Reports() {
                 onClick={() => void downloadCleartext("csv")}
               >
                 CSV
+              </button>
+              <button
+                className="btn"
+                disabled={!ctAcked || ctBusy}
+                onClick={() => void downloadCleartextBundle()}
+              >
+                Bundle (.zip)
               </button>
             </div>
             {ctErr && <div className="cleartext-error">{ctErr}</div>}

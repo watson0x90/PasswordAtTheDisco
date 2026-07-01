@@ -114,6 +114,18 @@ function DomainDetail({ domain, accounts, onBack }: { domain: string; accounts: 
     }
   }
 
+  async function downloadCleartextBundle() {
+    setCtErr("")
+    setCtBusy(true)
+    try {
+      await api.exportCleartextBundle(domain, csrf)
+    } catch (e) {
+      setCtErr(e instanceof ApiError ? e.message : "export failed")
+    } finally {
+      setCtBusy(false)
+    }
+  }
+
   // Bundle-derived data — empty when dm is not yet available (hooks called unconditionally).
   const clusters = dm?.reports.reuse_clusters ?? { cracked: [], uncracked: [] }
   const daPaths = dm?.reports.da_paths ?? []
@@ -175,6 +187,7 @@ function DomainDetail({ domain, accounts, onBack }: { domain: string; accounts: 
         <div className="domain-detail-exports">
           <a className="btn" href={`/api/export/csv?domain=${encodeURIComponent(domain)}`} download>Export CSV</a>
           <a className="btn" href={`/api/export/html?domain=${encodeURIComponent(domain)}`} download>Export HTML</a>
+          <a className="btn" href={`/api/export/bundle.zip?domain=${encodeURIComponent(domain)}`} download>Model bundle</a>
         </div>
       </div>
 
@@ -208,6 +221,13 @@ function DomainDetail({ domain, accounts, onBack }: { domain: string; accounts: 
                 onClick={() => void downloadCleartext("csv")}
               >
                 Cleartext CSV
+              </button>
+              <button
+                className="btn"
+                disabled={!ctAcked || ctBusy}
+                onClick={() => void downloadCleartextBundle()}
+              >
+                Cleartext bundle (.zip)
               </button>
             </div>
             {ctErr && <div className="cleartext-error">{ctErr}</div>}
