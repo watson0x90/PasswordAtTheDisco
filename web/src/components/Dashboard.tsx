@@ -14,7 +14,7 @@ import { RecalcSuggestion } from "./RecalcSuggestion"
 import { useJobs } from "../jobs"
 import { InfoTip } from "./InfoTip"
 import { GLOSSARY } from "../glossary"
-import type { ChartSeries, Graph, Matrix as BundleMatrix } from "../metricsBundle"
+import type { ChartSeries, Graph, Matrix as BundleMatrix, ExposureHeadline as BundleExposureHeadline } from "../metricsBundle"
 import { useMetrics } from "../metricsData"
 
 // Verdict → CSS class suffix (maps to --crit / --high / --med / --low color tokens)
@@ -96,6 +96,8 @@ export function Dashboard() {
         coverageEnriched={bundleReady ? bundle.summary.coverage_enriched : undefined}
         charts={bundleReady ? bundle.charts : undefined}
         reuseGraph={bundleReady ? bundle.reports.reuse_graph : undefined}
+        exposureHeadline={bundleReady ? bundle.reports.exposure_headline : undefined}
+        similarityGraph={bundleReady ? bundle.reports.similarity_graph : undefined}
         subtitle="Where do we stand? Org-wide posture at a glance."
         actions={
           <>
@@ -128,6 +130,8 @@ export function OverviewView({
   coverageEnriched,
   charts,
   reuseGraph,
+  exposureHeadline,
+  similarityGraph,
 }: {
   accounts: Account[]
   summary: Summary | null
@@ -146,6 +150,12 @@ export function OverviewView({
   // instead of recomputing client-side. Absent on the per-domain path.
   charts?: ChartSeries
   reuseGraph?: Graph
+  // When provided (org path), ExposureHeadline uses server-computed values
+  // instead of computing client-side. Absent on per-domain path.
+  exposureHeadline?: BundleExposureHeadline
+  // When provided (org path), SimilarityClusters uses server-computed graph
+  // instead of computing client-side. Absent on the per-domain path.
+  similarityGraph?: Graph
 }) {
   const { total, cracked, breached, da } = kpiCounts(summary, accounts)
   const crackPct = total ? Math.round((cracked / total) * 100) : 0
@@ -196,7 +206,7 @@ export function OverviewView({
         <Stat label="Impact Unknown" value={impactUnknown} sub="no BloodHound coverage" tip={GLOSSARY.impact_unknown} accent delay={0.24} />
       </div>
 
-      <ExposureHeadline accounts={accounts} report={report} />
+      <ExposureHeadline accounts={accounts} report={report} headline={exposureHeadline} />
       {summary && (
         <div className="stat-grid stat-grid-secondary">
           <Stat label="Disabled" value={summary.disabled_accounts} delay={0} />
@@ -228,17 +238,17 @@ export function OverviewView({
       <div className="section-label">Charts</div>
       <div className="chart-grid">
         <ChartCard title="Risk distribution">
-          <Donut data={riskDistribution(accounts)} />
+          <Donut data={charts ? charts.risk_distribution : riskDistribution(accounts)} />
         </ChartCard>
         <ChartCard title="HIBP exposure">
-          <Donut data={hibpSplit(accounts)} />
+          <Donut data={charts ? charts.hibp_split : hibpSplit(accounts)} />
         </ChartCard>
         <ChartCard title="Password length (cracked)">
-          <Bars data={lengthBuckets(accounts)} color="#818cf8" />
+          <Bars data={charts ? charts.length_buckets : lengthBuckets(accounts)} color="#818cf8" />
         </ChartCard>
       </div>
 
-      <Insights report={report} accounts={accounts} charts={charts} reuseGraph={reuseGraph} />
+      <Insights report={report} accounts={accounts} charts={charts} reuseGraph={reuseGraph} similarityGraph={similarityGraph} />
     </>
   )
 }

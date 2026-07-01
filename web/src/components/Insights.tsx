@@ -22,11 +22,13 @@ export function Insights({
   accounts: accountsProp,
   charts,
   reuseGraph,
+  similarityGraph,
 }: {
   report: Report | null
   accounts?: Account[]
   charts?: ChartSeries
   reuseGraph?: Graph
+  similarityGraph?: Graph
 }) {
   const { activeId } = useAudits()
   const { accounts: ctxAccounts, error } = useAccountsData()
@@ -148,7 +150,7 @@ export function Insights({
         </ChartCard>
       </div>
 
-      <SimilarityClusters accounts={accounts} />
+      <SimilarityClusters accounts={accounts} graph={similarityGraph} />
 
       <div className="section-label">Top 10 Riskiest Accounts</div>
       <div className="panel">

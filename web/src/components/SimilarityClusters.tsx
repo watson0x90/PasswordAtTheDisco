@@ -5,9 +5,13 @@ import { RISK_CLASS } from "../util"
 import { similarityNetwork } from "../insights"
 import { NetworkGraph } from "./NetworkGraph"
 import { AccountLink } from "./AccountLink"
+import type { Graph } from "../metricsBundle"
 
-export function SimilarityClusters({ accounts }: { accounts: Account[] }) {
-  const net = useMemo(() => similarityNetwork(accounts), [accounts])
+export function SimilarityClusters({ accounts, graph }: { accounts: Account[]; graph?: Graph }) {
+  // When the bundle graph is provided (org path), use pre-computed server nodes/edges.
+  // Otherwise compute the similarity network client-side (per-domain fallback).
+  const computedNet = useMemo(() => similarityNetwork(accounts), [accounts])
+  const net = graph ?? computedNet
   const [expanded, setExpanded] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [modalH, setModalH] = useState(() => Math.round(window.innerHeight * 0.7))

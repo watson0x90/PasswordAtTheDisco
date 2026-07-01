@@ -1,11 +1,26 @@
 import type { Account, Report } from "../api"
 import { exposureHeadline } from "../exposure"
 import { useNav } from "../nav"
+import type { ExposureHeadline as BundleHeadline } from "../metricsBundle"
 
-export function ExposureHeadline({ accounts, report }: { accounts: Account[]; report: Report | null }) {
+export function ExposureHeadline({ accounts, report, headline }: { accounts: Account[]; report: Report | null; headline?: BundleHeadline }) {
   const nav = useNav()
-  if (!report) return null
-  const h = exposureHeadline(accounts, report)
+
+  // When the bundle headline is provided (org path), use pre-computed server values.
+  // Otherwise fall back to client-side compute (per-domain path needs a report present).
+  let h: { crackedDA: number; crackedHibp: number; crossDomainGroups: number; domainsSpanned: number }
+  if (headline) {
+    h = {
+      crackedDA: headline.cracked_da,
+      crackedHibp: headline.cracked_hibp,
+      crossDomainGroups: headline.cross_domain_groups,
+      domainsSpanned: headline.domains_spanned,
+    }
+  } else {
+    if (!report) return null
+    h = exposureHeadline(accounts, report)
+  }
+
   return (
     <div className="exposure-strip">
       <button className="exp-tile crit" onClick={() => nav("exposure")} title="View the blast-radius worklist">
