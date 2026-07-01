@@ -300,6 +300,14 @@ func crackedFloor(a Analysis, cracked bool) float64 {
 
 // roastableBump: Kerberoast (SPN) +0.5; AS-REP roastable (DontReqPreauth) +0.75. AS-REP is a
 // pre-auth exposure (no foothold needed) so it outweighs post-auth Kerberoast. Additive => both = 1.25.
+//
+// Roastability is a PARTIAL (probabilistic) obtainability signal — the hash is offline-crackable, but
+// unlike cracked/HIBP/shared it is not a DEMONSTRATED obtainment. By design it elevates via Exposure×
+// Impact (a Tier-0/DA roastable account reaches High through the matrix) but never reaches Critical on
+// its own; Critical stays gated on demonstrated obtainment (see daOverride). This was reviewed by a
+// red-team/mathematician/blue-team/CISO panel and left as-is — do NOT gate the level on demonstrated
+// obtainability, and if strengthening the roast weight, use a floor OR an impact-scaled bump, never
+// both. See docs/superpowers/specs/2026-07-01-kerberoastable-scoring-decision.md.
 func roastableBump(c Context) float64 {
 	var b float64
 	if c.HasSPN {
