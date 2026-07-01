@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from "react"
-import { api, ApiError, type Account, type ReportAccount } from "../api"
+import { api, ApiError, type ReportAccount } from "../api"
 import { useAccountsData } from "../accountsData"
 import { useAudits } from "../auditsData"
 import { useAuth } from "../auth"
 import { RISK_CLASS, hasDA } from "../util"
-import { blastRadius } from "../exposure"
-import { topControllers, isReachable } from "../insights"
 import { useMetrics } from "../metricsData"
 import { useAccountDrawer } from "../accountDrawer"
 import { AccountLink } from "./AccountLink"
@@ -71,11 +69,15 @@ export function Exposure() {
 
   const bridges = bundle?.reports.cross_domain ?? { clusters: [], domains: [] as string[] }
   const triage = bundle?.reports.hibp_triage ?? { tier1: [] as ReportAccount[], tier2: [] as ReportAccount[] }
-  const work = blastRadius(accounts ?? ([] as Account[]))
-  // Only the EXPLOITABLE controllers: credential is obtainable (cracked, or the hash is in the
-  // HIBP breach corpus even if uncracked). Uncracked-non-HIBP "latent" controllers are excluded.
-  const obtainableControllers = (accounts ?? []).filter((a) => a.cracked || a.hibp_breached)
-  const { rows: controllerRows, moreOver100 } = topControllers(obtainableControllers, 25)
+  // Worklist and controllers are served directly from the bundle (AccountRef carries all needed
+  // fields after the metrics.AccountRef enrichment). `accounts` is kept for the loading gate
+  // and for the openAccount drawer lookup in the controllers table.
+  const work = bundle?.reports.worklist ?? []
+  const controllerRows = bundle?.charts.top_controllers ?? []
+  const moreOver100 = bundle?.charts.top_controllers_more_over_100 ?? 0
+  // Resolve a full Account from an AccountRef so the account drawer can open.
+  const refToFull = (ref: { username: string; domain: string }) =>
+    (accounts ?? []).find((a) => a.username === ref.username && a.domain === ref.domain)
 
   const visibleBridges = showAllBridges ? bridges.clusters : bridges.clusters.slice(0, 10)
   const totalBridges = bridges.clusters.length
@@ -302,11 +304,11 @@ export function Exposure() {
                 <tr
                   key={`${a.domain}/${a.username}/${i}`}
                   className="blast-radius-row"
-                  onClick={() => openAccount(a)}
+                  onClick={() => { const f = refToFull(a); if (f) openAccount(f) }}
                 >
                   <td className="num blast-radius-rank">{i + 1}</td>
                   <td>
-                    <button className="link-btn" onClick={(e) => { e.stopPropagation(); openAccount(a) }}>
+                    <button className="link-btn" onClick={(e) => { e.stopPropagation(); const f = refToFull(a); if (f) openAccount(f) }}>
                       {a.username}
                     </button>
                     {!a.enabled && (
@@ -333,7 +335,7 @@ export function Exposure() {
                       {a.cracked && (
                         <span className="badge high" title="Password cracked">Crk</span>
                       )}
-                      {isReachable(a) && (
+                      {!!(a.enabled && (a.cracked || a.hibp_breached || a.escalated_by_shared_da || a.escalated_by_mass_reuse)) && (
                         <span className="badge blast-flag-danger" title="Credential is reachable (enabled + obtainable)">RCH</span>
                       )}
                     </span>

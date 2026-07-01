@@ -54,9 +54,9 @@ export function Insights({
   const ageScatter = charts ? charts.password_age_scatter : passwordAgeScatter(accounts)
   const expirSlices = charts ? charts.expiration_split : expirationSplit(accounts)
   const crossDomain = reuseGraph ?? crossDomainReuseGraph(report, accounts)
-  // topRiskiest uses full Account fields (enabled, da_domains string, hibp_breached) not
-  // available on AccountRef — always compute from accounts regardless of bundle presence.
-  const topN = topRiskiest(accounts, 10)
+  // topRiskiest: AccountRef now carries enabled/da_domains/hibp_breached, so use the
+  // bundle's server-computed list on the org path and fall back to client-compute for domains.
+  const topN = charts ? charts.top_riskiest : topRiskiest(accounts, 10)
 
   return (
     <>

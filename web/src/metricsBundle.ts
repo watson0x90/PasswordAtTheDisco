@@ -19,6 +19,15 @@ export interface AccountRef {
   hibp_breach_count: number
   has_da: boolean
   controlled_object_count: number
+  // Enriched redaction-safe fields (added to Go metrics.AccountRef for table migration).
+  enabled: boolean
+  cracked: boolean
+  hibp_breached: boolean
+  da_domains: string
+  controls_tier0: boolean
+  escalated_by_shared_da: boolean
+  escalated_by_mass_reuse: boolean
+  meets_policy: boolean
 }
 
 export interface AxisFactor { name: string; value: number; color: string }
