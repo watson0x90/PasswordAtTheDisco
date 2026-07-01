@@ -73,4 +73,22 @@ func TestBundleHasNoSensitiveFields(t *testing.T) {
 			t.Errorf("bundle leaked sensitive content %q", bad)
 		}
 	}
+
+	// Structural guard: the cross-domain reuse group (alice/A + bob/B) must appear
+	// in BOTH domains' per-domain reports. Without this, a regression that emptied
+	// domainReuseClustersOf would leave the per-domain reports blank and the
+	// leak-only checks above would still pass — silently gutting the canary.
+	var m Metrics
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(m.Domains) != 2 {
+		t.Fatalf("want 2 domains, got %d", len(m.Domains))
+	}
+	for _, d := range m.Domains {
+		if len(d.Reports.ReuseClusters.Cracked) != 1 {
+			t.Errorf("domain %s: want the cross-domain reuse group in reports.reuse_clusters.cracked, got %d",
+				d.Domain, len(d.Reports.ReuseClusters.Cracked))
+		}
+	}
 }
