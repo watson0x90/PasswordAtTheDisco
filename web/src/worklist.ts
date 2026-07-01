@@ -1,6 +1,6 @@
 import type { Account } from "./api"
 import { hasDA, RISK_RANK } from "./util"
-import { isProvisional } from "./matrix"
+import { isProvisional } from "./accountFlags"
 export interface WorklistItem { account: Account; priority: number; reasons: string[]; action: string }
 // Ranked remediation worklist: a composite priority (so ties break), human reasons,
 // and a recommended action. Derived from the redacted account fields.

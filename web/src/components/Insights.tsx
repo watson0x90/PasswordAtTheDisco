@@ -1,24 +1,19 @@
 import { useAccountsData } from "../accountsData"
 import { useAudits } from "../auditsData"
-import type { TierFactorBars } from "../insights"
 import { AccountLink } from "./AccountLink"
 import { AxisFactorBars, Bars, ChartCard, Donut, HBars, ScatterPlot } from "./Charts"
 import { NetworkGraph } from "./NetworkGraph"
 import { SimilarityClusters } from "./SimilarityClusters"
 import { RISK_CLASS, hasDA } from "../util"
 import type { Account } from "../api"
-import type { ChartSeries, Graph, TierFactorBars as BundleTierFactorBars } from "../metricsBundle"
-
-// The bundle's TierFactorBars uses impact_known (Go JSON tag) while the insights.ts
-// type and Charts.tsx component use impactKnown (camelCase). Normalize at the boundary
-// so AxisFactorBars receives exactly what it expects and rendering is identical.
-function normalizeTierFactorBars(bars: BundleTierFactorBars[]): TierFactorBars[] {
-  return bars.map((b) => ({ ...b, impactKnown: b.impact_known }))
-}
+import type { ChartSeries, Graph } from "../metricsBundle"
 
 // charts is required — both callers gate on bundleReady so the bundle is always
-// present when Insights is rendered. accounts is still needed for the SimilarityClusters
-// node-click breakdown; reuseGraph is org-only (absent on per-domain path by design).
+// present when Insights is rendered.
+// accounts is OPTIONAL because it defaults to the audit-wide context from
+// useAccountsData(); it is only needed for the SimilarityClusters node-click
+// drill-down (not the chart render path), so per-domain callers may omit it.
+// reuseGraph is org-only (absent on per-domain path by design).
 export function Insights({
   accounts: accountsProp,
   charts,
@@ -49,8 +44,7 @@ export function Insights({
   const controlledBuckets = charts.controlled_objects_buckets
   const ageBuckets = charts.password_age_buckets
   const simBuckets = charts.similarity_buckets
-  // Normalize impact_known → impactKnown for Charts.tsx compatibility
-  const axisBars = normalizeTierFactorBars(charts.axis_factor_bars)
+  const axisBars = charts.axis_factor_bars
   const ageScatter = charts.password_age_scatter
   const expirSlices = charts.expiration_split
   // topRiskiest is server-computed (AccountRef carries enabled/da_domains/hibp_breached).

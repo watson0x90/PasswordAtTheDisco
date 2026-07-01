@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react"
-import { cellLevel } from "../../../matrix"
+import { cellLevel } from "../../../matrixView"
 
 // ExposureImpactGrid — a STATIC, illustrative Exposure × Impact matrix diagram
 // for the scoring chapter. It mirrors the dashboard's live MatrixHeatmap visual

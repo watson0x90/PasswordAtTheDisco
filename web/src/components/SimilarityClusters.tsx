@@ -10,7 +10,6 @@ import type { Graph } from "../metricsBundle"
 // bundle.reports.similarity_graph / dm.reports.similarity_graph from the Go bundle.
 // accounts is still needed for the SimilarityBreakdown drill-down (node-click lookup).
 export function SimilarityClusters({ accounts, graph }: { accounts: Account[]; graph: Graph }) {
-  const net = graph
   const [expanded, setExpanded] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [modalH, setModalH] = useState(() => Math.round(window.innerHeight * 0.7))
@@ -29,7 +28,7 @@ export function SimilarityClusters({ accounts, graph }: { accounts: Account[]; g
     return () => window.removeEventListener("keydown", onKey)
   }, [expanded])
 
-  if (net.nodes.length < 2) return null
+  if (graph.nodes.length < 2) return null
 
   const selected = selectedId ? accounts.find((a) => `${a.domain}/${a.username}` === selectedId) ?? null : null
 
@@ -44,7 +43,7 @@ export function SimilarityClusters({ accounts, graph }: { accounts: Account[]; g
           </p>
           <button className="btn simgraph-expand" onClick={() => setExpanded(true)}>Expand ⤢</button>
         </div>
-        <NetworkGraph nodes={net.nodes} edges={net.edges} height={400} onNodeClick={setSelectedId} />
+        <NetworkGraph nodes={graph.nodes} edges={graph.edges} height={400} onNodeClick={setSelectedId} />
         {!expanded && selected && <SimilarityBreakdown account={selected} accounts={accounts} />}
       </div>
 
@@ -57,7 +56,7 @@ export function SimilarityClusters({ accounts, graph }: { accounts: Account[]; g
             </div>
             <div className="simgraph-body">
               <div className="simgraph-graph">
-                <NetworkGraph nodes={net.nodes} edges={net.edges} height={modalH} onNodeClick={setSelectedId} />
+                <NetworkGraph nodes={graph.nodes} edges={graph.edges} height={modalH} onNodeClick={setSelectedId} />
               </div>
               <div className="simgraph-side">
                 <SimilarityBreakdown account={selected} accounts={accounts} />

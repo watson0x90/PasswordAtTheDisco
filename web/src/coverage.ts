@@ -1,5 +1,5 @@
 import type { Account } from "./api"
-import { isProvisional } from "./matrix"
+import { isProvisional } from "./accountFlags"
 
 // unenrichedAccounts: the accounts with Unknown Impact (no BloodHound coverage), using
 // the SAME predicate as the Overview "Impact Unknown" KPI so counts can't drift.

@@ -9,7 +9,7 @@ import { WeakCell } from "./AccountDrawer"
 import { AccountLink } from "./AccountLink"
 import { InfoTip } from "./InfoTip"
 import { GLOSSARY } from "../glossary"
-import { impactIsKnown, isProvisional, coverageState } from "../matrix"
+import { impactIsKnown, isProvisional, coverageState } from "../accountFlags"
 
 export function AccountsTable({ accounts }: { accounts: Account[] }) {
   const { me } = useAuth()

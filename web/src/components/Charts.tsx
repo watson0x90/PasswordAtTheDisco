@@ -16,7 +16,7 @@ import {
   YAxis,
   ZAxis,
 } from "recharts"
-import type { AxisFactor, Bar as BarDatum, Series, Slice, TierFactorBars } from "../insights"
+import type { AxisFactor, Bar as BarDatum, Series, Slice, TierFactorBars } from "../metricsBundle"
 import {
   IMPACT_COLS,
   IMPACT_UNKNOWN,
@@ -25,7 +25,7 @@ import {
   matrixMaxCount,
   type ExposureImpactMatrix,
   type Tier,
-} from "../matrix"
+} from "../matrixView"
 
 const AXIS = { fill: "#8a96b2", fontSize: 11 }
 const TOOLTIP = {
@@ -186,9 +186,9 @@ export function AxisFactorBars({ data }: { data: TierFactorBars[] }) {
           </div>
           <div className="axis-tier-body">
             <AxisGroup label="Exposure" factors={t.exposure} />
-            <AxisGroup label="Impact" factors={t.impact} muted={!t.impactKnown} />
+            <AxisGroup label="Impact" factors={t.impact} muted={!t.impact_known} />
           </div>
-          {!t.impactKnown && <div className="axis-impact-unknown">Impact unknown for this tier — no BloodHound-enriched accounts.</div>}
+          {!t.impact_known && <div className="axis-impact-unknown">Impact unknown for this tier — no BloodHound-enriched accounts.</div>}
         </div>
       ))}
     </div>
