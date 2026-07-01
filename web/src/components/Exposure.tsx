@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react"
-import { api, ApiError, type Account, type Report, type ReportAccount } from "../api"
+import { api, ApiError, type Account, type ReportAccount } from "../api"
 import { useAccountsData } from "../accountsData"
 import { useAudits } from "../auditsData"
 import { useAuth } from "../auth"
 import { RISK_CLASS, hasDA } from "../util"
-import { crossDomainBridges, hibpTriage, blastRadius, type BridgeCluster } from "../exposure"
+import { blastRadius } from "../exposure"
 import { topControllers, isReachable } from "../insights"
+import { useMetrics } from "../metricsData"
 import { useAccountDrawer } from "../accountDrawer"
 import { AccountLink } from "./AccountLink"
 import { InfoTip } from "./InfoTip"
@@ -14,10 +15,8 @@ import { GLOSSARY } from "../glossary"
 export function Exposure() {
   const { me } = useAuth()
   const { accounts, error } = useAccountsData()
-  const { activeId, dataVersion } = useAudits()
-
-  const [report, setReport] = useState<Report | null>(null)
-  const [reportErr, setReportErr] = useState("")
+  const { activeId } = useAudits()
+  const { bundle, loading: bundleLoading, error: bundleError } = useMetrics()
 
   const [revealed, setRevealed] = useState<Record<string, string>>({})
   const [revealing, setRevealing] = useState("")
@@ -29,17 +28,6 @@ export function Exposure() {
 
   const isLead = me?.role === "lead"
   const { openAccount } = useAccountDrawer()
-
-  useEffect(() => {
-    let alive = true
-    setReport(null)
-    setReportErr("")
-    api
-      .report()
-      .then((r) => { if (alive) setReport(r) })
-      .catch((e) => { if (alive) setReportErr(e instanceof ApiError ? e.message : "failed to load report") })
-    return () => { alive = false }
-  }, [activeId, dataVersion])
 
   useEffect(() => () => { timers.current.forEach(clearTimeout) }, [])
 
@@ -68,7 +56,7 @@ export function Exposure() {
   if (!activeId) {
     return <div className="center-state">Select or create an audit to view exposure.</div>
   }
-  if (accounts === null && !error) {
+  if ((accounts === null && !error) || bundleLoading) {
     return (
       <div className="center-state">
         <div className="spinner">loading</div>
@@ -78,11 +66,11 @@ export function Exposure() {
   if (error && !accounts) {
     return <div className="center-state">{error}</div>
   }
-  if (report && report.total_accounts === 0)
+  if (bundle && bundle.summary.total_accounts === 0)
     return <div className="center-state">No data yet — select or create an audit and upload a dump.</div>
 
-  const bridges = report ? crossDomainBridges(report) : { clusters: [] as BridgeCluster[], domains: [] as string[] }
-  const triage = report ? hibpTriage(report) : { tier1: [] as ReportAccount[], tier2: [] as ReportAccount[] }
+  const bridges = bundle?.reports.cross_domain ?? { clusters: [], domains: [] as string[] }
+  const triage = bundle?.reports.hibp_triage ?? { tier1: [] as ReportAccount[], tier2: [] as ReportAccount[] }
   const work = blastRadius(accounts ?? ([] as Account[]))
   // Only the EXPLOITABLE controllers: credential is obtainable (cracked, or the hash is in the
   // HIBP breach corpus even if uncracked). Uncracked-non-HIBP "latent" controllers are excluded.
@@ -97,8 +85,8 @@ export function Exposure() {
       <div className="section-label">Exposure</div>
       <div className="view-sub">How do attackers move between domains? Cross-domain credential reuse.</div>
 
-      {reportErr && (
-        <div className="hint">{reportErr} — bridge/HIBP panels need the report.</div>
+      {bundleError && (
+        <div className="hint">{bundleError} — bridge/HIBP panels need the metrics bundle.</div>
       )}
 
       {/* ── Cross-domain credential bridges ── */}
@@ -118,8 +106,8 @@ export function Exposure() {
           <div className="bridge-cards">
             {visibleBridges.map((c) => {
               const cid = c.domains.join("/") + "#" + bridges.clusters.indexOf(c)
-              const tier = c.hasDA ? "crit" : c.cracked ? "high" : "low"
-              const tierLabel = c.hasDA
+              const tier = c.has_da ? "crit" : c.cracked ? "high" : "low"
+              const tierLabel = c.has_da
                 ? "⚠ Reaches Domain Admin"
                 : c.cracked
                   ? "Cracked"
@@ -139,7 +127,7 @@ export function Exposure() {
                   </div>
                   <div className="bridge-badges">
                     <span className={`badge ${c.cracked ? "high" : ""}`}>{c.cracked ? "cracked" : "uncracked"}</span>
-                    {c.hibpMax > 0 && <span className="badge">HIBP {c.hibpMax.toLocaleString()}</span>}
+                    {c.hibp_max > 0 && <span className="badge">HIBP {c.hibp_max.toLocaleString()}</span>}
                     <span className="badge">{c.domains.length} domains</span>
                     <button
                       className="link-btn bridge-members-btn"
