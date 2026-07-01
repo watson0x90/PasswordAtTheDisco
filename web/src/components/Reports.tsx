@@ -215,7 +215,7 @@ export function Reports() {
             </div>
           </div>
           <a className="btn" href="/api/export/bundle.zip" download>
-            Model bundle (.zip)
+            Download (.zip)
           </a>
         </div>
       </div>
