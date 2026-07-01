@@ -36,7 +36,7 @@ audit_report.zip
   "scope": "org",                 // or "domain:CORP.LOCAL"
   "cleartext": false,             // true only in the cleartext bundle
   "metrics": { /* the metrics bundle: summary, matrix, charts, reports, domains[] (domain-scoped when ?domain=) */ },
-  "accounts": [ /* sanitized accounts, OR +cleartext "password" for cracked accounts (never nt_hash) */ ],
+  "accounts": [ /* IDENTIFIED, secret-free BundleAccount rows: real username+domain + safe scoring fields; +cleartext "password" for cracked accounts in the cleartext variant only (never nt_hash) */ ],
   "images": {                     // manifest: chart name -> relative path in the zip
     "risk_distribution": "images/risk_distribution.svg",
     "reuse_graph": "images/reuse_graph.svg"
@@ -61,14 +61,17 @@ Filenames via existing `download()` + `safeFilename`: sanitized org `Name.zip`; 
 - Empty datasets are skipped in BOTH the files and the `images` manifest (same rule the HTML export uses).
 - SVGs are identical across sanitized/cleartext variants — they contain only counts/labels; node labels are usernames/domains (already non-secret, `html.EscapeString`'d). No account secret is ever rendered into an image.
 
+## Account projection (`BundleAccount`)
+A NEW identified allowlist projection in the report package (NOT the opaque `SanitizedAccount`): real `username` + `domain` + every safe scoring/structural field (risk level/score/vector, exposure/impact, hibp, shared/reuse, has_da_path + da_domains, controlled/tier0, enabled, coverage, policy/wordlist counts, password age/expiry, spn/preauth, similarity + similar_peers as real username/domain, score_breakdown). It is an ALLOWLIST (nothing copied from `model.Account` except named fields), so future fields are excluded by default. A single builder `bundleAccounts(accounts []model.Account, cleartext bool, now) []BundleAccount` emits `password` (cleartext) ONLY when `cleartext && a.Cracked`; it NEVER emits `NTHash`, `BannedWords`, or `KeyboardPatterns`.
+
 ## Security
-- **Sanitized bundle:** `accounts` use the existing `SanitizedAccount` allowlist projection. No password, no NT hash. Open to any authenticated, unlocked operator.
-- **Cleartext bundle:** `accounts` add a cleartext `password` for cracked accounts via `RedactedKeepPassword` (cleartext only, never NTHash/wordlist). Lead + CSRF + acknowledge + fail-closed audit. `report.json.cleartext = true`.
+- **Sanitized bundle:** `bundleAccounts(..., cleartext=false)` — identities kept, no password, no NT hash. Open to any authenticated, unlocked operator.
+- **Cleartext bundle:** `bundleAccounts(..., cleartext=true)` — adds cleartext `password` for cracked accounts (never NTHash/wordlist). Lead + CSRF + acknowledge + fail-closed audit. `report.json.cleartext = true`.
 - **Redaction guard:** extend the metrics/report redaction canary so the SANITIZED bundle's full serialized zip (report.json + all svg) is asserted free of any cleartext / NT hash / wordlist fragment on a secret-bearing fixture. The CLEARTEXT bundle test asserts the cleartext password appears in `accounts` but NOT in any `images/*.svg` and NOT as an NT hash anywhere, and that no audit event contains the password.
 
 ## Implementation (DRY / anti-drift)
 - **Extract chart SVGs once:** refactor the HTML export's per-chart SVG generation into a reusable helper, e.g. `report.ChartSVGs(m metrics.Metrics) map[string]string` (org) and the per-domain equivalent from `DomainMetrics`, returning stable-named standalone SVG strings. `HTML()` and the new bundle both consume it — one source of chart rendering (consistent with the just-completed campaign; no second copy to drift).
-- **Bundle writer:** `report.BundleZip(w io.Writer, meta, scope, cleartext bool, m, accounts)` builds `report.json` + `images/*.svg` into a `zip.Writer` (stdlib `archive/zip`). Account projection chosen by the `cleartext` flag (`SanitizedAccount` vs cleartext-keeping projection).
+- **Bundle writer:** `report.BundleZip(w io.Writer, meta, scope, cleartext bool, m, accounts, now)` builds `report.json` + `images/*.svg` into a `zip.Writer` (stdlib `archive/zip`). Accounts come from `bundleAccounts(accounts, cleartext, now)` (the `cleartext` flag toggles the `password` field).
 - **Handlers:** `handleExportBundle` (GET, sanitized, `?domain=`) and `handleExportCleartextBundle` (POST, gated, body domain) — the latter reuses the exact gate sequence from `handleExportCleartextCSV/HTML`.
 - **Frontend (optional, follow the existing pattern):** add bundle download to `Reports.tsx` (org) — a plain `<a href="/api/export/bundle.zip" download>` for sanitized; a lead-only acknowledged control (reuse `api.exportCleartext`-style blob POST) for `cleartext.zip`. Per-domain bundle links in `Domains.tsx DomainDetail`. (SPA wiring can be a later increment if we want to ship the API first.)
 
