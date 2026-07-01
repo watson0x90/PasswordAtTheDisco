@@ -2700,3 +2700,187 @@ func TestExportCleartextBundle(t *testing.T) {
 		t.Fatalf("unknown domain: want 404, got %d", r.Code)
 	}
 }
+
+// TestExportAllZip covers GET /api/export/all.zip (redacted, any operator).
+func TestExportAllZip(t *testing.T) {
+	srv := newServer("secret")
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	ingestAndOpen(t, srv, cleartextFixture, lc, lcsrf)
+
+	// (1) No auth → 401.
+	if r := do(srv, "GET", "/api/export/all.zip", nil); r.Code != http.StatusUnauthorized {
+		t.Fatalf("no auth: want 401, got %d", r.Code)
+	}
+
+	// (2) Lead → 200, correct content-type / disposition.
+	r := do(srv, "GET", "/api/export/all.zip", lc)
+	if r.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d %s", r.Code, r.Body.String())
+	}
+	ct := r.Result().Header.Get("Content-Type")
+	if !strings.Contains(ct, "zip") {
+		t.Errorf("Content-Type should indicate zip, got: %s", ct)
+	}
+	cd := r.Result().Header.Get("Content-Disposition")
+	if !strings.Contains(cd, "reports") {
+		t.Errorf("Content-Disposition should contain 'reports', got: %s", cd)
+	}
+	if !strings.Contains(cd, ".zip") {
+		t.Errorf("Content-Disposition should contain '.zip', got: %s", cd)
+	}
+
+	// (3) Expected entries present.
+	entries := parseZip(t, r.Body.Bytes())
+	for _, want := range []string{"accounts.csv", "full_report.html", "sanitized.json", "model_bundle/report.json"} {
+		if _, ok := entries[want]; !ok {
+			t.Errorf("expected zip entry %q not found", want)
+		}
+	}
+
+	// (4) No decompressed entry contains Welcome1 or the NT hashes.
+	for name, content := range entries {
+		if bytes.Contains(content, []byte("Welcome1")) {
+			t.Errorf("redacted all.zip entry %q MUST NOT contain Welcome1", name)
+		}
+		if bytes.Contains(content, []byte("AAAA0000000000000000000000000077")) {
+			t.Errorf("redacted all.zip entry %q MUST NOT contain NT hash", name)
+		}
+		if bytes.Contains(content, []byte("BBBB0000000000000000000000000077")) {
+			t.Errorf("redacted all.zip entry %q MUST NOT contain NT hash", name)
+		}
+	}
+
+	// (5) No cleartext/ entry.
+	for name := range entries {
+		if strings.HasPrefix(name, "cleartext/") {
+			t.Errorf("redacted all.zip must NOT have cleartext/ entry, found: %q", name)
+		}
+	}
+
+	// (6) Analyst with the audit open can also download (redacted, open to any operator).
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	openAudit(t, srv, ac, acsrf, func() string {
+		mr := do(srv, "GET", "/api/me", lc)
+		var m struct {
+			ActiveAudit string `json:"active_audit"`
+		}
+		_ = json.Unmarshal(mr.Body.Bytes(), &m)
+		return m.ActiveAudit
+	}())
+	if r2 := do(srv, "GET", "/api/export/all.zip", ac); r2.Code != http.StatusOK {
+		t.Fatalf("analyst all.zip: want 200, got %d", r2.Code)
+	}
+}
+
+// TestExportAllCleartextZip covers POST /api/export/all-cleartext.zip (gated, cleartext).
+func TestExportAllCleartextZip(t *testing.T) {
+	var buf bytes.Buffer
+	srv := newServerAudit("secret", &buf)
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	ingestAndOpen(t, srv, cleartextFixture, lc, lcsrf)
+
+	// Share the active audit with the analyst session so the role check fires first.
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	openAudit(t, srv, ac, acsrf, func() string {
+		r := do(srv, "GET", "/api/me", lc)
+		var m struct {
+			ActiveAudit string `json:"active_audit"`
+		}
+		_ = json.Unmarshal(r.Body.Bytes(), &m)
+		return m.ActiveAudit
+	}())
+
+	// (1) Analyst → 403, export_cleartext denied audit, no cleartext in body or log.
+	r := postJSON(srv, "/api/export/all-cleartext.zip", ac, acsrf, `{"acknowledge":true}`)
+	if r.Code != http.StatusForbidden {
+		t.Fatalf("analyst: want 403, got %d %s", r.Code, r.Body.String())
+	}
+	if bytes.Contains(r.Body.Bytes(), []byte("Welcome1")) {
+		t.Error("cleartext leaked in analyst 403 body")
+	}
+	logs := buf.String()
+	if !strings.Contains(logs, "export_cleartext") || !strings.Contains(logs, `"result":"denied"`) {
+		t.Fatalf("denied audit event missing: %s", logs)
+	}
+	if strings.Contains(logs, "Welcome1") {
+		t.Fatalf("AUDIT LOG LEAKED CLEARTEXT after denied: %s", logs)
+	}
+	// No export_cleartext ok event yet.
+	for _, line := range strings.Split(logs, "\n") {
+		if strings.Contains(line, "export_cleartext") && strings.Contains(line, `"result":"ok"`) {
+			t.Fatalf("export_cleartext ok must NOT exist after analyst denial: %s", line)
+		}
+	}
+
+	// (2) No acknowledge → 400, no cleartext.
+	r = postJSON(srv, "/api/export/all-cleartext.zip", lc, lcsrf, `{"acknowledge":false}`)
+	if r.Code != http.StatusBadRequest {
+		t.Fatalf("no ack: want 400, got %d", r.Code)
+	}
+	if bytes.Contains(r.Body.Bytes(), []byte("Welcome1")) {
+		t.Error("cleartext leaked in no-ack 400 body")
+	}
+
+	// (3) No CSRF → 403 (middleware; no handler-level audit fires).
+	r = postJSON(srv, "/api/export/all-cleartext.zip", lc, "", `{"acknowledge":true}`)
+	if r.Code != http.StatusForbidden {
+		t.Fatalf("no CSRF: want 403, got %d", r.Code)
+	}
+
+	// (4) Lead + CSRF + acknowledge → 200, CLEARTEXT in disposition, .zip.
+	buf.Reset()
+	r = postJSON(srv, "/api/export/all-cleartext.zip", lc, lcsrf, `{"acknowledge":true}`)
+	if r.Code != http.StatusOK {
+		t.Fatalf("happy path: want 200, got %d %s", r.Code, r.Body.String())
+	}
+	cd := r.Result().Header.Get("Content-Disposition")
+	if !strings.Contains(cd, "CLEARTEXT") {
+		t.Errorf("Content-Disposition should contain CLEARTEXT, got: %s", cd)
+	}
+	if !strings.Contains(cd, ".zip") {
+		t.Errorf("Content-Disposition should contain .zip, got: %s", cd)
+	}
+
+	entries := parseZip(t, r.Body.Bytes())
+
+	// No NT hash anywhere in decompressed entries.
+	for name, content := range entries {
+		if bytes.Contains(content, []byte("AAAA0000000000000000000000000077")) {
+			t.Errorf("cleartext all-zip entry %q MUST NOT contain NT hash", name)
+		}
+		if bytes.Contains(content, []byte("BBBB0000000000000000000000000077")) {
+			t.Errorf("cleartext all-zip entry %q MUST NOT contain NT hash", name)
+		}
+	}
+
+	// At least one cleartext/ entry contains Welcome1.
+	foundCleartext := false
+	for name, content := range entries {
+		if strings.HasPrefix(name, "cleartext/") && bytes.Contains(content, []byte("Welcome1")) {
+			foundCleartext = true
+		}
+	}
+	if !foundCleartext {
+		t.Error("cleartext/ folder must contain a file with Welcome1")
+	}
+
+	// No NON-cleartext/ entry contains Welcome1.
+	for name, content := range entries {
+		if !strings.HasPrefix(name, "cleartext/") && bytes.Contains(content, []byte("Welcome1")) {
+			t.Errorf("non-cleartext/ entry %q MUST NOT contain Welcome1", name)
+		}
+	}
+
+	// export_cleartext ok audit exists; audit log must never contain Welcome1.
+	logs = buf.String()
+	if !strings.Contains(logs, "export_cleartext") || !strings.Contains(logs, `"result":"ok"`) {
+		t.Fatalf("export_cleartext ok audit event missing: %s", logs)
+	}
+	if strings.Contains(logs, "Welcome1") {
+		t.Fatalf("AUDIT LOG LEAKED CLEARTEXT PASSWORD: %s", logs)
+	}
+	// Target must contain the audit name but never a password.
+	if strings.Contains(logs, `"target":"Welcome1"`) {
+		t.Fatalf("audit target must not be a password: %s", logs)
+	}
+}

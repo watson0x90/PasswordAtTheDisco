@@ -194,6 +194,9 @@ func (s *Server) Routes() http.Handler {
 	// Model-export bundle: sanitized GET (any operator) + gated cleartext POST (lead).
 	mux.Handle("GET /api/export/bundle.zip", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportBundle))))
 	mux.Handle("POST /api/export/cleartext.zip", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleExportCleartextBundle)))))
+	// All-reports ZIP: redacted GET (any operator) + gated cleartext POST (lead).
+	mux.Handle("GET /api/export/all.zip", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportAllZip))))
+	mux.Handle("POST /api/export/all-cleartext.zip", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleExportAllCleartextZip)))))
 	// Per-domain password policies: any operator may read; lead may edit
 	mux.Handle("GET /api/policies", s.requireAuth(http.HandlerFunc(s.handleGetPolicies)))
 	mux.Handle("PUT /api/policies", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleSetPolicies))))
@@ -2513,6 +2516,91 @@ func (s *Server) handleExportCleartextBundle(w http.ResponseWriter, r *http.Requ
 	}
 	m := metrics.Compute(accts, now)
 	_ = report.BundleZip(w, meta.Name, scope, true, m, accts, now, ver)
+}
+
+// handleExportAllZip streams a ZIP containing every redacted report (CSV, HTML,
+// sanitized JSON, model bundle) for the active audit. Accounts are loaded with
+// cleartext=true so the reuse graph is accurate; all generators self-redact, so
+// no password or NT hash reaches the downloaded file.
+func (s *Server) handleExportAllZip(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	id, ok := s.activeAudit(w, sess)
+	if !ok {
+		return
+	}
+	accts, err := s.Store.Accounts(id, true) // full — reuse graph needs NT hashes; generators self-redact
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		return
+	}
+	meta, _ := s.Store.Meta(id)
+	sum, _ := s.Store.Summary(id)
+	ver := s.Build.Version
+	if ver == "" {
+		ver = "dev"
+	}
+	download(w, meta.Name, "reports", "zip")
+	_ = report.AllReportsZip(w, meta.Name, false, accts, sum, time.Now().UTC(), ver)
+}
+
+// handleExportAllCleartextZip serves a lead-only, fail-closed-audited cleartext
+// all-reports ZIP. The cleartext/ folder carries cracked passwords; no NT hash
+// appears anywhere. Mirrors handleExportCleartextCSV gate-for-gate.
+func (s *Server) handleExportAllCleartextZip(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	// (1) Lead-role check — fail-closed audit + 403.
+	if sess.Role != auth.RoleLead {
+		if !s.auditOrFail(w, audit.Event{
+			Actor: sess.Username, Role: string(sess.Role),
+			Action: "export_cleartext", Source: r.RemoteAddr, Result: "denied",
+		}) {
+			return
+		}
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	// (2) Decode JSON body; require explicit acknowledgement before loading any data.
+	defer r.Body.Close()
+	var body struct {
+		Acknowledge bool `json:"acknowledge"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+	if !body.Acknowledge {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "acknowledgement required"})
+		return
+	}
+	// (3) Resolve active audit + load FULL accounts (with secrets).
+	id, ok := s.activeAudit(w, sess)
+	if !ok {
+		return
+	}
+	accts, err := s.Store.Accounts(id, true)
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		return
+	}
+	meta, _ := s.Store.Meta(id)
+	sum, _ := s.Store.Summary(id)
+	ver := s.Build.Version
+	if ver == "" {
+		ver = "dev"
+	}
+	// (4) Fail-closed audit — if the write fails, refuse (500) and skip the file.
+	// Target is the audit name; a password is NEVER written to the audit log.
+	if !s.auditOrFail(w, audit.Event{
+		Actor: sess.Username, Role: string(sess.Role),
+		Action: "export_cleartext", Target: meta.Name + " — all reports (cleartext)",
+		Source: r.RemoteAddr, Result: "ok",
+	}) {
+		return
+	}
+	// (5) Set download headers.
+	download(w, meta.Name, "reports_CLEARTEXT", "zip")
+	// (6) Render — cleartext appears only inside the cleartext/ folder; no NT hash anywhere.
+	_ = report.AllReportsZip(w, meta.Name, true, accts, sum, time.Now().UTC(), ver)
 }
 
 // safeFilename keeps only filename-safe characters from an audit name.
