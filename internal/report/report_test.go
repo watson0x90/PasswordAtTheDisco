@@ -447,3 +447,85 @@ func TestHTMLDACountObtainableOnly(t *testing.T) {
 		t.Errorf("HTML missing 'Exposure × Impact' matrix section")
 	}
 }
+
+// TestHTMLGraphsAndScatter verifies that HTML() renders network graph SVGs
+// (from m.Reports.ReuseGraph and m.Reports.SimilarityGraph) and scatter plot SVGs
+// (from m.Charts.HIBPVsRisk) as inline SVG with no <script> tags, and that
+// user-influenced graph node labels containing HTML-special characters are escaped.
+func TestHTMLGraphsAndScatter(t *testing.T) {
+	const sharedHash = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
+	accts := []model.Account{
+		// Cross-domain reuse pair → two distinct domains in the same CrackedReuse
+		// group → CrossDomainReuseGraph produces nodes and at least one edge.
+		{Username: "alice", Domain: "CORP.LOCAL", NTHash: sharedHash, Cracked: true,
+			PasswordLength: 8, RiskLevel: "High", RiskScore: 7,
+			HIBPBreached: true, HIBPBreachCount: 5, SharedWith: 1},
+		{Username: "bob", Domain: "SUB.LOCAL", NTHash: sharedHash, Cracked: true,
+			PasswordLength: 8, RiskLevel: "High", RiskScore: 7, SharedWith: 1},
+		// Similarity pair where one username contains '<' → SimilarityGraph node
+		// Label must be HTML-escaped to prevent injection into SVG <text> content.
+		{
+			Username: "admin<1", Domain: "CORP.LOCAL",
+			Cracked: true, SimilarityScore: 0.85,
+			RiskLevel: "Critical", RiskScore: 9,
+			SimilarPeers: []model.SimilarPeer{
+				{Username: "admin2", Domain: "CORP.LOCAL", Score: 0.85},
+			},
+		},
+		{
+			Username: "admin2", Domain: "CORP.LOCAL",
+			Cracked: true, SimilarityScore: 0.85,
+			RiskLevel: "Critical", RiskScore: 8.5,
+			SimilarPeers: []model.SimilarPeer{
+				{Username: "admin<1", Domain: "CORP.LOCAL", Score: 0.85},
+			},
+		},
+	}
+
+	var b bytes.Buffer
+	if err := HTML(&b, "GraphTest", time.Unix(1_700_000_000, 0), accts); err != nil {
+		t.Fatal(err)
+	}
+	out := b.String()
+
+	// Self-contained requirement: no <script> tags ever.
+	if strings.Contains(out, "<script") {
+		t.Error("HTML output must not contain <script> tags (self-contained requirement)")
+	}
+
+	// ReuseGraph must produce <circle> (nodes) and <line> (edges) elements.
+	// <line> is unique to network graphs — scatter charts only use <circle>.
+	if !strings.Contains(out, "<line ") {
+		t.Error("network graph section should contain <line> elements (edges between reuse-linked domains)")
+	}
+	if !strings.Contains(out, "<circle ") {
+		t.Error("output should contain <circle> elements from scatter plots or network graphs")
+	}
+
+	// Graph section label must appear.
+	if !strings.Contains(out, ">Graphs<") {
+		t.Error("HTML output missing Graphs section label")
+	}
+
+	// "Cross-domain credential reuse" graph card title must appear.
+	if !strings.Contains(out, "Cross-domain credential reuse") {
+		t.Error("HTML output missing cross-domain reuse graph card title")
+	}
+
+	// Scatter chart "HIBP exposure vs risk" must appear (alice: High risk, HIBPBreached).
+	if !strings.Contains(out, "HIBP exposure vs risk") {
+		t.Error("HTML output missing scatter chart title 'HIBP exposure vs risk'")
+	}
+
+	// CRITICAL: username "admin<1" must be HTML-escaped in SVG node labels.
+	// The raw '<' must not appear as an unescaped character anywhere in the output
+	// (the Go html/template engine also escapes it in the Accounts table, so the
+	// raw form should be entirely absent from the rendered document).
+	if strings.Contains(out, "admin<1") {
+		t.Error("HTML output contains unescaped '<' in node label 'admin<1' — XSS risk; must be escaped as 'admin&lt;1'")
+	}
+	if !strings.Contains(out, "admin&lt;1") {
+		t.Error("HTML output must contain 'admin&lt;1' (escaped node label / table cell) but it was not found")
+	}
+}

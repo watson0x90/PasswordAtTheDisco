@@ -240,7 +240,9 @@ type htmlData struct {
 	Domains                      []domRow
 	Matrix                       []matrixRow
 	// Charts holds pre-rendered SVG chart cards (inline SVG, no scripts).
-	Charts   []template.HTML
+	Charts []template.HTML
+	// Graphs holds pre-rendered network graph SVG cards (wider; own section).
+	Graphs   []template.HTML
 	Accounts []model.Account
 }
 
@@ -320,7 +322,6 @@ func HTML(w io.Writer, name string, generated time.Time, accounts []model.Accoun
 	}
 
 	// Precompute chart SVGs from m.Charts — inline SVG, no scripts, no external assets.
-	// Deferred series (scatter/axis-factor): HIBPVsRisk, PasswordAgeScatter, AxisFactorBars.
 	allCards := []template.HTML{
 		chartCard("Risk distribution", svgSliceAsBar(m.Charts.RiskDistribution)),
 		chartCard("HIBP exposure", svgSliceAsBar(m.Charts.HIBPSplit)),
@@ -332,10 +333,24 @@ func HTML(w io.Writer, name string, generated time.Time, accounts []model.Accoun
 		chartCard("Password similarity", svgBarChart(m.Charts.SimilarityBuckets, "")),
 		chartCard("DA pathways by domain", svgBarChart(m.Charts.DAExposureByDomain, "#fb7185")),
 		chartCard("Password complexity", svgBarChart(m.Charts.ComplexityCounts, "")),
+		// Scatter plots and per-tier breakdown.
+		chartCard("HIBP exposure vs risk", svgScatter(m.Charts.HIBPVsRisk)),
+		chartCard("Password age vs risk", svgScatter(m.Charts.PasswordAgeScatter)),
+		chartCard("Axis factor breakdown", svgAxisFactorBars(m.Charts.AxisFactorBars)),
 	}
 	for _, c := range allCards {
 		if c != "" {
 			d.Charts = append(d.Charts, c)
+		}
+	}
+
+	// Network graphs go in their own wider section (m.Reports).
+	for _, gc := range []template.HTML{
+		chartCard("Cross-domain credential reuse", svgNetworkGraph(m.Reports.ReuseGraph)),
+		chartCard("Password similarity clusters", svgNetworkGraph(m.Reports.SimilarityGraph)),
+	} {
+		if gc != "" {
+			d.Graphs = append(d.Graphs, gc)
 		}
 	}
 
@@ -387,6 +402,7 @@ td{padding:7px 10px;border-bottom:1px solid #1b2236;white-space:nowrap}
 .chart-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:14px}
 .chart-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
 .chart-title{font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--faint);margin-bottom:10px;font-weight:600}
+.graph-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(520px,1fr));gap:14px}
 </style></head>
 <body><div class="wrap">
 <h1>{{.Name}}</h1>
@@ -438,6 +454,11 @@ td{padding:7px 10px;border-bottom:1px solid #1b2236;white-space:nowrap}
 {{if .Charts}}
 <div class="label">Charts</div>
 <div class="chart-grid">{{range .Charts}}{{.}}{{end}}</div>
+{{end}}
+
+{{if .Graphs}}
+<div class="label">Graphs</div>
+<div class="graph-grid">{{range .Graphs}}{{.}}{{end}}</div>
 {{end}}
 
 <div class="label">Accounts ({{.Total}})</div>
