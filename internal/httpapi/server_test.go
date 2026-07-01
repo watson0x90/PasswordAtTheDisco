@@ -682,7 +682,9 @@ func TestExportHTMLIncludesReuseGraph(t *testing.T) {
 	var body struct {
 		AuditID string `json:"audit_id"`
 	}
-	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body.AuditID == "" {
+		t.Fatalf("ingest response missing audit_id: err=%v body=%s", err, rec.Body.String())
+	}
 
 	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
 	openAudit(t, srv, lc, lcsrf, body.AuditID)
