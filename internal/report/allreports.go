@@ -48,6 +48,12 @@ func AllReportsZip(w io.Writer, name string, cleartext bool, accounts []model.Ac
 		}
 	}
 
+	// All entries below are REDACTED. CSV, HTML, SanitizedJSON, and the sanitized
+	// bundle self-project (Redacted()/allowlist) so they're secret-free even on the
+	// full accounts loaded above. AccountsHTML/WeakPasswordsHTML do NOT self-project —
+	// they are safe only because their templates render column-restricted fields
+	// (username/domain/risk/counts) and never .Password or .NTHash. Keep those
+	// templates column-restricted, or switch these to self-projecting generators.
 	add("accounts.csv", func(f io.Writer) error { return CSV(f, accounts) })
 	add("cracked.csv", func(f io.Writer) error { return CSV(f, cracked) })
 	add("cracked.html", func(f io.Writer) error {

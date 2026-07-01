@@ -19,9 +19,15 @@ func unzipAll(t *testing.T, b []byte) map[string][]byte {
 	}
 	out := map[string][]byte{}
 	for _, f := range zr.File {
-		rc, _ := f.Open()
-		d, _ := io.ReadAll(rc)
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatalf("open %s: %v", f.Name, err)
+		}
+		d, err := io.ReadAll(rc)
 		rc.Close()
+		if err != nil {
+			t.Fatalf("read %s: %v", f.Name, err)
+		}
 		out[f.Name] = d
 	}
 	return out
@@ -89,6 +95,10 @@ func TestAllReportsZip(t *testing.T) {
 		t.Error("cleartext zip: no cleartext/ entry contains the password")
 	}
 	for _, want := range []string{
+		// the cleartext zip is a SUPERSET — all 12 redacted base entries plus the cleartext/ ones.
+		"accounts.csv", "cracked.csv", "cracked.html", "hibp.csv", "hibp.html",
+		"weak.csv", "weak.html", "reuse.csv", "reuse.html", "full_report.html",
+		"sanitized.json", "model_bundle/report.json",
 		"cleartext/accounts_CLEARTEXT.csv", "cleartext/full_report_CLEARTEXT.html",
 		"cleartext/model_bundle/report.json",
 	} {
