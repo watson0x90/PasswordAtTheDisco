@@ -2194,3 +2194,226 @@ func TestExportHTMLByDomain(t *testing.T) {
 		t.Error("org-wide HTML export LEAKED NT hash")
 	}
 }
+
+// cleartextFixture has two domains and a cracked account with a distinctive
+// cleartext (Welcome1) and an NT hash, to verify both inclusion and exclusion.
+const cleartextFixture = `{"accounts":[` +
+	`{"username":"alice","domain":"CORP","password":"Welcome1","cracked":true,"nt_hash":"AAAA0000000000000000000000000077"},` +
+	`{"username":"bob","domain":"SUB","password":"Spring2024!","cracked":true,"nt_hash":"BBBB0000000000000000000000000077"}]}`
+
+// ingestAndOpen ingests payload (via the bearer token), opens the resulting audit
+// for the given session, and returns the audit ID.
+func ingestAndOpen(t *testing.T, srv *Server, payload string, cookie *http.Cookie, csrf string) string {
+	t.Helper()
+	req := httptest.NewRequest("POST", "/api/ingest", strings.NewReader(payload))
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("ingest: %d %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		AuditID string `json:"audit_id"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	openAudit(t, srv, cookie, csrf, body.AuditID)
+	return body.AuditID
+}
+
+// TestExportCleartextCSV covers all gate assertions for POST /api/export/cleartext.csv.
+func TestExportCleartextCSV(t *testing.T) {
+	var buf bytes.Buffer
+	srv := newServerAudit("secret", &buf)
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	ingestAndOpen(t, srv, cleartextFixture, lc, lcsrf)
+
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	// analyst needs the audit open so the role check (not no-audit) is hit.
+	openAudit(t, srv, ac, acsrf, func() string {
+		// read the active audit id from lead's /api/me
+		r := do(srv, "GET", "/api/me", lc)
+		var m struct {
+			ActiveAudit string `json:"active_audit"`
+		}
+		_ = json.Unmarshal(r.Body.Bytes(), &m)
+		return m.ActiveAudit
+	}())
+
+	// (1) Analyst → 403, denied audit event, no cleartext in body.
+	r := postJSON(srv, "/api/export/cleartext.csv", ac, acsrf, `{"acknowledge":true}`)
+	if r.Code != http.StatusForbidden {
+		t.Fatalf("analyst should be 403, got %d %s", r.Code, r.Body.String())
+	}
+	if strings.Contains(r.Body.String(), "Welcome1") {
+		t.Fatal("cleartext leaked in denied response body")
+	}
+	logs := buf.String()
+	if !strings.Contains(logs, "export_cleartext") || !strings.Contains(logs, `"result":"denied"`) {
+		t.Fatalf("denied audit event missing (want export_cleartext/denied): %s", logs)
+	}
+	if strings.Contains(logs, "Welcome1") {
+		t.Fatalf("AUDIT LOG LEAKED CLEARTEXT after denied: %s", logs)
+	}
+	// No export_cleartext ok event should exist yet; check per JSON line so
+	// unrelated "ok" results (e.g. logins) don't cause a false positive.
+	for _, line := range strings.Split(logs, "\n") {
+		if strings.Contains(line, "export_cleartext") && strings.Contains(line, `"result":"ok"`) {
+			t.Fatalf("export_cleartext ok event must NOT exist after analyst denial: %s", line)
+		}
+	}
+
+	// (2) Lead without CSRF → 403 (middleware).
+	r = postJSON(srv, "/api/export/cleartext.csv", lc, "", `{"acknowledge":true}`)
+	if r.Code != http.StatusForbidden {
+		t.Fatalf("no CSRF should be 403, got %d", r.Code)
+	}
+
+	// (3) Lead with CSRF + no acknowledge → 400.
+	r = postJSON(srv, "/api/export/cleartext.csv", lc, lcsrf, `{"acknowledge":false}`)
+	if r.Code != http.StatusBadRequest {
+		t.Fatalf("no acknowledge should be 400, got %d", r.Code)
+	}
+	if strings.Contains(r.Body.String(), "Welcome1") {
+		t.Fatal("cleartext leaked in 400 response body")
+	}
+
+	// (4) Happy path: lead + CSRF + acknowledge → 200.
+	buf.Reset()
+	r = postJSON(srv, "/api/export/cleartext.csv", lc, lcsrf, `{"acknowledge":true}`)
+	if r.Code != http.StatusOK {
+		t.Fatalf("happy path should be 200, got %d %s", r.Code, r.Body.String())
+	}
+	csvBody := r.Body.String()
+	if !strings.Contains(csvBody, "Welcome1") {
+		t.Fatal("CSV should contain cracked password Welcome1 in password column")
+	}
+	if strings.Contains(csvBody, "AAAA0000000000000000000000000077") {
+		t.Fatal("CSV must NOT contain NT hash")
+	}
+	cd := r.Result().Header.Get("Content-Disposition")
+	if !strings.Contains(cd, "CLEARTEXT") {
+		t.Errorf("Content-Disposition should contain CLEARTEXT, got: %s", cd)
+	}
+	// Audit log: export_cleartext ok + no cleartext.
+	logs = buf.String()
+	if !strings.Contains(logs, "export_cleartext") || !strings.Contains(logs, `"result":"ok"`) {
+		t.Fatalf("export_cleartext ok audit event missing: %s", logs)
+	}
+	if strings.Contains(logs, "Welcome1") {
+		t.Fatalf("AUDIT LOG LEAKED CLEARTEXT PASSWORD: %s", logs)
+	}
+
+	// (5) Domain scoping via body: CORP → alice only; unknown domain → 404.
+	r = postJSON(srv, "/api/export/cleartext.csv", lc, lcsrf, `{"acknowledge":true,"domain":"CORP"}`)
+	if r.Code != http.StatusOK {
+		t.Fatalf("domain=CORP should be 200, got %d %s", r.Code, r.Body.String())
+	}
+	out := r.Body.String()
+	if !strings.Contains(out, "alice") {
+		t.Error("CORP CSV should contain alice")
+	}
+	if strings.Contains(out, "bob") {
+		t.Error("CORP CSV should NOT contain bob (SUB user)")
+	}
+	cd = r.Result().Header.Get("Content-Disposition")
+	if !strings.Contains(cd, "CLEARTEXT") || !strings.Contains(cd, "CORP") {
+		t.Errorf("domain CSV Content-Disposition should contain CLEARTEXT and CORP, got: %s", cd)
+	}
+	r = postJSON(srv, "/api/export/cleartext.csv", lc, lcsrf, `{"acknowledge":true,"domain":"GHOST"}`)
+	if r.Code != http.StatusNotFound {
+		t.Fatalf("unknown domain should be 404, got %d", r.Code)
+	}
+}
+
+// TestExportCleartextHTML covers gate assertions and HTML-specific checks for
+// POST /api/export/cleartext.html.
+func TestExportCleartextHTML(t *testing.T) {
+	var buf bytes.Buffer
+	srv := newServerAudit("secret", &buf)
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	ingestAndOpen(t, srv, cleartextFixture, lc, lcsrf)
+
+	// (1) Lead + CSRF + acknowledge → 200, HTML has Welcome1 + banner, no NT hash.
+	r := postJSON(srv, "/api/export/cleartext.html", lc, lcsrf, `{"acknowledge":true}`)
+	if r.Code != http.StatusOK {
+		t.Fatalf("html happy path should be 200, got %d %s", r.Code, r.Body.String())
+	}
+	out := r.Body.String()
+	if !strings.Contains(out, "Welcome1") {
+		t.Fatal("HTML should contain cracked password Welcome1")
+	}
+	if strings.Contains(out, "AAAA0000000000000000000000000077") {
+		t.Fatal("HTML must NOT contain NT hash")
+	}
+	if !strings.Contains(out, "CONTAINS CLEARTEXT") {
+		t.Fatal("HTML must contain the cleartext warning banner")
+	}
+	cd := r.Result().Header.Get("Content-Disposition")
+	if !strings.Contains(cd, "CLEARTEXT") {
+		t.Errorf("Content-Disposition should contain CLEARTEXT, got: %s", cd)
+	}
+	// Audit log: export_cleartext ok, no cleartext password.
+	logs := buf.String()
+	if !strings.Contains(logs, "export_cleartext") || !strings.Contains(logs, `"result":"ok"`) {
+		t.Fatalf("export_cleartext ok audit event missing: %s", logs)
+	}
+	if strings.Contains(logs, "Welcome1") {
+		t.Fatalf("AUDIT LOG LEAKED CLEARTEXT PASSWORD: %s", logs)
+	}
+
+	// (2) Analyst → 403.
+	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
+	r = postJSON(srv, "/api/export/cleartext.html", ac, acsrf, `{"acknowledge":true}`)
+	if r.Code != http.StatusForbidden {
+		t.Fatalf("analyst should be 403, got %d", r.Code)
+	}
+
+	// (3) No CSRF → 403 (middleware).
+	r = postJSON(srv, "/api/export/cleartext.html", lc, "", `{"acknowledge":true}`)
+	if r.Code != http.StatusForbidden {
+		t.Fatalf("no CSRF should be 403, got %d", r.Code)
+	}
+
+	// (4) No acknowledge → 400.
+	r = postJSON(srv, "/api/export/cleartext.html", lc, lcsrf, `{"acknowledge":false}`)
+	if r.Code != http.StatusBadRequest {
+		t.Fatalf("no acknowledge should be 400, got %d", r.Code)
+	}
+	if strings.Contains(r.Body.String(), "Welcome1") {
+		t.Fatal("cleartext leaked in 400 response body")
+	}
+
+	// (5) Domain scoping via body.
+	r = postJSON(srv, "/api/export/cleartext.html", lc, lcsrf, `{"acknowledge":true,"domain":"CORP"}`)
+	if r.Code != http.StatusOK {
+		t.Fatalf("domain=CORP HTML should be 200, got %d", r.Code)
+	}
+	domOut := r.Body.String()
+	if !strings.Contains(domOut, "alice") {
+		t.Error("CORP HTML should contain alice")
+	}
+	if strings.Contains(domOut, "bob") {
+		t.Error("CORP HTML should NOT contain bob (SUB user)")
+	}
+	// Unknown domain → 404.
+	r = postJSON(srv, "/api/export/cleartext.html", lc, lcsrf, `{"acknowledge":true,"domain":"GHOST"}`)
+	if r.Code != http.StatusNotFound {
+		t.Fatalf("unknown domain HTML should be 404, got %d", r.Code)
+	}
+}
+
+// TestExportCleartextFailClosed verifies that a failing audit sink prevents cleartext
+// from being emitted for the cleartext CSV endpoint.
+func TestExportCleartextFailClosed(t *testing.T) {
+	srv := newServerAudit("secret", failWriter{})
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	ingestAndOpen(t, srv, cleartextFixture, lc, lcsrf)
+
+	r := postJSON(srv, "/api/export/cleartext.csv", lc, lcsrf, `{"acknowledge":true}`)
+	if r.Code != http.StatusInternalServerError {
+		t.Fatalf("failing audit sink should yield 500, got %d", r.Code)
+	}
+	if strings.Contains(r.Body.String(), "Welcome1") {
+		t.Fatal("CLEARTEXT emitted despite audit write failure")
+	}
+}

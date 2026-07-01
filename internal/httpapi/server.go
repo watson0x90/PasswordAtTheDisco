@@ -188,6 +188,9 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /api/export/reuse.html", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportReuseHTML))))
 	mux.Handle("GET /api/export/weak.html", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportWeakHTML))))
 	mux.Handle("GET /api/export/sanitized.json", s.requireAuth(s.requireUnlocked(http.HandlerFunc(s.handleExportSanitized))))
+	// Cleartext exports: lead-only, CSRF-protected, fail-closed audit-logged.
+	mux.Handle("POST /api/export/cleartext.csv", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleExportCleartextCSV)))))
+	mux.Handle("POST /api/export/cleartext.html", s.requireAuth(s.requireCSRF(s.requireUnlocked(http.HandlerFunc(s.handleExportCleartextHTML)))))
 	// Per-domain password policies: any operator may read; lead may edit
 	mux.Handle("GET /api/policies", s.requireAuth(http.HandlerFunc(s.handleGetPolicies)))
 	mux.Handle("PUT /api/policies", s.requireAuth(s.requireCSRF(http.HandlerFunc(s.handleSetPolicies))))
@@ -2253,6 +2256,144 @@ func (s *Server) handleExportReuseHTML(w http.ResponseWriter, r *http.Request) {
 	}
 	download(w, meta.Name, "reuse-groups", "html")
 	_ = report.ReuseGroupsHTML(w, meta.Name+" — Password-reuse groups", time.Now().UTC(), model.BuildReport(accts))
+}
+
+// handleExportCleartextCSV serves a lead-only, fail-closed-audited cleartext CSV
+// export of the active audit's cracked passwords. All four gates (lead role,
+// CSRF, explicit acknowledgement, fail-closed audit write) are enforced
+// server-side on every request. The cleartext password is NEVER written to the
+// audit log.
+func (s *Server) handleExportCleartextCSV(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	// (1) Lead-role check — fail-closed audit + 403.
+	if sess.Role != auth.RoleLead {
+		if !s.auditOrFail(w, audit.Event{
+			Actor: sess.Username, Role: string(sess.Role),
+			Action: "export_cleartext", Source: r.RemoteAddr, Result: "denied",
+		}) {
+			return
+		}
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	// (2) Decode JSON body; require explicit acknowledgement before loading any data.
+	defer r.Body.Close()
+	var body struct {
+		Acknowledge bool   `json:"acknowledge"`
+		Domain      string `json:"domain"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+	if !body.Acknowledge {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "acknowledgement required"})
+		return
+	}
+	// (3) Resolve active audit + load FULL accounts (with secrets).
+	id, ok := s.activeAudit(w, sess)
+	if !ok {
+		return
+	}
+	accts, err := s.Store.Accounts(id, true)
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		return
+	}
+	meta, _ := s.Store.Meta(id)
+	// (4) Optional domain filter.
+	label := "cleartext CSV"
+	suffix := "CLEARTEXT"
+	if body.Domain != "" {
+		accts = filterAccounts(accts, func(a model.Account) bool { return a.Domain == body.Domain })
+		if len(accts) == 0 {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "domain not found"})
+			return
+		}
+		label += " (domain=" + body.Domain + ")"
+		suffix = safeFilename(body.Domain) + "_CLEARTEXT"
+	}
+	// (5) Fail-closed audit — if the write fails, refuse (500) and skip the file.
+	if !s.auditOrFail(w, audit.Event{
+		Actor: sess.Username, Role: string(sess.Role),
+		Action: "export_cleartext", Target: meta.Name + " — " + label,
+		Source: r.RemoteAddr, Result: "ok",
+	}) {
+		return
+	}
+	// (6) Set download headers.
+	download(w, meta.Name, suffix, "csv")
+	// (7) Render — cleartext passwords are deliberately included here.
+	_ = report.CSVCleartext(w, accts)
+}
+
+// handleExportCleartextHTML serves a lead-only, fail-closed-audited cleartext HTML
+// report of the active audit's cracked passwords, with a prominent "CONTAINS
+// CLEARTEXT PASSWORDS" banner. Mirrors handleExportCleartextCSV gate-for-gate.
+func (s *Server) handleExportCleartextHTML(w http.ResponseWriter, r *http.Request) {
+	sess, _ := sessionFrom(r.Context())
+	// (1) Lead-role check — fail-closed audit + 403.
+	if sess.Role != auth.RoleLead {
+		if !s.auditOrFail(w, audit.Event{
+			Actor: sess.Username, Role: string(sess.Role),
+			Action: "export_cleartext", Source: r.RemoteAddr, Result: "denied",
+		}) {
+			return
+		}
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "requires lead role"})
+		return
+	}
+	// (2) Decode JSON body; require explicit acknowledgement before loading any data.
+	defer r.Body.Close()
+	var body struct {
+		Acknowledge bool   `json:"acknowledge"`
+		Domain      string `json:"domain"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+	if !body.Acknowledge {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "acknowledgement required"})
+		return
+	}
+	// (3) Resolve active audit + load FULL accounts (with secrets).
+	id, ok := s.activeAudit(w, sess)
+	if !ok {
+		return
+	}
+	accts, err := s.Store.Accounts(id, true)
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
+		return
+	}
+	meta, _ := s.Store.Meta(id)
+	// (4) Optional domain filter.
+	label := "cleartext HTML"
+	suffix := "CLEARTEXT"
+	name := meta.Name
+	if body.Domain != "" {
+		accts = filterAccounts(accts, func(a model.Account) bool { return a.Domain == body.Domain })
+		if len(accts) == 0 {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "domain not found"})
+			return
+		}
+		name = meta.Name + " — " + body.Domain
+		label += " (domain=" + body.Domain + ")"
+		suffix = safeFilename(body.Domain) + "_CLEARTEXT"
+	}
+	// (5) Fail-closed audit — if the write fails, refuse (500) and skip the file.
+	if !s.auditOrFail(w, audit.Event{
+		Actor: sess.Username, Role: string(sess.Role),
+		Action: "export_cleartext", Target: meta.Name + " — " + label,
+		Source: r.RemoteAddr, Result: "ok",
+	}) {
+		return
+	}
+	// (6) Set download headers.
+	download(w, meta.Name, suffix, "html")
+	// (7) Render — cleartext passwords are deliberately included here.
+	_ = report.HTMLCleartext(w, name, time.Now().UTC(), accts)
 }
 
 // safeFilename keeps only filename-safe characters from an audit name.
