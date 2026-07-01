@@ -37,9 +37,24 @@ type bundleReport struct {
 //   - Cleartext bundle: password only in report.json accounts, never in SVG images.
 //   - NTHash is NEVER emitted in any output path.
 func BundleZip(w io.Writer, name, scope string, cleartext bool, m metrics.Metrics, accounts []model.Account, now time.Time, version string) error {
+	zw := zip.NewWriter(w)
+	if err := writeBundleInto(zw, "", name, scope, cleartext, m, accounts, now, version); err != nil {
+		return err
+	}
+	return zw.Close()
+}
+
+// writeBundleInto writes the bundle contents into an existing zip.Writer, prefixing
+// every entry path with prefix. The zip.Writer is neither created nor closed by this
+// function — the caller owns both operations.
+//
+// The images manifest inside report.json always uses relative paths ("images/<name>.svg")
+// regardless of prefix; only the zip entry paths are prefixed. When prefix=="" the
+// output is identical to the previous single-function behaviour.
+func writeBundleInto(zw *zip.Writer, prefix, name, scope string, cleartext bool, m metrics.Metrics, accounts []model.Account, now time.Time, version string) error {
 	charts := ChartSVGs(m)
 
-	// Build the images manifest (only entries that will actually be written).
+	// Build the images manifest with paths relative to the bundle root (no prefix).
 	images := make(map[string]string, len(charts))
 	for _, c := range charts {
 		images[c.Name] = fmt.Sprintf("images/%s.svg", c.Name)
@@ -57,14 +72,12 @@ func BundleZip(w io.Writer, name, scope string, cleartext bool, m metrics.Metric
 		Images:        images,
 	}
 
-	zw := zip.NewWriter(w)
-
-	// Write report.json.
+	// Write report.json under the prefix.
 	rjBytes, err := json.MarshalIndent(rep, "", "  ")
 	if err != nil {
 		return fmt.Errorf("bundle: marshal report: %w", err)
 	}
-	rjf, err := zw.Create("report.json")
+	rjf, err := zw.Create(prefix + "report.json")
 	if err != nil {
 		return fmt.Errorf("bundle: create report.json: %w", err)
 	}
@@ -72,19 +85,19 @@ func BundleZip(w io.Writer, name, scope string, cleartext bool, m metrics.Metric
 		return fmt.Errorf("bundle: write report.json: %w", err)
 	}
 
-	// Write each chart SVG into images/.
+	// Write each chart SVG into <prefix>images/.
 	for _, c := range charts {
-		path := fmt.Sprintf("images/%s.svg", c.Name)
-		cf, err := zw.Create(path)
+		entryPath := fmt.Sprintf("%simages/%s.svg", prefix, c.Name)
+		cf, err := zw.Create(entryPath)
 		if err != nil {
-			return fmt.Errorf("bundle: create %s: %w", path, err)
+			return fmt.Errorf("bundle: create %s: %w", entryPath, err)
 		}
 		if _, err := io.WriteString(cf, c.SVG); err != nil {
-			return fmt.Errorf("bundle: write %s: %w", path, err)
+			return fmt.Errorf("bundle: write %s: %w", entryPath, err)
 		}
 	}
 
-	return zw.Close()
+	return nil
 }
 
 // BundlePeer is an identified similar-peer reference for the model export bundle.

@@ -124,6 +124,33 @@ func TestBundleZip(t *testing.T) {
 	}
 }
 
+func TestWriteBundleIntoPrefix(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	accts := []model.Account{{Username: "alice", Domain: "A", Cracked: true, RiskLevel: "High", RiskScore: 7}}
+	m := metrics.Compute(accts, now)
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	if err := writeBundleInto(zw, "model_bundle/", "Eng", "org", false, m, accts, now, "v"); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	zr, _ := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	var haveReport bool
+	for _, f := range zr.File {
+		if f.Name == "model_bundle/report.json" {
+			haveReport = true
+		}
+		if !strings.HasPrefix(f.Name, "model_bundle/") {
+			t.Errorf("entry %q not under prefix", f.Name)
+		}
+	}
+	if !haveReport {
+		t.Error("missing model_bundle/report.json")
+	}
+}
+
 func TestBundleAccounts(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0).UTC()
 	accts := []model.Account{
