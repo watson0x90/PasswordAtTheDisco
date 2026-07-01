@@ -147,7 +147,13 @@ function DomainDetail({ domain, accounts, report, reportErr, summary, onBack }: 
 
   return (
     <>
-      <button className="link-btn domain-back" onClick={onBack}>← All domains</button>
+      <div className="domain-detail-head">
+        <button className="link-btn domain-back" onClick={onBack}>← All domains</button>
+        <div className="domain-detail-exports">
+          <a className="btn" href={`/api/export/csv?domain=${encodeURIComponent(domain)}`} download>Export CSV</a>
+          <a className="btn" href={`/api/export/html?domain=${encodeURIComponent(domain)}`} download>Export HTML</a>
+        </div>
+      </div>
 
       <OverviewView
         accounts={accounts}

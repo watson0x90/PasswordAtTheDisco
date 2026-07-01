@@ -2065,3 +2065,116 @@ func TestExportSanitizedJSON(t *testing.T) {
 		t.Errorf("missing accounts in output")
 	}
 }
+
+func TestExportCSVByDomain(t *testing.T) {
+	const twoDomainPayload = `{"accounts":[` +
+		`{"username":"alice","domain":"CORP","password":"Welcome1","cracked":true,"nt_hash":"AAAA00000000000000000000000000000001"},` +
+		`{"username":"bob","domain":"SUB","password":"Spring2024!","cracked":true,"nt_hash":"BBBB00000000000000000000000000000001"}]}`
+
+	srv := newServer("secret")
+	req := httptest.NewRequest("POST", "/api/ingest", strings.NewReader(twoDomainPayload))
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("ingest failed: %d %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		AuditID string `json:"audit_id"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	openAudit(t, srv, lc, lcsrf, body.AuditID)
+
+	// CORP-scoped export: alice present, bob absent, header row present, Content-Disposition contains "CORP".
+	r := do(srv, "GET", "/api/export/csv?domain=CORP", lc)
+	if r.Code != http.StatusOK {
+		t.Fatalf("csv domain=CORP = %d %s", r.Code, r.Body.String())
+	}
+	out := r.Body.String()
+	if !strings.Contains(out, "alice") {
+		t.Error("CORP CSV should contain alice")
+	}
+	if strings.Contains(out, "bob") {
+		t.Error("CORP CSV should NOT contain bob (SUB user)")
+	}
+	if !strings.Contains(out, "domain") { // header row check
+		t.Error("CORP CSV should contain header row with 'domain' column")
+	}
+	cd := r.Result().Header.Get("Content-Disposition")
+	if !strings.Contains(cd, "CORP") {
+		t.Errorf("Content-Disposition should contain CORP, got: %s", cd)
+	}
+
+	// Unknown domain → 404.
+	r2 := do(srv, "GET", "/api/export/csv?domain=NOPE", lc)
+	if r2.Code != http.StatusNotFound {
+		t.Fatalf("csv domain=NOPE = %d, want 404", r2.Code)
+	}
+
+	// No domain param → org-wide: both alice and bob present.
+	r3 := do(srv, "GET", "/api/export/csv", lc)
+	if r3.Code != http.StatusOK {
+		t.Fatalf("csv no domain = %d %s", r3.Code, r3.Body.String())
+	}
+	out3 := r3.Body.String()
+	if !strings.Contains(out3, "alice") || !strings.Contains(out3, "bob") {
+		t.Error("org-wide CSV should contain both alice (CORP) and bob (SUB)")
+	}
+}
+
+func TestExportHTMLByDomain(t *testing.T) {
+	const twoDomainPayload = `{"accounts":[` +
+		`{"username":"alice","domain":"CORP","password":"Welcome1","cracked":true,"nt_hash":"CCCC00000000000000000000000000000001"},` +
+		`{"username":"bob","domain":"SUB","password":"Spring2024!","cracked":true,"nt_hash":"DDDD00000000000000000000000000000001"}]}`
+
+	srv := newServer("secret")
+	req := httptest.NewRequest("POST", "/api/ingest", strings.NewReader(twoDomainPayload))
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("ingest failed: %d %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		AuditID string `json:"audit_id"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	openAudit(t, srv, lc, lcsrf, body.AuditID)
+
+	// CORP-scoped HTML: alice present, domain in title, bob absent, Content-Disposition contains "CORP".
+	r := do(srv, "GET", "/api/export/html?domain=CORP", lc)
+	if r.Code != http.StatusOK {
+		t.Fatalf("html domain=CORP = %d %s", r.Code, r.Body.String())
+	}
+	out := r.Body.String()
+	if !strings.Contains(out, "alice") {
+		t.Error("CORP HTML should contain alice")
+	}
+	if !strings.Contains(out, "CORP") {
+		t.Error("CORP HTML title/content should reference CORP domain")
+	}
+	if strings.Contains(out, "bob") {
+		t.Error("CORP HTML should NOT contain bob (SUB user)")
+	}
+	cd := r.Result().Header.Get("Content-Disposition")
+	if !strings.Contains(cd, "CORP") {
+		t.Errorf("Content-Disposition should contain CORP, got: %s", cd)
+	}
+	// Redaction: cleartext password and NT hash must never reach the file.
+	if strings.Contains(out, "Welcome1") {
+		t.Error("HTML export LEAKED cleartext password")
+	}
+	if strings.Contains(out, "CCCC") {
+		t.Error("HTML export LEAKED NT hash")
+	}
+
+	// Unknown domain → 404.
+	r2 := do(srv, "GET", "/api/export/html?domain=NOPE", lc)
+	if r2.Code != http.StatusNotFound {
+		t.Fatalf("html domain=NOPE = %d, want 404", r2.Code)
+	}
+}

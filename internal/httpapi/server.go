@@ -2077,7 +2077,17 @@ func (s *Server) handleExportCSV(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return // empty 200 already written
 	}
-	download(w, meta.Name, "", "csv")
+	domain := r.URL.Query().Get("domain")
+	if domain != "" {
+		accts = filterAccounts(accts, func(a model.Account) bool { return a.Domain == domain })
+		if len(accts) == 0 {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "domain not found"})
+			return
+		}
+		download(w, meta.Name, safeFilename(domain), "csv")
+	} else {
+		download(w, meta.Name, "", "csv")
+	}
 	_ = report.CSV(w, accts)
 }
 
@@ -2148,8 +2158,19 @@ func (s *Server) handleExportHTML(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
 		return
 	}
-	download(w, meta.Name, "", "html")
-	_ = report.HTML(w, meta.Name, time.Now().UTC(), accts)
+	domain := r.URL.Query().Get("domain")
+	if domain != "" {
+		accts = filterAccounts(accts, func(a model.Account) bool { return a.Domain == domain })
+		if len(accts) == 0 {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "domain not found"})
+			return
+		}
+		download(w, meta.Name, safeFilename(domain), "html")
+		_ = report.HTML(w, meta.Name+" — "+domain, time.Now().UTC(), accts)
+	} else {
+		download(w, meta.Name, "", "html")
+		_ = report.HTML(w, meta.Name, time.Now().UTC(), accts)
+	}
 }
 
 func (s *Server) handleExportCrackedHTML(w http.ResponseWriter, r *http.Request) {
