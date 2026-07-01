@@ -278,7 +278,7 @@ func TestHTMLChartsSection(t *testing.T) {
 		t.Error("charts SVG should contain a bar value of 2 (2 Critical accounts in RiskDistribution)")
 	}
 	// The "8–9" length bucket label must appear (alice, length=9).
-	if !strings.Contains(out, "8") {
+	if !strings.Contains(out, "8–9") {
 		t.Error("charts SVG should contain the 8–9 length bucket label")
 	}
 }

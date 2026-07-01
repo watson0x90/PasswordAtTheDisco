@@ -92,7 +92,7 @@ func svgSliceAsBar(slices []metrics.Slice) template.HTML {
 		if bw == 0 && s.Value > 0 {
 			bw = 1
 		}
-		color := s.Color
+		color := html.EscapeString(s.Color)
 		if color == "" {
 			color = svgAccent
 		}
