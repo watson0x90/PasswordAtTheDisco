@@ -55,12 +55,29 @@ func TestBundleZip(t *testing.T) {
 		t.Fatal(err)
 	}
 	if rep.Cleartext || rep.Scope != "org" {
-		t.Errorf("scope/cleartext wrong: %+v", rep.Scope)
+		t.Errorf("scope/cleartext wrong: scope=%q cleartext=%v", rep.Scope, rep.Cleartext)
 	}
-	// every image in the manifest exists as a zip entry.
+	if rep.Name != "Eng" {
+		t.Errorf("audit name missing from report.json: got %q, want %q", rep.Name, "Eng")
+	}
+	// The images manifest and the actual images/ zip entries must be the SAME set.
 	for name, path := range rep.Images {
 		if _, ok := files[path]; !ok {
 			t.Errorf("manifest references missing image %s -> %s", name, path)
+		}
+	}
+	for fname := range files {
+		if strings.HasPrefix(fname, "images/") {
+			found := false
+			for _, path := range rep.Images {
+				if path == fname {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("zip has image entry %s absent from the manifest", fname)
+			}
 		}
 	}
 	// sanitized zip bytes carry no cleartext/hash.
@@ -74,7 +91,10 @@ func TestBundleZip(t *testing.T) {
 	if err := BundleZip(&cbuf, "Eng", "org", true, m, accts, now, "vtest"); err != nil {
 		t.Fatal(err)
 	}
-	czr, _ := zip.NewReader(bytes.NewReader(cbuf.Bytes()), int64(cbuf.Len()))
+	czr, err := zip.NewReader(bytes.NewReader(cbuf.Bytes()), int64(cbuf.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
 	var cj []byte
 	imgHasSecret := false
 	for _, f := range czr.File {

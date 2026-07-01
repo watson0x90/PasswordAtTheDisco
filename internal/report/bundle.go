@@ -18,6 +18,7 @@ type bundleReport struct {
 	SchemaVersion int               `json:"schema_version"`
 	GeneratedAt   time.Time         `json:"generated_at"`
 	ToolVersion   string            `json:"tool_version"`
+	Name          string            `json:"name"`
 	Scope         string            `json:"scope"`
 	Cleartext     bool              `json:"cleartext"`
 	Metrics       metrics.Metrics   `json:"metrics"`
@@ -48,6 +49,7 @@ func BundleZip(w io.Writer, name, scope string, cleartext bool, m metrics.Metric
 		SchemaVersion: 1,
 		GeneratedAt:   now,
 		ToolVersion:   version,
+		Name:          name,
 		Scope:         scope,
 		Cleartext:     cleartext,
 		Metrics:       m,
