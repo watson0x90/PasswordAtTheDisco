@@ -2073,21 +2073,34 @@ func byBreachDesc(a []model.Account) []model.Account {
 }
 
 func (s *Server) handleExportCSV(w http.ResponseWriter, r *http.Request) {
-	meta, accts, ok := s.exportAccountsRead(w, r, "accounts CSV")
+	sess, _ := sessionFrom(r.Context())
+	id, ok := s.activeAuditRead(sess)
 	if !ok {
-		return // empty 200 already written
+		// No audit selected -> empty 200 CSV (so the browser doesn't log a 409).
+		download(w, "audit", "", "csv")
+		_ = report.CSV(w, nil)
+		return
 	}
-	domain := r.URL.Query().Get("domain")
-	if domain != "" {
+	accts, err := s.Store.Accounts(id, false) // redacted -- never cleartext
+	if err != nil {
+		download(w, "audit", "", "csv")
+		_ = report.CSV(w, nil)
+		return
+	}
+	meta, _ := s.Store.Meta(id)
+	label := "accounts CSV"
+	suffix := ""
+	if domain := r.URL.Query().Get("domain"); domain != "" {
 		accts = filterAccounts(accts, func(a model.Account) bool { return a.Domain == domain })
 		if len(accts) == 0 {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "domain not found"})
 			return
 		}
-		download(w, meta.Name, safeFilename(domain), "csv")
-	} else {
-		download(w, meta.Name, "", "csv")
+		label += " (domain=" + domain + ")"
+		suffix = safeFilename(domain)
 	}
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "export", Target: meta.Name + " — " + label, Source: r.RemoteAddr, Result: "ok"})
+	download(w, meta.Name, suffix, "csv")
 	_ = report.CSV(w, accts)
 }
 
@@ -2145,7 +2158,8 @@ func (s *Server) handleExportReuse(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleExportHTML(w http.ResponseWriter, r *http.Request) {
-	meta, id, ok := s.exportResolve(w, r, "full HTML")
+	sess, _ := sessionFrom(r.Context())
+	id, ok := s.activeAudit(w, sess)
 	if !ok {
 		return
 	}
@@ -2158,19 +2172,23 @@ func (s *Server) handleExportHTML(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
 		return
 	}
-	domain := r.URL.Query().Get("domain")
-	if domain != "" {
+	meta, _ := s.Store.Meta(id)
+	name := meta.Name
+	label := "full HTML"
+	suffix := ""
+	if domain := r.URL.Query().Get("domain"); domain != "" {
 		accts = filterAccounts(accts, func(a model.Account) bool { return a.Domain == domain })
 		if len(accts) == 0 {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "domain not found"})
 			return
 		}
-		download(w, meta.Name, safeFilename(domain), "html")
-		_ = report.HTML(w, meta.Name+" — "+domain, time.Now().UTC(), accts)
-	} else {
-		download(w, meta.Name, "", "html")
-		_ = report.HTML(w, meta.Name, time.Now().UTC(), accts)
+		name = meta.Name + " — " + domain
+		label += " (domain=" + domain + ")"
+		suffix = safeFilename(domain)
 	}
+	s.Audit.Log(audit.Event{Actor: sess.Username, Role: string(sess.Role), Action: "export", Target: meta.Name + " — " + label, Source: r.RemoteAddr, Result: "ok"})
+	download(w, meta.Name, suffix, "html")
+	_ = report.HTML(w, name, time.Now().UTC(), accts)
 }
 
 func (s *Server) handleExportCrackedHTML(w http.ResponseWriter, r *http.Request) {

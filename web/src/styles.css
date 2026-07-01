@@ -703,6 +703,8 @@ table.accounts { width: 100%; border-collapse: collapse; font-size: 13px; }
 .domain-open { font-size: 11px; color: var(--accent); margin-top: 14px; }
 .domain-back { display: inline-block; margin-bottom: 14px; color: var(--dim); font-size: 13px; }
 .domain-back:hover { color: var(--text); }
+.domain-detail-head { display: flex; align-items: center; justify-content: space-between; }
+.domain-detail-exports { display: flex; gap: 8px; }
 .domain-detail-stats { flex: 1; min-width: 280px; display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 10px; }
 
 .domain-tabs { display: flex; gap: 4px; margin-bottom: 24px; }

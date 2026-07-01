@@ -2099,8 +2099,8 @@ func TestExportCSVByDomain(t *testing.T) {
 	if strings.Contains(out, "bob") {
 		t.Error("CORP CSV should NOT contain bob (SUB user)")
 	}
-	if !strings.Contains(out, "domain") { // header row check
-		t.Error("CORP CSV should contain header row with 'domain' column")
+	if !strings.HasPrefix(out, "domain,username,") { // header row check
+		t.Error("CORP CSV should start with header row 'domain,username,...'")
 	}
 	cd := r.Result().Header.Get("Content-Disposition")
 	if !strings.Contains(cd, "CORP") {
@@ -2176,5 +2176,21 @@ func TestExportHTMLByDomain(t *testing.T) {
 	r2 := do(srv, "GET", "/api/export/html?domain=NOPE", lc)
 	if r2.Code != http.StatusNotFound {
 		t.Fatalf("html domain=NOPE = %d, want 404", r2.Code)
+	}
+
+	// No domain param → org-wide: both alice and bob present, no cleartext/NT-hash leak.
+	r3 := do(srv, "GET", "/api/export/html", lc)
+	if r3.Code != http.StatusOK {
+		t.Fatalf("html no domain = %d %s", r3.Code, r3.Body.String())
+	}
+	out3 := r3.Body.String()
+	if !strings.Contains(out3, "alice") || !strings.Contains(out3, "bob") {
+		t.Error("org-wide HTML should contain both alice (CORP) and bob (SUB)")
+	}
+	if strings.Contains(out3, "Welcome1") {
+		t.Error("org-wide HTML export LEAKED cleartext password")
+	}
+	if strings.Contains(out3, "CCCC") {
+		t.Error("org-wide HTML export LEAKED NT hash")
 	}
 }
