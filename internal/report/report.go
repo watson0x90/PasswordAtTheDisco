@@ -252,10 +252,22 @@ var riskColor = map[string]string{"Critical": "#fb7185", "High": "#fbbf24", "Med
 // All counts (DA pathways, risk distribution, per-domain stats) are sourced from
 // metrics.Compute so the exported numbers are provably identical to the dashboard.
 func HTML(w io.Writer, name string, generated time.Time, accounts []model.Account) error {
-	d := htmlData{Name: name, Generated: generated.UTC().Format("2006-01-02 15:04 UTC"), Accounts: accounts}
-
 	// Single bundle computation — the same path taken by the API and the SPA.
+	// Compute from the FULL accounts so reuse-group-derived surfaces (the
+	// cross-domain reuse graph, keyed on NT-hash reuse via model.BuildReport)
+	// match the dashboard. The bundle output is redaction-safe by construction
+	// (see metrics.TestBundleHasNoSensitiveFields).
 	m := metrics.Compute(accounts, generated)
+
+	// The Accounts table renders account fields directly, so redact defensively
+	// here — this report never emits cleartext passwords or NT hashes regardless
+	// of whether the caller passed redacted or full accounts. Redaction is thus a
+	// self-enforced invariant of HTML(), not something the caller must remember.
+	redacted := make([]model.Account, len(accounts))
+	for i := range accounts {
+		redacted[i] = accounts[i].Redacted()
+	}
+	d := htmlData{Name: name, Generated: generated.UTC().Format("2006-01-02 15:04 UTC"), Accounts: redacted}
 
 	// Top-level counts from the bundle summary.
 	// d.DA uses DAPathways (obtainable-only count) — fixes parity with the dashboard

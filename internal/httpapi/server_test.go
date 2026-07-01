@@ -662,6 +662,54 @@ func TestExportEndpoints(t *testing.T) {
 	}
 }
 
+// The HTML export must render the cross-domain credential-reuse graph — the same
+// surface the dashboard shows. The reuse graph is derived from NT-hash reuse
+// grouping, so the export handler must feed report.HTML full (non-redacted)
+// accounts; report.HTML redacts its own output, so no cleartext or NT hash leaks.
+func TestExportHTMLIncludesReuseGraph(t *testing.T) {
+	const reusePayload = `{"accounts":[` +
+		`{"username":"alice","domain":"CORP","password":"Welcome1","cracked":true,"risk_level":"High","nt_hash":"SHAREDHASH0000000000000000000000"},` +
+		`{"username":"bob","domain":"SUB","password":"Welcome1","cracked":true,"risk_level":"High","nt_hash":"SHAREDHASH0000000000000000000000"}]}`
+
+	srv := newServer("secret")
+	req := httptest.NewRequest("POST", "/api/ingest", strings.NewReader(reusePayload))
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("ingest failed: %d %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		AuditID string `json:"audit_id"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+
+	lc, lcsrf := loginCSRF(t, srv, "lead", "leadpw")
+	openAudit(t, srv, lc, lcsrf, body.AuditID)
+
+	r := do(srv, "GET", "/api/export/html", lc)
+	if r.Code != http.StatusOK {
+		t.Fatalf("export = %d", r.Code)
+	}
+	out := r.Body.String()
+
+	// Parity: the cross-domain reuse graph card must render (two domains share an NT hash).
+	if !strings.Contains(out, "Cross-domain credential reuse") {
+		t.Error("HTML export missing cross-domain reuse graph — export must match the dashboard")
+	}
+	if !strings.Contains(out, "<line ") {
+		t.Error("HTML export reuse graph should contain <line> edge elements")
+	}
+	// Redaction: full accounts flow into report.HTML, but neither the cleartext
+	// password nor the NT hash may reach the downloaded file.
+	if strings.Contains(out, "Welcome1") {
+		t.Error("HTML export LEAKED cleartext password")
+	}
+	if strings.Contains(out, "SHAREDHASH") {
+		t.Error("HTML export LEAKED NT hash")
+	}
+}
+
 func postJSON(srv *Server, path string, cookie *http.Cookie, csrf, body string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest("POST", path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")

@@ -2135,8 +2135,17 @@ func (s *Server) handleExportReuse(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleExportHTML(w http.ResponseWriter, r *http.Request) {
-	meta, accts, ok := s.exportAccounts(w, r, "full HTML")
+	meta, id, ok := s.exportResolve(w, r, "full HTML")
 	if !ok {
+		return
+	}
+	// Full accounts (NT hashes present): the cross-domain reuse graph is derived
+	// from NT-hash reuse grouping, so redacted input would silently drop it and
+	// diverge from the dashboard. report.HTML redacts its own output, so no
+	// cleartext or NT hash ever reaches the downloaded file.
+	accts, err := s.Store.Accounts(id, true)
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "no audit selected"})
 		return
 	}
 	download(w, meta.Name, "", "html")

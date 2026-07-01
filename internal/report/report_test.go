@@ -454,14 +454,15 @@ func TestHTMLDACountObtainableOnly(t *testing.T) {
 // user-influenced graph node labels containing HTML-special characters are escaped.
 func TestHTMLGraphsAndScatter(t *testing.T) {
 	const sharedHash = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	const cleartextPw = "hunter2-cleartext-secret"
 
 	accts := []model.Account{
 		// Cross-domain reuse pair → two distinct domains in the same CrackedReuse
 		// group → CrossDomainReuseGraph produces nodes and at least one edge.
-		{Username: "alice", Domain: "CORP.LOCAL", NTHash: sharedHash, Cracked: true,
+		{Username: "alice", Domain: "CORP.LOCAL", NTHash: sharedHash, Password: cleartextPw, Cracked: true,
 			PasswordLength: 8, RiskLevel: "High", RiskScore: 7,
 			HIBPBreached: true, HIBPBreachCount: 5, SharedWith: 1},
-		{Username: "bob", Domain: "SUB.LOCAL", NTHash: sharedHash, Cracked: true,
+		{Username: "bob", Domain: "SUB.LOCAL", NTHash: sharedHash, Password: cleartextPw, Cracked: true,
 			PasswordLength: 8, RiskLevel: "High", RiskScore: 7, SharedWith: 1},
 		// Similarity pair where one username contains '<' → SimilarityGraph node
 		// Label must be HTML-escaped to prevent injection into SVG <text> content.
@@ -492,6 +493,16 @@ func TestHTMLGraphsAndScatter(t *testing.T) {
 	// Self-contained requirement: no <script> tags ever.
 	if strings.Contains(out, "<script") {
 		t.Error("HTML output must not contain <script> tags (self-contained requirement)")
+	}
+
+	// Self-redaction: HTML() is handed FULL accounts (cleartext password + NT hash)
+	// so the cross-domain reuse graph can be computed, but must never emit either
+	// into the downloadable report — redaction is a self-enforced invariant of HTML().
+	if strings.Contains(out, cleartextPw) {
+		t.Error("HTML export leaked cleartext password — HTML() must redact its own output")
+	}
+	if strings.Contains(out, sharedHash) {
+		t.Error("HTML export leaked NT hash — HTML() must redact its own output")
 	}
 
 	// ReuseGraph must produce <circle> (nodes) and <line> (edges) elements.
