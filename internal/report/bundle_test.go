@@ -80,10 +80,16 @@ func TestBundleZip(t *testing.T) {
 			}
 		}
 	}
-	// sanitized zip bytes carry no cleartext/hash.
-	all := buf.String()
-	if strings.Contains(all, "Hunter2") || strings.Contains(all, "AAAA0000") {
-		t.Error("sanitized bundle LEAKED a secret")
+	// Sanitized bundle must carry no cleartext/hash. Scan DECOMPRESSED entry
+	// contents — raw zip bytes are DEFLATE-compressed and cannot be searched
+	// literally (the vacuous raw-bytes scan is replaced here).
+	for name, content := range files {
+		if bytes.Contains(content, []byte("Hunter2")) {
+			t.Errorf("sanitized bundle entry %q LEAKED cleartext password", name)
+		}
+		if bytes.Contains(content, []byte("AAAA0000")) {
+			t.Errorf("sanitized bundle entry %q LEAKED NT hash", name)
+		}
 	}
 
 	// --- cleartext ---

@@ -2478,14 +2478,17 @@ func TestExportBundleSanitized(t *testing.T) {
 		t.Errorf("Content-Disposition should contain .zip, got: %s", cd)
 	}
 	zipBytes := r.Body.Bytes()
-	if bytes.Contains(zipBytes, []byte("Welcome1")) {
-		t.Error("sanitized bundle MUST NOT contain Welcome1 in raw zip bytes")
-	}
-	if bytes.Contains(zipBytes, []byte("AAAA0000000000000000000000000077")) {
-		t.Error("sanitized bundle MUST NOT contain NT hash in raw zip bytes")
-	}
-
 	entries := parseZip(t, zipBytes)
+	// Scan DECOMPRESSED entries — raw zip bytes are DEFLATE-compressed and cannot
+	// be searched literally (the vacuous raw-bytes scan is replaced here).
+	for name, content := range entries {
+		if bytes.Contains(content, []byte("Welcome1")) {
+			t.Errorf("sanitized bundle entry %q MUST NOT contain Welcome1", name)
+		}
+		if bytes.Contains(content, []byte("AAAA0000000000000000000000000077")) {
+			t.Errorf("sanitized bundle entry %q MUST NOT contain NT hash", name)
+		}
+	}
 	rjBytes, ok := entries["report.json"]
 	if !ok {
 		t.Fatal("report.json not found in bundle")
@@ -2570,6 +2573,11 @@ func TestExportCleartextBundle(t *testing.T) {
 		return m.ActiveAudit
 	}())
 
+	// (0) No auth → 401.
+	if r := postJSON(srv, "/api/export/cleartext.zip", nil, "", `{"acknowledge":true}`); r.Code != http.StatusUnauthorized {
+		t.Fatalf("no auth: want 401, got %d", r.Code)
+	}
+
 	// (1) Analyst → 403 + export_cleartext denied audit, no cleartext in body or log.
 	r := postJSON(srv, "/api/export/cleartext.zip", ac, acsrf, `{"acknowledge":true}`)
 	if r.Code != http.StatusForbidden {
@@ -2581,9 +2589,6 @@ func TestExportCleartextBundle(t *testing.T) {
 	logs := buf.String()
 	if !strings.Contains(logs, "export_cleartext") || !strings.Contains(logs, `"result":"denied"`) {
 		t.Fatalf("denied audit event missing: %s", logs)
-	}
-	if strings.Contains(logs, "Welcome1") {
-		t.Fatalf("AUDIT LOG LEAKED CLEARTEXT after analyst denial: %s", logs)
 	}
 
 	// (2) No acknowledge → 400, no cleartext.
@@ -2618,14 +2623,17 @@ func TestExportCleartextBundle(t *testing.T) {
 	}
 
 	zipBytes := r.Body.Bytes()
-	if bytes.Contains(zipBytes, []byte("AAAA0000000000000000000000000077")) {
-		t.Error("cleartext bundle MUST NOT contain NT hash AAAA... in raw bytes")
-	}
-	if bytes.Contains(zipBytes, []byte("BBBB0000000000000000000000000077")) {
-		t.Error("cleartext bundle MUST NOT contain NT hash BBBB... in raw bytes")
-	}
-
 	entries := parseZip(t, zipBytes)
+	// NT-hash scan on DECOMPRESSED entries — raw zip bytes are DEFLATE-compressed
+	// and cannot be searched literally (the vacuous raw-bytes scan is replaced here).
+	for name, content := range entries {
+		if bytes.Contains(content, []byte("AAAA0000000000000000000000000077")) {
+			t.Errorf("cleartext bundle entry %q MUST NOT contain NT hash AAAA...", name)
+		}
+		if bytes.Contains(content, []byte("BBBB0000000000000000000000000077")) {
+			t.Errorf("cleartext bundle entry %q MUST NOT contain NT hash BBBB...", name)
+		}
+	}
 	rjBytes := entries["report.json"]
 	var rep struct {
 		Accounts []struct {
