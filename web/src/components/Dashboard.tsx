@@ -14,7 +14,7 @@ import { RecalcSuggestion } from "./RecalcSuggestion"
 import { useJobs } from "../jobs"
 import { InfoTip } from "./InfoTip"
 import { GLOSSARY } from "../glossary"
-import type { Matrix as BundleMatrix } from "../metricsBundle"
+import type { ChartSeries, Graph, Matrix as BundleMatrix } from "../metricsBundle"
 import { useMetrics } from "../metricsData"
 
 // Verdict → CSS class suffix (maps to --crit / --high / --med / --low color tokens)
@@ -94,6 +94,8 @@ export function Dashboard() {
         report={report}
         matrix={bundleReady ? bundle.matrix : undefined}
         coverageEnriched={bundleReady ? bundle.summary.coverage_enriched : undefined}
+        charts={bundleReady ? bundle.charts : undefined}
+        reuseGraph={bundleReady ? bundle.reports.reuse_graph : undefined}
         subtitle="Where do we stand? Org-wide posture at a glance."
         actions={
           <>
@@ -124,6 +126,8 @@ export function OverviewView({
   notice,
   matrix: bundleMatrix,
   coverageEnriched,
+  charts,
+  reuseGraph,
 }: {
   accounts: Account[]
   summary: Summary | null
@@ -138,6 +142,10 @@ export function OverviewView({
   // the existing account-derived computation is used unchanged.
   matrix?: BundleMatrix
   coverageEnriched?: number
+  // When provided (org path), Insights renders chart series from the bundle
+  // instead of recomputing client-side. Absent on the per-domain path.
+  charts?: ChartSeries
+  reuseGraph?: Graph
 }) {
   const { total, cracked, breached, da } = kpiCounts(summary, accounts)
   const crackPct = total ? Math.round((cracked / total) * 100) : 0
@@ -230,7 +238,7 @@ export function OverviewView({
         </ChartCard>
       </div>
 
-      <Insights report={report} accounts={accounts} />
+      <Insights report={report} accounts={accounts} charts={charts} reuseGraph={reuseGraph} />
     </>
   )
 }
