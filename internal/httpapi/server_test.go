@@ -2361,11 +2361,21 @@ func TestExportCleartextHTML(t *testing.T) {
 		t.Fatalf("AUDIT LOG LEAKED CLEARTEXT PASSWORD: %s", logs)
 	}
 
-	// (2) Analyst → 403.
+	// (2) Analyst → 403, and the denied attempt is fail-closed audit-logged.
 	ac, acsrf := loginCSRF(t, srv, "analyst", "analystpw")
 	r = postJSON(srv, "/api/export/cleartext.html", ac, acsrf, `{"acknowledge":true}`)
 	if r.Code != http.StatusForbidden {
 		t.Fatalf("analyst should be 403, got %d", r.Code)
+	}
+	if strings.Contains(r.Body.String(), "Welcome1") {
+		t.Fatal("cleartext leaked in analyst 403 response body")
+	}
+	logs = buf.String()
+	if !strings.Contains(logs, "export_cleartext") || !strings.Contains(logs, `"result":"denied"`) {
+		t.Fatalf("analyst denial should log an export_cleartext denied event: %s", logs)
+	}
+	if strings.Contains(logs, "Welcome1") {
+		t.Fatalf("AUDIT LOG LEAKED CLEARTEXT PASSWORD: %s", logs)
 	}
 
 	// (3) No CSRF → 403 (middleware).
