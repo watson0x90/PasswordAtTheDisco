@@ -388,6 +388,45 @@ function safeParse(text: string): unknown {
   }
 }
 
+// downloadBlob POSTs to a path that returns a file (not JSON). On success, reads
+// the response as a Blob, parses the filename from Content-Disposition, and
+// triggers a browser download via a temporary object URL + anchor. Error handling
+// mirrors request() — 401/423 events broadcast, ApiError thrown on non-2xx.
+async function downloadBlob(path: string, init: RequestInit): Promise<void> {
+  let res: Response
+  try {
+    res = await fetch(`/api${path}`, { credentials: "include", ...init })
+  } catch {
+    throw new ApiError(0, "network error — is the server reachable?")
+  }
+  if (!res.ok) {
+    const text = await res.text()
+    const body = text ? safeParse(text) : null
+    if (res.status === 423) window.dispatchEvent(new CustomEvent("patd:locked"))
+    if (res.status === 401) broadcastUnauthorized()
+    let msg = `request failed (${res.status})`
+    if (body && typeof body === "object" && "error" in body) {
+      const e = (body as { error?: unknown }).error
+      if (typeof e === "string" && e) msg = e
+    }
+    throw new ApiError(res.status, msg, body)
+  }
+  const blob = await res.blob()
+  // Parse filename from Content-Disposition: attachment; filename="foo_CLEARTEXT.csv"
+  const cd = res.headers.get("Content-Disposition") ?? ""
+  let filename = "export_CLEARTEXT"
+  const m = cd.match(/filename="?([^";\s]+)"?/i)
+  if (m) filename = m[1]
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 // uploadForm POSTs multipart FormData via XMLHttpRequest so upload progress is observable
 // (fetch can't report it). Mirrors request()'s error handling.
 export function uploadForm<T>(
@@ -666,6 +705,15 @@ export const api = {
 
   // full /api URL for an <a download> (the browser sends the session cookie)
   auditLogCsvUrl: (params: AuditQuery) => `/api/audit-log.csv${auditQuery(params)}`,
+
+  // Lead-only cleartext export: POST with CSRF + acknowledge flag; on success
+  // triggers a browser download using the filename from Content-Disposition.
+  exportCleartext: (format: "csv" | "html", domain: string | undefined, csrf: string) =>
+    downloadBlob(`/export/cleartext.${format}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+      body: JSON.stringify({ acknowledge: true, domain }),
+    }),
 }
 
 export interface AuditQuery {

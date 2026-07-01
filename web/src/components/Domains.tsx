@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { api, ApiError, type Account, type Report, type ReportAccount, type ReuseGroup, type Summary } from "../api"
+import { useAuth } from "../auth"
 import { useAccountsData } from "../accountsData"
 import { useAudits } from "../auditsData"
 import { useMetrics } from "../metricsData"
@@ -106,6 +107,25 @@ function DomainDetail({ domain, accounts, report, reportErr, summary, onBack }: 
   const { bundle, loading: bundleLoading } = useMetrics()
   const bundleReady = !bundleLoading && bundle !== null
   const dm = bundleReady ? bundle.domains.find((d) => d.domain === domain) : undefined
+  const { me } = useAuth()
+  const isLead = me?.role === "lead"
+  const csrf = me?.csrf_token ?? ""
+  const [ctAcked, setCtAcked] = useState(false)
+  const [ctErr, setCtErr] = useState("")
+  const [ctBusy, setCtBusy] = useState(false)
+
+  async function downloadCleartext(fmt: "csv" | "html") {
+    setCtErr("")
+    setCtBusy(true)
+    try {
+      await api.exportCleartext(fmt, domain, csrf)
+    } catch (e) {
+      setCtErr(e instanceof ApiError ? e.message : "export failed")
+    } finally {
+      setCtBusy(false)
+    }
+  }
+
   const dSummary = useMemo(() => (summary ? domainSummary(accounts, summary) : null), [accounts, summary])
   const dReport = useMemo(() => domainReport(report, domain, accounts), [report, domain, accounts])
 
@@ -154,6 +174,43 @@ function DomainDetail({ domain, accounts, report, reportErr, summary, onBack }: 
           <a className="btn" href={`/api/export/html?domain=${encodeURIComponent(domain)}`} download>Export HTML</a>
         </div>
       </div>
+
+      {isLead && (
+        <div className="panel report-export">
+          <div className="action-title">Cleartext export — {domain}</div>
+          <div className="cleartext-gate">
+            <div className="cleartext-warning">
+              ⚠ This export for <b>{domain}</b> includes cleartext cracked passwords. NT hashes are never
+              included. Every download is audit-logged.
+            </div>
+            <label className="cleartext-ack">
+              <input
+                type="checkbox"
+                checked={ctAcked}
+                onChange={(e) => { setCtAcked(e.target.checked); setCtErr("") }}
+              />
+              I understand this file contains cleartext passwords
+            </label>
+            <div className="cleartext-actions">
+              <button
+                className="btn"
+                disabled={!ctAcked || ctBusy}
+                onClick={() => void downloadCleartext("html")}
+              >
+                Cleartext HTML
+              </button>
+              <button
+                className="btn"
+                disabled={!ctAcked || ctBusy}
+                onClick={() => void downloadCleartext("csv")}
+              >
+                Cleartext CSV
+              </button>
+            </div>
+            {ctErr && <div className="cleartext-error">{ctErr}</div>}
+          </div>
+        </div>
+      )}
 
       <OverviewView
         accounts={accounts}

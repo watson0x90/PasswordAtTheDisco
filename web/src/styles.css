@@ -2557,3 +2557,61 @@ table.accounts.compact td, table.accounts.compact th { padding: 6px 10px; }
      in the worked example at phone width. */
   .score-case-steps li { grid-template-columns: minmax(0, 1fr); gap: var(--space-xs); }
 }
+
+/* ── Cleartext export — lead-only acknowledged download gate ─────────────────
+   .cleartext-banner is used by the backend HTML report template (Task 1) and
+   must be a prominent, always-visible warning strip. The other classes drive
+   the in-app checkbox gate on Reports and Domains tabs. */
+.cleartext-banner {
+  background: rgba(251, 113, 133, 0.18);
+  border: 1px solid rgba(251, 113, 133, 0.45);
+  border-radius: var(--radius-sm);
+  color: #fca5a5;
+  font-weight: 700;
+  font-size: 14px;
+  padding: var(--space-md) var(--space-lg);
+  margin-bottom: var(--space-lg);
+  letter-spacing: 0.01em;
+}
+
+.cleartext-gate {
+  margin-top: var(--space-md);
+  padding: var(--space-lg);
+  background: rgba(251, 191, 36, 0.06);
+  border: 1px solid rgba(251, 191, 36, 0.22);
+  border-radius: var(--radius-md);
+}
+
+.cleartext-warning {
+  font-size: 13px;
+  color: var(--high);
+  font-weight: 500;
+  line-height: 1.5;
+  margin-bottom: var(--space-md);
+}
+
+.cleartext-ack {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text);
+  margin-bottom: var(--space-md);
+  user-select: none;
+}
+
+.cleartext-ack input[type="checkbox"] { flex: none; }
+
+.cleartext-actions {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.cleartext-error {
+  margin-top: var(--space-sm);
+  font-size: 13px;
+  color: var(--crit);
+}

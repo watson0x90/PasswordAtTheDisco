@@ -1,3 +1,6 @@
+import { useState } from "react"
+import { api, ApiError } from "../api"
+import { useAuth } from "../auth"
 import { useAudits } from "../auditsData"
 
 // The columns the accounts CSV emits — shown so operators know exactly what's in
@@ -55,6 +58,24 @@ function FocusedRow({
 
 export function Reports() {
   const { activeId, active } = useAudits()
+  const { me } = useAuth()
+  const isLead = me?.role === "lead"
+  const csrf = me?.csrf_token ?? ""
+  const [ctAcked, setCtAcked] = useState(false)
+  const [ctErr, setCtErr] = useState("")
+  const [ctBusy, setCtBusy] = useState(false)
+
+  async function downloadCleartext(fmt: "csv" | "html") {
+    setCtErr("")
+    setCtBusy(true)
+    try {
+      await api.exportCleartext(fmt, undefined, csrf)
+    } catch (e) {
+      setCtErr(e instanceof ApiError ? e.message : "export failed")
+    } finally {
+      setCtBusy(false)
+    }
+  }
 
   if (!activeId) {
     return <div className="center-state">Select or create an audit (top right) before exporting reports.</div>
@@ -164,6 +185,43 @@ export function Reports() {
           </a>
         </div>
       </div>
+
+      {isLead && (
+        <div className="panel report-export">
+          <div className="action-title">Cleartext export</div>
+          <div className="cleartext-gate">
+            <div className="cleartext-warning">
+              ⚠ This file includes <b>cleartext cracked passwords</b>. NT hashes are never included.
+              Every download is audit-logged. Handle per your data-handling policy.
+            </div>
+            <label className="cleartext-ack">
+              <input
+                type="checkbox"
+                checked={ctAcked}
+                onChange={(e) => { setCtAcked(e.target.checked); setCtErr("") }}
+              />
+              I understand this file contains cleartext passwords
+            </label>
+            <div className="cleartext-actions">
+              <button
+                className="btn"
+                disabled={!ctAcked || ctBusy}
+                onClick={() => void downloadCleartext("html")}
+              >
+                HTML
+              </button>
+              <button
+                className="btn"
+                disabled={!ctAcked || ctBusy}
+                onClick={() => void downloadCleartext("csv")}
+              >
+                CSV
+              </button>
+            </div>
+            {ctErr && <div className="cleartext-error">{ctErr}</div>}
+          </div>
+        </div>
+      )}
     </>
   )
 }
