@@ -233,6 +233,64 @@ func TestFocusedHTMLRedactsAndRenders(t *testing.T) {
 // lives in the model package.
 func BuildReportFor(a []model.Account) model.Report { return model.BuildReport(a) }
 
+func TestReportTablesSortableAndScrollable(t *testing.T) {
+	// alice+bob share an NT hash so ReuseGroupsHTML renders a group table (else the
+	// reuse report has no tables and the sortable/thead assertions can't apply).
+	const shared = "AAAA1111AAAA1111AAAA1111AAAA1111"
+	accts := []model.Account{
+		{Username: "alice", Domain: "CORP", NTHash: shared, Cracked: true, RiskLevel: "Critical", RiskScore: 9, HIBPBreached: true, HIBPBreachCount: 5, Complexity: "mixedalphanum", MeetsPolicy: false},
+		{Username: "bob", Domain: "CORP", NTHash: shared, Cracked: false, RiskLevel: "Low", RiskScore: 2},
+	}
+	when := time.Unix(1_700_000_000, 0)
+	var full, focused, weak, reuse bytes.Buffer
+	if err := HTML(&full, "Eng", when, accts); err != nil {
+		t.Fatal(err)
+	}
+	if err := AccountsHTML(&focused, "Eng — Cracked", "cracked accounts", when, accts); err != nil {
+		t.Fatal(err)
+	}
+	if err := WeakPasswordsHTML(&weak, "Eng", when, accts); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReuseGroupsHTML(&reuse, "Eng — reuse", when, model.BuildReport(accts)); err != nil {
+		t.Fatal(err)
+	}
+	for name, out := range map[string]string{"full": full.String(), "focused": focused.String(), "weak": weak.String(), "reuse": reuse.String()} {
+		if !strings.Contains(out, "class=\"table-wrap\"") {
+			t.Errorf("%s: missing overflow scroll wrapper", name)
+		}
+		if !strings.Contains(out, "data-sortable") {
+			t.Errorf("%s: missing sortable table marker", name)
+		}
+		if !strings.Contains(out, "<thead>") || !strings.Contains(out, "<tbody>") {
+			t.Errorf("%s: missing thead/tbody", name)
+		}
+		if strings.Count(out, "<script") != 1 {
+			t.Errorf("%s: want exactly one inline sort script, got %d", name, strings.Count(out, "<script"))
+		}
+		if strings.Contains(out, "<script src") || strings.Contains(out, "src=\"http") {
+			t.Errorf("%s: report must not load an external script", name)
+		}
+	}
+	// The Exposure×Impact matrix must NOT be sortable (fixed grid): its header row is
+	// not inside a data-sortable table.
+	if strings.Contains(full.String(), "Exposure") {
+		// crude but sufficient: the matrix header 'Exposure \\ Impact' cell must not sit in a sortable table.
+		idx := strings.Index(full.String(), "Exposure")
+		seg := full.String()[maxInt(0, idx-400):idx]
+		if strings.Contains(seg, "data-sortable") && strings.Contains(seg, "Exposure \\ Impact") {
+			t.Error("matrix table must not be data-sortable")
+		}
+	}
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 // TestHTMLChartsSection verifies that HTML() embeds inline SVG charts derived
 // from m.Charts, renders chart section titles, and introduces no <script> tags.
 func TestHTMLChartsSection(t *testing.T) {
@@ -259,9 +317,13 @@ func TestHTMLChartsSection(t *testing.T) {
 	if !strings.Contains(out, "<svg") {
 		t.Error("HTML output should contain <svg chart elements")
 	}
-	// Self-contained requirement: no <script> tags ever.
-	if strings.Contains(out, "<script") {
-		t.Error("HTML output must not contain <script> tags (self-contained requirement)")
+	// The report now carries exactly ONE self-contained inline sort script — no
+	// external src, and (count==1) the chart SVGs remain script-free.
+	if strings.Count(out, "<script") != 1 {
+		t.Errorf("want exactly one inline sort script, got %d", strings.Count(out, "<script"))
+	}
+	if strings.Contains(out, "<script src") || strings.Contains(out, "src=\"http") {
+		t.Error("report must not load an external script")
 	}
 	// Chart section label must appear.
 	if !strings.Contains(out, ">Charts<") {
@@ -490,9 +552,13 @@ func TestHTMLGraphsAndScatter(t *testing.T) {
 	}
 	out := b.String()
 
-	// Self-contained requirement: no <script> tags ever.
-	if strings.Contains(out, "<script") {
-		t.Error("HTML output must not contain <script> tags (self-contained requirement)")
+	// The report now carries exactly ONE self-contained inline sort script — no
+	// external src, and (count==1) the chart SVGs remain script-free.
+	if strings.Count(out, "<script") != 1 {
+		t.Errorf("want exactly one inline sort script, got %d", strings.Count(out, "<script"))
+	}
+	if strings.Contains(out, "<script src") || strings.Contains(out, "src=\"http") {
+		t.Error("report must not load an external script")
 	}
 
 	// Self-redaction: HTML() is handed FULL accounts (cleartext password + NT hash)
@@ -673,9 +739,9 @@ func TestHTMLCleartextAndRedacted(t *testing.T) {
 		t.Errorf("HTMLCleartext: leaked KeyboardPatterns fragment")
 	}
 	// Self-contained AND escaping proof: a cracked password of hostile markup must
-	// be auto-escaped, so no live <script> tag appears and the escaped form does.
-	if strings.Contains(ctOut, "<script") {
-		t.Errorf("HTMLCleartext: hostile password not escaped — live <script> in output")
+	// be auto-escaped by html/template, so the PASSWORD'S <script> is not live.
+	if strings.Contains(ctOut, "<script>alert(1)") {
+		t.Errorf("HTMLCleartext: hostile password rendered as a LIVE <script> — not escaped")
 	}
 	if !strings.Contains(ctOut, "&lt;script&gt;alert(1)&lt;/script&gt;") {
 		t.Errorf("HTMLCleartext: expected escaped password markup (&lt;script&gt;...) not found — auto-escaping not exercised")

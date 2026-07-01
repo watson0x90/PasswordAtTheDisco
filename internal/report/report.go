@@ -411,6 +411,25 @@ var htmlTemplate = template.Must(template.New("report").Funcs(template.FuncMap{
 	"clabel": pwanalysis.ComplexityLabel,
 }).Parse(reportHTML))
 
+// sortableCSS styles sortable headers + the horizontal-scroll wrapper. Injected into
+// every report's <style>.
+const sortableCSS = `.table-wrap{overflow-x:auto}
+table[data-sortable] th{cursor:pointer;user-select:none}
+.arw{font-size:10px;opacity:.8}`
+
+// sortableJS is a self-contained inline click-to-sort for any table[data-sortable].
+// No network, no external src. Type-aware: numeric / risk-severity / text. Degrades
+// gracefully (tables render in their emitted order if scripts are blocked).
+const sortableJS = `<script>
+(function(){
+  var RISK={critical:4,high:3,medium:2,low:1};
+  function val(td){var s=(td.textContent||"").trim();return (s==="—"||s==="-")?"":s;}
+  function kind(vs){var num=true,rk=true,any=false;for(var i=0;i<vs.length;i++){var v=vs[i];if(v==="")continue;any=true;if(!isFinite(Number(v.replace(/[,%]/g,""))))num=false;if(!(v.toLowerCase() in RISK))rk=false;}return !any?"text":(num?"num":(rk?"risk":"text"));}
+  function sort(tb,ci,dir){var rows=[].slice.call(tb.rows);var t=kind(rows.map(function(r){return val(r.cells[ci]);}));rows.sort(function(a,b){var x=val(a.cells[ci]),y=val(b.cells[ci]),c;if(t==="num"){c=(Number(x.replace(/[,%]/g,""))||0)-(Number(y.replace(/[,%]/g,""))||0);}else if(t==="risk"){c=(RISK[x.toLowerCase()]||0)-(RISK[y.toLowerCase()]||0);}else{var lx=x.toLowerCase(),ly=y.toLowerCase();c=lx<ly?-1:(lx>ly?1:0);}return dir==="asc"?c:-c;});rows.forEach(function(r){tb.appendChild(r);});}
+  [].forEach.call(document.querySelectorAll("table[data-sortable]"),function(tbl){var tb=tbl.tBodies[0];if(!tb||!tbl.tHead)return;var ths=tbl.tHead.rows[0].cells;[].forEach.call(ths,function(th,idx){th.addEventListener("click",function(){var dir=th.getAttribute("data-dir")==="asc"?"desc":"asc";[].forEach.call(ths,function(o){o.removeAttribute("data-dir");var a=o.querySelector(".arw");if(a)a.remove();});th.setAttribute("data-dir",dir);var s=document.createElement("span");s.className="arw";s.textContent=dir==="asc"?" ▲":" ▼";th.appendChild(s);sort(tb,idx,dir);});});});
+})();
+</script>`
+
 const reportHTML = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <title>{{.Name}} — Password!AtTheDisco report</title>
@@ -452,6 +471,7 @@ td{padding:7px 10px;border-bottom:1px solid #1b2236;white-space:nowrap}
 .chart-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
 .chart-title{font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--faint);margin-bottom:10px;font-weight:600}
 .graph-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(520px,1fr));gap:14px}
+` + sortableCSS + `
 </style></head>
 <body><div class="wrap">
 <h1>{{.Name}}</h1>
@@ -489,16 +509,15 @@ td{padding:7px 10px;border-bottom:1px solid #1b2236;white-space:nowrap}
 </div>
 
 <div class="label">Domains</div>
-<div class="panel"><table>
-<tr><th>Domain</th><th>Accounts</th><th>Cracked</th><th>Breached</th><th>Critical</th><th>DA paths</th></tr>
+<div class="panel"><div class="table-wrap"><table data-sortable><thead><tr><th>Domain</th><th>Accounts</th><th>Cracked</th><th>Breached</th><th>Critical</th><th>DA paths</th></tr></thead><tbody>
 {{range .Domains}}<tr><td>{{.Domain}}</td><td>{{.Total}}</td><td>{{.Cracked}}</td><td>{{.Breached}}</td><td style="color:#fb7185">{{.Critical}}</td><td style="color:#fb7185">{{.DA}}</td></tr>{{end}}
-</table></div>
+</tbody></table></div></div>
 
 <div class="label">Exposure × Impact</div>
-<div class="panel"><table>
+<div class="panel"><div class="table-wrap"><table>
 <tr><th>Exposure \ Impact</th><th>Critical</th><th>High</th><th>Medium</th><th>Low</th><th>Unknown</th></tr>
 {{range .Matrix}}<tr><td style="font-weight:600">{{.Exposure}}</td>{{range .Cells}}<td style="background:{{.Color}}18;color:{{.Color}};text-align:center">{{.Count}}</td>{{end}}</tr>{{end}}
-</table></div>
+</table></div></div>
 
 {{if .Charts}}
 <div class="label">Charts</div>
@@ -511,8 +530,7 @@ td{padding:7px 10px;border-bottom:1px solid #1b2236;white-space:nowrap}
 {{end}}
 
 <div class="label">Accounts ({{.Total}})</div>
-<div class="panel"><table>
-<tr><th>Username</th><th>Domain</th>{{if .Cleartext}}<th>Password</th>{{end}}<th>Risk</th><th>Score</th><th>HIBP</th><th>Complexity</th><th>Policy</th><th>Shared</th><th>DA</th><th>Controlled</th><th>Weaknesses</th></tr>
+<div class="panel"><div class="table-wrap"><table data-sortable><thead><tr><th>Username</th><th>Domain</th>{{if .Cleartext}}<th>Password</th>{{end}}<th>Risk</th><th>Score</th><th>HIBP</th><th>Complexity</th><th>Policy</th><th>Shared</th><th>DA</th><th>Controlled</th><th>Weaknesses</th></tr></thead><tbody>
 {{range .Accounts}}<tr>
 <td>{{.Username}}{{if not .Enabled}}<span class="muted"> · disabled</span>{{end}}</td><td class="muted">{{.Domain}}</td>
 {{if $.Cleartext}}<td>{{if .Cracked}}{{.Password}}{{else}}<span class="muted">—</span>{{end}}</td>{{end}}
@@ -526,10 +544,10 @@ td{padding:7px 10px;border-bottom:1px solid #1b2236;white-space:nowrap}
 <td>{{if gt .Controlled 0}}{{.Controlled}}{{else}}<span class="muted">0</span>{{end}}</td>
 <td>{{if .IsCommon}}<span class="wtag">common</span> {{end}}{{if .IsDictionaryWord}}<span class="wtag">dictionary</span> {{end}}{{if gt .BannedWordCount 0}}<span class="wtag">forbidden</span> {{end}}{{if gt .KeyboardPatternCount 0}}<span class="wtag">keyboard</span> {{end}}{{if not .IsWeak}}<span class="muted">—</span>{{end}}</td>
 </tr>{{end}}
-</table></div>
+</tbody></table></div></div>
 
 <div class="foot">Generated by Password!AtTheDisco · {{if .Cleartext}}cleartext passwords included for cracked accounts — handle per your data policy{{else}}cleartext passwords are never written to disk or included in reports{{end}}</div>
-</div></body></html>`
+</div>` + sortableJS + `</body></html>`
 
 // ---- focused HTML reports (complement the focused CSVs) ----
 
@@ -562,7 +580,8 @@ td{padding:7px 10px;border-bottom:1px solid #1b2236;white-space:nowrap}
 .gsize{font-family:ui-monospace,monospace;font-weight:700;color:#fb7185}
 .gtag{font-size:11px;border:1px solid var(--line);border-radius:999px;padding:2px 8px;color:var(--dim)}
 .wtag{display:inline-block;font-size:10px;color:#fbbf24;border:1px solid rgba(251,191,36,.4);background:rgba(251,191,36,.1);border-radius:999px;padding:1px 7px;margin:1px 2px 1px 0}
-.empty{color:var(--dim);font-size:13px}`
+.empty{color:var(--dim);font-size:13px}
+` + sortableCSS
 
 type focusedData struct {
 	Name, Subtitle, Generated string
@@ -587,8 +606,7 @@ var focusedAccountsTemplate = template.Must(template.New("focused-accounts").Fun
 <div class="sub">Password!AtTheDisco — {{.Subtitle}} · generated {{.Generated}}</div>
 <span class="redact">Redacted report · no cleartext passwords or hashes</span>
 <div class="label">{{.Count}} account{{if ne .Count 1}}s{{end}}</div>
-<div class="panel"><table>
-<tr><th>Username</th><th>Domain</th><th>Status</th><th>Risk</th><th>Score</th><th>Length</th><th>Complexity</th><th>Policy</th><th>HIBP</th><th>Shared</th><th>Controlled</th><th>Tier-0 pathway</th><th>Weaknesses</th></tr>
+<div class="panel"><div class="table-wrap"><table data-sortable><thead><tr><th>Username</th><th>Domain</th><th>Status</th><th>Risk</th><th>Score</th><th>Length</th><th>Complexity</th><th>Policy</th><th>HIBP</th><th>Shared</th><th>Controlled</th><th>Tier-0 pathway</th><th>Weaknesses</th></tr></thead><tbody>
 {{range .Accounts}}<tr>
 <td>{{.Username}}{{if not .Enabled}}<span class="muted"> · disabled</span>{{end}}</td><td class="muted">{{.Domain}}</td>
 <td>{{if .Cracked}}Cracked{{else}}<span class="muted">Uncracked</span>{{end}}</td>
@@ -604,9 +622,9 @@ var focusedAccountsTemplate = template.Must(template.New("focused-accounts").Fun
 <td>{{if .IsCommon}}<span class="wtag">common</span> {{end}}{{if .IsDictionaryWord}}<span class="wtag">dictionary</span> {{end}}{{if gt .BannedWordCount 0}}<span class="wtag">forbidden</span> {{end}}{{if gt .KeyboardPatternCount 0}}<span class="wtag">keyboard</span> {{end}}{{if not .IsWeak}}<span class="muted">—</span>{{end}}</td>
 </tr>{{end}}
 {{if not .Accounts}}<tr><td colspan="13" class="empty">none</td></tr>{{end}}
-</table></div>
+</tbody></table></div></div>
 <div class="foot">Generated by Password!AtTheDisco · cleartext passwords are never written to disk or included in reports</div>
-</div></body></html>`))
+</div>` + sortableJS + `</body></html>`))
 
 type catBar struct {
 	Label string
@@ -678,8 +696,7 @@ var weakTemplate = template.Must(template.New("weak").Funcs(tmplFuncs).Parse(
 {{range .Bars}}<div class="cbar"><span class="cl">{{.Label}}</span><span class="ct2"><span class="cf" style="width:{{.Pct}}%"></span></span><span class="cn">{{.N}}</span></div>{{end}}
 </div>
 <div class="label">{{.Count}} account{{if ne .Count 1}}s{{end}}</div>
-<div class="panel"><table>
-<tr><th>Username</th><th>Domain</th><th>Risk</th><th>Score</th><th>Complexity</th><th>Policy</th><th>Controlled</th><th>Weaknesses</th></tr>
+<div class="panel"><div class="table-wrap"><table data-sortable><thead><tr><th>Username</th><th>Domain</th><th>Risk</th><th>Score</th><th>Complexity</th><th>Policy</th><th>Controlled</th><th>Weaknesses</th></tr></thead><tbody>
 {{range .Accounts}}<tr>
 <td>{{.Username}}{{if not .Enabled}}<span class="muted"> · disabled</span>{{end}}</td><td class="muted">{{.Domain}}</td>
 <td><span class="badge" style="color:{{color .RiskLevel}};border-color:{{color .RiskLevel}}">{{.RiskLevel}}</span></td>
@@ -690,9 +707,9 @@ var weakTemplate = template.Must(template.New("weak").Funcs(tmplFuncs).Parse(
 <td>{{if .IsCommon}}<span class="wtag">common</span> {{end}}{{if .IsDictionaryWord}}<span class="wtag">dictionary</span> {{end}}{{if gt .BannedWordCount 0}}<span class="wtag">forbidden</span> {{end}}{{if gt .KeyboardPatternCount 0}}<span class="wtag">keyboard</span> {{end}}{{if not .IsWeak}}<span class="muted">—</span>{{end}}</td>
 </tr>{{end}}
 {{if not .Accounts}}<tr><td colspan="8" class="empty">none</td></tr>{{end}}
-</table></div>
+</tbody></table></div></div>
 <div class="foot">Generated by Password!AtTheDisco · cleartext passwords are never written to disk or included in reports</div>
-</div></body></html>`))
+</div>` + sortableJS + `</body></html>`))
 
 type reuseData struct {
 	Name, Generated string
@@ -717,14 +734,14 @@ var reuseTemplate = template.Must(template.New("reuse").Funcs(tmplFuncs).Parse(
 {{if gt .Domains 1}}<span class="gtag">{{.Domains}} domains</span>{{end}}
 {{if gt .HIBPBreachCount 0}}<span class="gtag">HIBP {{.HIBPBreachCount}}</span>{{end}}
 {{if .HasDAPathway}}<span class="gtag" style="color:#fb7185;border-color:#fb7185">Tier-0 reachable</span>{{end}}</div>
-<table><tr><th>Username</th><th>Domain</th><th>Risk</th><th>Score</th><th>Tier-0 pathway</th></tr>
+<div class="table-wrap"><table data-sortable><thead><tr><th>Username</th><th>Domain</th><th>Risk</th><th>Score</th><th>Tier-0 pathway</th></tr></thead><tbody>
 {{range .Members}}<tr><td>{{.Username}}{{if not .Enabled}}<span class="muted"> · disabled</span>{{end}}</td><td class="muted">{{.Domain}}</td>
 <td><span class="badge" style="color:{{color .RiskLevel}};border-color:{{color .RiskLevel}}">{{.RiskLevel}}</span></td>
 <td>{{f1 .RiskScore}}</td>
 <td>{{if tier0 .DADomains}}<span style="color:#fb7185">{{.DADomains}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
 </tr>{{end}}
 {{if .Truncated}}<tr><td colspan="5" class="muted">… first {{len .Members}} of {{.Size}} members shown</td></tr>{{end}}
-</table></div>{{end}}
+</tbody></table></div></div>{{end}}
 <div class="label">Shared cracked passwords ({{len .Report.CrackedReuse}})</div>
 {{range .Report.CrackedReuse}}{{template "group" .}}{{end}}
 {{if not .Report.CrackedReuse}}<div class="panel empty">none — no two accounts share a cracked password</div>{{end}}
@@ -732,4 +749,4 @@ var reuseTemplate = template.Must(template.New("reuse").Funcs(tmplFuncs).Parse(
 {{range .Report.UncrackedReuse}}{{template "group" .}}{{end}}
 {{if not .Report.UncrackedReuse}}<div class="panel empty">none — no two uncracked accounts share an NT hash</div>{{end}}
 <div class="foot">Generated by Password!AtTheDisco · cleartext passwords are never written to disk or included in reports</div>
-</div></body></html>`))
+</div>` + sortableJS + `</body></html>`))
