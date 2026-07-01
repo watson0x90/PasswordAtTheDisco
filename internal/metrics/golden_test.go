@@ -49,7 +49,11 @@ func TestBundleHasNoSensitiveFields(t *testing.T) {
 	now := time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC)
 	// Feed accounts that DO carry secrets — the bundle must strip every one.
 	// Fixture is deliberately cross-domain (alice in A, bob in B) + HIBP-breached
-	// so the canary exercises both the AccountRef and ReportAccount projections.
+	// so the canary exercises the AccountRef and ReportAccount projections AND the
+	// new per-domain DomainReports (reuse_clusters, da_paths, exposure_headline).
+	// alice+bob share the same NTHash → they form a cross-domain reuse group that
+	// appears in BOTH domains' reports.reuse_clusters.cracked. Members are
+	// ReportAccount (no password/NTHash) so the check must pass.
 	secret := "SuperSecretCleartextPassword!"
 	ntHash := "ABCDEF0123456789ABCDEF0123456789"
 	accts := []model.Account{

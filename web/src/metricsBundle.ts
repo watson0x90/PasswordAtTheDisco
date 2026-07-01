@@ -2,7 +2,7 @@
 // TypeScript mirror of the Go internal/metrics bundle (the GET /api/metrics payload).
 // Field names are the Go JSON tags verbatim so the SPA can render the server-computed
 // metrics without recomputing. Keep in lockstep with internal/metrics/*.go.
-import type { Summary, ReportAccount } from "./api"
+import type { Summary, ReportAccount, ReuseGroup } from "./api"
 
 export type Tier = "Critical" | "High" | "Medium" | "Low"
 
@@ -97,11 +97,24 @@ export interface ReportSeries {
   similarity_graph: Graph
 }
 
+export interface DomainReuseClusters {
+  cracked: ReuseGroup[]
+  uncracked: ReuseGroup[]
+}
+
+export interface DomainReports {
+  exposure_headline: ExposureHeadline
+  similarity_graph: Graph
+  reuse_clusters: DomainReuseClusters
+  da_paths: ReportAccount[]
+}
+
 export interface DomainMetrics {
   domain: string
   summary: Summary
   matrix: Matrix
   charts: ChartSeries
+  reports: DomainReports
 }
 
 export interface MetricsBundle {

@@ -831,6 +831,37 @@
           }
         ],
         "top_controllers_more_over_100": 0
+      },
+      "reports": {
+        "exposure_headline": {
+          "cracked_da": 1,
+          "cracked_hibp": 1,
+          "cross_domain_groups": 0,
+          "domains_spanned": 0
+        },
+        "similarity_graph": {
+          "nodes": [],
+          "edges": []
+        },
+        "reuse_clusters": {
+          "cracked": [],
+          "uncracked": []
+        },
+        "da_paths": [
+          {
+            "username": "alice",
+            "domain": "A.LOCAL",
+            "cracked": true,
+            "password_length": 7,
+            "risk_level": "Critical",
+            "risk_score": 8.5,
+            "hibp_breach_count": 1200,
+            "shared_with": 3,
+            "da_domains": "A.LOCAL",
+            "controlled_object_count": 150,
+            "enabled": true
+          }
+        ]
       }
     },
     {
@@ -1113,6 +1144,23 @@
           }
         ],
         "top_controllers_more_over_100": 0
+      },
+      "reports": {
+        "exposure_headline": {
+          "cracked_da": 0,
+          "cracked_hibp": 1,
+          "cross_domain_groups": 0,
+          "domains_spanned": 0
+        },
+        "similarity_graph": {
+          "nodes": [],
+          "edges": []
+        },
+        "reuse_clusters": {
+          "cracked": [],
+          "uncracked": []
+        },
+        "da_paths": []
       }
     }
   ]
