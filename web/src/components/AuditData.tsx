@@ -6,6 +6,20 @@ import { useAuth } from "../auth"
 import { useJobs } from "../jobs"
 import { fmtWhen } from "../format"
 import { perDomainStatus } from "../auditData"
+import { useSortablePaged, type SortColumn } from "../sortPage"
+import { SortHeader } from "./SortHeader"
+import { Pager } from "./Pager"
+
+// Sortable columns for the ingest-history table. Default sort is `at` descending
+// (newest first), preserving the previous reverse-chronological order. `at` is an
+// ISO-8601 string, so lexicographic order matches chronological order.
+const INGEST_COLS: SortColumn<IngestEvent>[] = [
+  { key: "at", get: (e) => e.at, defaultDir: "desc" },
+  { key: "filename", get: (e) => e.filename || "" },
+  { key: "kind", get: (e) => e.kind },
+  { key: "domain", get: (e) => (e.kind === "cracks" ? "all domains" : e.domain || "") },
+  { key: "by", get: (e) => e.by },
+]
 
 export function AuditData() {
   const { me } = useAuth()
@@ -21,6 +35,11 @@ export function AuditData() {
   useEffect(() => {
     api.ingests().then(setIngests).catch(() => {})
   }, [activeId, dataVersion])
+
+  // Paginate the ingest history — one row accrues per upload/crack/enrich/delete,
+  // so a heavily-reworked audit accumulates hundreds. The sort replaces the old
+  // manual reverse (default: newest first).
+  const ingestPage = useSortablePaged(ingests, INGEST_COLS, { defaultSort: { key: "at", dir: "desc" }, pageSize: 50 })
 
   if (me?.role !== "lead") {
     return <div className="center-state">Audit data management requires the lead role.</div>
@@ -177,34 +196,37 @@ export function AuditData() {
         {ingests.length === 0 ? (
           <div className="muted py-sm">No ingest events yet.</div>
         ) : (
-          <div className="table-wrap">
-            <table className="accounts compact">
-              <thead>
-                <tr>
-                  <th>When</th>
-                  <th>File</th>
-                  <th>Kind</th>
-                  <th>Domain</th>
-                  <th>Result</th>
-                  <th>By</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...ingests].reverse().map((ev, i) => (
-                  <tr key={i}>
-                    <td className="muted">{fmtWhen(ev.at)}</td>
-                    <td className="font-mono fs-12">{ev.filename || "—"}</td>
-                    <td>{ev.kind}</td>
-                    <td className="muted">
-                      {ev.kind === "cracks" ? "all domains" : (ev.domain || "—")}
-                    </td>
-                    <td>{ingestResult(ev)}</td>
-                    <td className="muted">{ev.by}</td>
+          <>
+            <div className="table-wrap">
+              <table className="accounts compact">
+                <thead>
+                  <tr>
+                    <SortHeader label="When" colKey="at" sort={ingestPage.sort} onSort={ingestPage.setSort} />
+                    <SortHeader label="File" colKey="filename" sort={ingestPage.sort} onSort={ingestPage.setSort} />
+                    <SortHeader label="Kind" colKey="kind" sort={ingestPage.sort} onSort={ingestPage.setSort} />
+                    <SortHeader label="Domain" colKey="domain" sort={ingestPage.sort} onSort={ingestPage.setSort} />
+                    <th>Result</th>
+                    <SortHeader label="By" colKey="by" sort={ingestPage.sort} onSort={ingestPage.setSort} />
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {ingestPage.rows.map((ev, i) => (
+                    <tr key={`${ev.at}|${ev.kind}|${i}`}>
+                      <td className="muted">{fmtWhen(ev.at)}</td>
+                      <td className="font-mono fs-12">{ev.filename || "—"}</td>
+                      <td>{ev.kind}</td>
+                      <td className="muted">
+                        {ev.kind === "cracks" ? "all domains" : (ev.domain || "—")}
+                      </td>
+                      <td>{ingestResult(ev)}</td>
+                      <td className="muted">{ev.by}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pager page={ingestPage} />
+          </>
         )}
       </div>
     </>

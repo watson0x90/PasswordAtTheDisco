@@ -7,6 +7,7 @@ import { useAuth } from "../auth"
 import { filterAccounts } from "../search"
 import { RISK_CLASS } from "../util"
 import { ADMIN_ITEMS, SETUP_ITEMS, TABS, type View } from "./AppShell"
+import { paletteNavItems } from "../paletteNav"
 
 type Row =
   | { kind: "account"; account: Account }
@@ -46,10 +47,10 @@ export function CommandPalette() {
     }
   }, [open])
 
-  const navItems = useMemo(() => {
-    const lead = me?.role === "lead"
-    return [...TABS, ...(lead ? [...SETUP_ITEMS, ...ADMIN_ITEMS] : [])]
-  }, [me])
+  // Palette jump targets mirror what each role can reach in the top nav: analysts
+  // get Integrations (their only Setup destination) and everyone gets Help — both
+  // were previously unreachable from the palette.
+  const navItems = useMemo(() => paletteNavItems(me?.role, TABS, SETUP_ITEMS, ADMIN_ITEMS), [me])
 
   const rows: Row[] = useMemo(() => {
     const q = query.trim().toLowerCase()
