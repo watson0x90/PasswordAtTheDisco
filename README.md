@@ -41,6 +41,16 @@ wrote **cleartext cracked passwords to disk**. This rewrite never does:
 
 One binary serves both the JSON API and the embedded single-page app.
 
+## What's new in 2.34.1
+
+**Console polish — pagination + palette.**
+
+- **Ingest history paginates.** The Audit Data "Ingest history" table now uses the shared paginated,
+  sortable table (50/page, newest-first) instead of rendering every event at once — so audits with a long
+  upload/crack/enrichment history stay fast.
+- **Command palette reaches everything.** Ctrl/⌘-K can now jump to **Help** (all roles) and, for analysts,
+  **Integrations** — destinations the palette previously couldn't reach.
+
 ## What's new in 2.34
 
 **Readable, sortable exported reports.**
